@@ -117,4 +117,18 @@ describe("shelf update reports failures", () => {
 		expect(result.stderr).toContain("1 of 3");
 		expect(result.output).not.toContain("Update complete.");
 	});
+
+	test("gives each failure's reason as one line", async () => {
+		const b = await createRemote("b");
+		await install({ broken: b });
+		await rm(b.bare, { recursive: true, force: true });
+
+		const result = await shelf.run(["update"]);
+
+		expect(result.exitCode).toBe(1);
+		const lines = result.stderr.trim().split("\n");
+		expect(lines).toHaveLength(2);
+		expect(lines[0]).toMatch(/"broken" failed: .*fatal: .*does not appear to be a git repository/);
+		expect(lines[1]).toContain("1 of 1");
+	});
 });

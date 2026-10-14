@@ -40,3 +40,20 @@ export const parseSymrefHead = (output: string): string | undefined => {
 	}
 	return undefined;
 };
+
+/**
+ * One line that says why a git command failed, from its (often multi-line)
+ * stderr: the first `fatal:` or `error:` line, which names the cause, else
+ * the last non-empty line.
+ */
+export const gitErrorLine = (stderr: string): string => {
+	const lines = stderr
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line !== "");
+	return (
+		lines.find((line) => line.startsWith("fatal:") || line.startsWith("error:")) ??
+		lines.at(-1) ??
+		stderr.trim()
+	);
+};
