@@ -4,6 +4,7 @@ import * as Context from "effect/Context";
 import { ResolvedRepo } from "./resolve-schema";
 import { ResolveError } from "./resolve-errors";
 import { githubApiBaseUrl, resolveLocally } from "./resolve-utils";
+import { deriveAlias } from "../repo/repo-utils";
 
 const resolveViaGitHubApi = Effect.fn("resolveViaGitHubApi")(function* (name: string) {
 	const response = yield* Effect.tryPromise({
@@ -41,7 +42,7 @@ const resolveViaGitHubApi = Effect.fn("resolveViaGitHubApi")(function* (name: st
 
 	return new ResolvedRepo({
 		url: firstItem.clone_url,
-		suggestedAlias: name,
+		suggestedAlias: deriveAlias(name),
 		source: "github-api",
 	});
 });

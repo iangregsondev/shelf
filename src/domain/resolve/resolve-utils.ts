@@ -1,4 +1,4 @@
-import { deriveAlias } from "../repo/repo-utils";
+import { deriveAlias, toSafeAlias } from "../repo/repo-utils";
 
 const OWNER_REPO_PATTERN = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 const PREFIXED_PATTERN = /^(github|gitlab|bitbucket):/;
@@ -28,7 +28,7 @@ export const expandPrefixed = (input: string): { host: string; ownerRepo: string
 export const deriveAliasFromOwnerRepo = (ownerRepo: string): string => {
 	const parts = ownerRepo.split("/");
 	const repo = parts.at(-1) ?? ownerRepo;
-	return repo.replace(/\.git$/, "");
+	return toSafeAlias(repo.replace(/\.git$/, ""));
 };
 
 /**

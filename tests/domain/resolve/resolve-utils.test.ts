@@ -60,3 +60,13 @@ describe("githubApiBaseUrl", () => {
 		);
 	});
 });
+
+describe("deriveAliasFromOwnerRepo safety", () => {
+	test.each([
+		["owner/.hidden", "hidden"],
+		["owner/..", "repo"],
+		["owner/v2", "v2"],
+	])("%p gives %p", (ownerRepo, expected) => {
+		expect(deriveAliasFromOwnerRepo(ownerRepo)).toBe(expected);
+	});
+});
