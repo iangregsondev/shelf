@@ -25,7 +25,7 @@ export type RepoOverrides = {
 		aliasOrUrl: string,
 	) => Effect.Effect<string, ConfigParseError | RepoNotFoundError>;
 	readonly list?: () => Effect.Effect<ReadonlyArray<RepoEntry>, ConfigParseError>;
-	readonly update?: (
+	readonly sync?: (
 		alias: Option.Option<string>,
 	) => Effect.Effect<SyncAllResult, ConfigParseError | GitOperationError | RepoNotFoundError>;
 	readonly resolveAutoPin?: (
@@ -43,7 +43,7 @@ const defaultRepoImpl = {
 	add: () => Effect.succeed("test-repo" as string),
 	remove: () => Effect.succeed("test-repo" as string),
 	list: () => Effect.succeed([] as ReadonlyArray<RepoEntry>),
-	update: () => Effect.succeed<SyncAllResult>({ total: 0, failures: [] }),
+	sync: () => Effect.succeed<SyncAllResult>({ total: 0, failures: [] }),
 	resolveAutoPin: () => Effect.succeed(undefined as unknown as Option.Option<RepoPin>),
 	resolvePin: () => Effect.succeed(undefined as unknown as RepoPin),
 	pin: () => Effect.succeed(undefined as unknown as RepoPin),

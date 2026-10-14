@@ -220,7 +220,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 
 			// With an alias, a failed sync fails the update. Without one, every
 			// reference repo is synced and the failures come back in the result.
-			update: Effect.fn("RepoService.update")(function* (alias: Option.Option<string>) {
+			sync: Effect.fn("RepoService.sync")(function* (alias: Option.Option<string>) {
 				if (Option.isSome(alias)) {
 					const cfg = yield* config.load();
 					const repo = cfg.repos.find((r: RepoEntry) => r.alias === alias.value);

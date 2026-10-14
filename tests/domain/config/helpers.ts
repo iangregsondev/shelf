@@ -18,7 +18,7 @@ const defaultConfigImpl = {
 	save: (): Effect.Effect<void, ConfigParseError> => Effect.void,
 	ensureDirectories: (): Effect.Effect<void, ConfigParseError> => Effect.void,
 	repoPath: (alias: string): string => `/tmp/shelf-test/repos/${alias}`,
-	configDir: "/tmp/shelf-test",
+	shelfHome: "/tmp/shelf-test",
 	reposDir: "/tmp/shelf-test/repos",
 	configPath: "/tmp/shelf-test/config.json",
 };

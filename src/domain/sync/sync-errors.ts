@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
-/** `shelf update` synced every reference repo, but some of them failed. */
-export class UpdateFailedError extends Schema.TaggedError<UpdateFailedError>()(
-	"UpdateFailedError",
-	{ failed: Schema.Number, total: Schema.Number },
-) {}
+/** A sync of every reference repo (`shelf update`) finished, but some repos failed. */
+export class SyncFailedError extends Schema.TaggedError<SyncFailedError>()("SyncFailedError", {
+	failed: Schema.Number,
+	total: Schema.Number,
+}) {}

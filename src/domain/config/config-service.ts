@@ -13,9 +13,9 @@ export class ConfigService extends Context.Service<ConfigService>()(
 	"shelf/domain/config/ConfigService",
 	{
 		make: Effect.gen(function* () {
-			const shelfDir = resolveShelfHome(process.env, homedir(), process.cwd());
-			const configFile = join(shelfDir, "config.json");
-			const reposDir = join(shelfDir, "repos");
+			const shelfHome = resolveShelfHome(process.env, homedir(), process.cwd());
+			const configFile = join(shelfHome, "config.json");
+			const reposDir = join(shelfHome, "repos");
 
 			const load = Effect.fn("ConfigService.load")(function* () {
 				const file = Bun.file(configFile);
@@ -69,7 +69,7 @@ export class ConfigService extends Context.Service<ConfigService>()(
 					yield* Effect.tryPromise({
 						try: async () => {
 							const { mkdir } = await import("node:fs/promises");
-							await mkdir(shelfDir, { recursive: true });
+							await mkdir(shelfHome, { recursive: true });
 							await mkdir(reposDir, { recursive: true });
 						},
 						catch: () => new ConfigParseError({ message: "Failed to create shelf directories" }),
@@ -78,7 +78,7 @@ export class ConfigService extends Context.Service<ConfigService>()(
 
 				repoPath: (alias: string): string => join(reposDir, alias),
 
-				configDir: shelfDir,
+				shelfHome,
 				reposDir,
 				configPath: configFile,
 			};

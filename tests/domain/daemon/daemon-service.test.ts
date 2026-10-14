@@ -28,7 +28,7 @@ describe("DaemonService", () => {
 				},
 				ensureDirectories: () => Effect.void,
 				repoPath: (alias: string) => join(tempDir, "repos", alias),
-				configDir: tempDir,
+				shelfHome: tempDir,
 				reposDir: join(tempDir, "repos"),
 				configPath: join(tempDir, "config.json"),
 			}),

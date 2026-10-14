@@ -70,8 +70,8 @@ export class DaemonService extends Context.Service<DaemonService>()(
 	{
 		make: Effect.gen(function* () {
 			const config = yield* ConfigService;
-			const statePath = daemonStatePath(config.configDir);
-			const logPath = daemonLogPath(config.configDir);
+			const statePath = daemonStatePath(config.shelfHome);
+			const logPath = daemonLogPath(config.shelfHome);
 
 			const readState = (): Effect.Effect<DaemonState | null> =>
 				Effect.tryPromise({
@@ -300,7 +300,7 @@ const syncInterval = (minutes: number): number =>
 export const daemonProgram = Effect.gen(function* () {
 	const cfg = yield* ConfigService;
 	const sync = yield* SyncService;
-	const path = daemonStatePath(cfg.configDir);
+	const path = daemonStatePath(cfg.shelfHome);
 	const token = daemonTokenFromArgs(process.argv) ?? generateToken();
 
 	const startedAt = new Date().toISOString();

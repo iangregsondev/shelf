@@ -52,7 +52,7 @@ export class RegistryService extends Context.Service<RegistryService>()(
 			const config = yield* ConfigService;
 			const shelffile = yield* ShelffileService;
 
-			const registryPath = join(config.configDir, REGISTRY_FILE);
+			const registryPath = join(config.shelfHome, REGISTRY_FILE);
 
 			const load = Effect.fn("RegistryService.load")(function* () {
 				const file = Bun.file(registryPath);

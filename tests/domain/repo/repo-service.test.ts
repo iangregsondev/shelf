@@ -282,7 +282,7 @@ describe("RepoService", () => {
 		});
 	});
 
-	describe("update", () => {
+	describe("sync", () => {
 		test("syncs single repo by alias", async () => {
 			let syncedRepo: string | undefined;
 			const existingRepo = new RepoEntry({
@@ -312,7 +312,7 @@ describe("RepoService", () => {
 			await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					yield* repo.update(Option.some("test-repo"));
+					yield* repo.sync(Option.some("test-repo"));
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(syncedRepo).toBe("test-repo");
@@ -333,7 +333,7 @@ describe("RepoService", () => {
 			await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					yield* repo.update(Option.none());
+					yield* repo.sync(Option.none());
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(syncAllCalled).toBe(true);
