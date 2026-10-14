@@ -34,10 +34,33 @@ describe("SkillService.install", () => {
     expect(await readText(path)).toBe(skillTemplate);
   });
 
-  test("writes to the named agent's folder", async () => {
-    const path = await install(projectDir, Option.some("claude"));
-    expect(path).toBe(join(projectDir, ".claude/skills/shelf/SKILL.md"));
+  test.each([
+    ["claude", ".claude/skills/shelf/SKILL.md"],
+    ["opencode", ".opencode/skills/shelf/SKILL.md"],
+    ["gemini", ".gemini/skills/shelf/SKILL.md"],
+  ])("writes to the %s agent's folder", async (agent, relativePath) => {
+    const path = await install(projectDir, Option.some(agent));
+    expect(path).toBe(join(projectDir, relativePath));
     expect(await readText(path)).toBe(skillTemplate);
+  });
+
+  test("writes to the universal .agents folder for an unknown agent", async () => {
+    const path = await install(projectDir, Option.some("unknown"));
+    expect(path).toBe(join(projectDir, ".agents/skills/shelf/SKILL.md"));
+    expect(await readText(path)).toBe(skillTemplate);
+  });
+
+  test("fails when the skill folder cannot be created", async () => {
+    // A file stands where the project folder should be.
+    const blocker = join(projectDir, "blocker");
+    await writeText(blocker, "");
+    const exit = await Effect.runPromiseExit(
+      SkillService.use((skill) => skill.install(blocker, Option.none())).pipe(
+        Effect.provide(SkillService.layer),
+        Effect.provide(PlatformLayer),
+      ),
+    );
+    expect(exit._tag).toBe("Failure");
   });
 
   test("replaces an existing skill file", async () => {
