@@ -37,6 +37,13 @@ export default defineConfig({
       // The text report lists only files below 100%, so a run names the files
       // that need tests. The html report in coverage/ lists every file.
       reporter: [["text", { skipFull: true }], "html"],
+      // The gate: a run below these fails, in CI and locally.
+      thresholds: {
+        lines: 100,
+        functions: 100,
+        statements: 100,
+        branches: 95,
+      },
     },
   },
 });
