@@ -31,8 +31,12 @@ A folder in the repos folder named like an alias but with no config entry; it bl
 _Avoid_: stray folder, leftover
 
 **Trash**:
-The folder of a removed reference repo, renamed aside (`.shelf-trash-…`) and waiting to be deleted; `remove` and `prune` delete it. A killed add's or remove's leftover folder becomes trash too, unless a killed remove's folder can move back.
+The folder of a removed reference repo, renamed aside (`.shelf-trash-…`) and waiting to be deleted; `remove` and `prune` delete it. A dead temp folder becomes trash too, unless it can move back.
 _Avoid_: bin, garbage
+
+**Dead temp folder**:
+A hidden folder an add or a remove was working in (`.shelf-add-…`, `.shelf-removing-…`) whose process is gone, because it was killed partway. `remove` and `prune` move it back to its repo or turn it into trash.
+_Avoid_: leftover, stale folder
 
 **Shorthand**:
 A short way of naming a repo that shelf expands to a full git URL, such as `owner/repo`, `github:owner/repo` or a known package name.

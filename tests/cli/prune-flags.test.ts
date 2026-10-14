@@ -3,7 +3,6 @@
 // added by hand (always referenced). Also how prune treats trash a remove left.
 
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
-import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,7 +10,8 @@ import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createRemote, type Remote } from "../helpers/git-remote";
 import { readJson, readText, writeText } from "../helpers/files";
-import { runningAsRoot } from "../helpers/process";
+import { deadPid, runningAsRoot, TEMP_ID } from "../helpers/process";
+import { tempName } from "../../src/domain/repo/repo-utils";
 
 let shelf: ShelfSandbox;
 let tempDir: string;
@@ -151,16 +151,15 @@ describe("shelf prune flags", () => {
 
   test("with no flags deletes the folder of an add that died, and keeps a running one's", async () => {
     const repos = join(shelf.home, "repos");
-    const id = "0b7c5d3e-1f2a-4b6c-8d9e-0a1b2c3d4e5f";
-    const deadPid = spawnSync(process.execPath, ["-e", ""]).pid;
-    await mkdir(join(repos, `.shelf-add-killed-${deadPid}-${id}`, ".git"), { recursive: true });
-    await mkdir(join(repos, `.shelf-add-running-${process.pid}-${id}`));
+    const running = tempName("add", "running", process.pid, TEMP_ID);
+    await mkdir(join(repos, tempName("add", "killed", deadPid(), TEMP_ID), ".git"), {
+      recursive: true,
+    });
+    await mkdir(join(repos, running));
 
     const result = await shelf.run(["prune"]);
 
     expect(result.exitCode).toBe(0);
-    expect((await readdir(repos)).filter((name) => name.startsWith("."))).toEqual([
-      `.shelf-add-running-${process.pid}-${id}`,
-    ]);
+    expect((await readdir(repos)).filter((name) => name.startsWith("."))).toEqual([running]);
   });
 });

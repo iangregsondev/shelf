@@ -117,13 +117,14 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
         .pipe(Effect.map((full) => new RepoPin({ type: "commit", value: full })));
 
     /**
-     * Settles the temp folders of adds and removes whose process is gone. A
-     * dead remove's folder moves back when its config entry is still saved
-     * and the repo folder is missing (it died before saving); every other
-     * one becomes trash. Best effort: what can't be settled waits for the
-     * next try.
+     * Settles dead temp folders: those of adds and removes whose process is
+     * gone. A dead remove's folder moves back when its config entry is still
+     * saved and the repo folder is missing (it died before saving); every
+     * other one becomes trash. A folder that can't be moved comes back for
+     * a warning; the next remove or prune tries again. A PID from another
+     * PID namespace (a repos folder shared with a container) reads as gone.
      */
-    const settleLeftovers = Effect.gen(function* () {
+    const settleDeadTempFolders = Effect.gen(function* () {
       const dead = (yield* listFolder(config.reposDir)).flatMap((name) => {
         const temp = parseTempName(name);
         return temp !== undefined &&
@@ -132,8 +133,9 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
           ? [{ ...temp, path: join(config.reposDir, name) }]
           : [];
       });
+      const left: TrashLeft[] = [];
       if (dead.length === 0) {
-        return;
+        return left;
       }
       // Under the config lock, so no add or remove changes entries or repo
       // folders while a dead remove's folder is checked and moved.
@@ -144,32 +146,40 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
             const repoDir = Option.getOrUndefined(
               yield* config.repoPath(temp.alias).pipe(Effect.option),
             );
-            const wanted =
+            const moveBack =
               temp.kind === "removing" &&
               repoDir !== undefined &&
               current.repos.some((r: RepoEntry) => r.alias === temp.alias) &&
               !(yield* pathExists(repoDir));
-            const to = wanted
+            // Named from reposDir, not tempSibling(repoDir), which an unsafe alias would lack.
+            const to = moveBack
               ? repoDir
               : join(config.reposDir, tempName("trash", temp.alias, process.pid, randomUUID()));
-            yield* fs.rename(temp.path, to).pipe(Effect.ignore);
+            yield* fs.rename(temp.path, to).pipe(
+              Effect.catch((error) =>
+                Effect.sync(() => {
+                  left.push({ path: temp.path, message: osErrorMessage(error) });
+                }),
+              ),
+            );
           }
           // Unchanged, so nothing is saved.
           return current;
         }),
       );
-    }).pipe(Effect.ignore);
+      return left;
+      // A config that can't be read or locked now is settled on the next try.
+    }).pipe(Effect.orElseSucceed((): ReadonlyArray<TrashLeft> => []));
 
     /**
-     * Deletes every trash folder under the repos folder, after turning the
-     * leftovers of adds and removes that died into trash (`settleLeftovers`).
-     * A failed delete is not an error: the folder is already off the shelf,
-     * and the next remove or prune tries again.
+     * Deletes every trash folder under the repos folder, after turning dead
+     * temp folders into trash (`settleDeadTempFolders`). A failed delete is
+     * not an error: the folder is already off the shelf, and the next remove
+     * or prune tries again. Gives every folder it could not deal with.
      */
     const clearTrash = Effect.fn("RepoService.clearTrash")(function* () {
-      yield* settleLeftovers;
+      const left: TrashLeft[] = [...(yield* settleDeadTempFolders)];
       const names = yield* listFolder(config.reposDir);
-      const left: TrashLeft[] = [];
       for (const name of names.filter((n) => n.startsWith(tempPrefix("trash")))) {
         const path = join(config.reposDir, name);
         yield* fs.remove(path, { recursive: true, force: true }).pipe(

@@ -12,6 +12,7 @@ import {
   pinFromRemoteRefs,
   tempName,
 } from "../../../src/domain/repo/repo-utils";
+import { TEMP_ID } from "../../helpers/process";
 
 describe("deriveAlias", () => {
   test("derives from HTTPS URL", () => {
@@ -246,7 +247,7 @@ describe("describeLastSynced", () => {
 });
 
 describe("temp folder names", () => {
-  const id = "0b7c5d3e-1f2a-4b6c-8d9e-0a1b2c3d4e5f";
+  const id = TEMP_ID;
 
   test("name the kind, the alias, the owning process and an id", () => {
     expect(tempName("add", "my-lib", 4321, id)).toBe(`.shelf-add-my-lib-4321-${id}`);

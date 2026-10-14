@@ -16,10 +16,10 @@ import { createMockSyncLayer } from "../sync/helpers";
 import { createMockRegistryLayer } from "../registry/helpers";
 import { readText, writeText } from "../../helpers/files";
 import { PlatformLayer } from "../../helpers/platform";
-import { spawnSync } from "node:child_process";
+import { deadPid, runningAsRoot, TEMP_ID as ID } from "../../helpers/process";
 import { existsSync } from "node:fs";
 import { GitOperationError } from "../../../src/domain/git/git-errors";
-import { ConfigWriteError } from "../../../src/domain/config/config-errors";
+import { ConfigParseError, ConfigWriteError } from "../../../src/domain/config/config-errors";
 import { RegistryWriteError } from "../../../src/domain/registry/registry-errors";
 
 // `add` and `remove` move repo folders to temp names beside them, so give each
@@ -575,12 +575,6 @@ const entry = (alias: string, pin: Option.Option<RepoPin> = Option.none()) =>
     sparse: Option.none(),
     lastSyncedAt: Option.none(),
   });
-
-/** An id for temp folder names in tests. */
-const ID = "0b7c5d3e-1f2a-4b6c-8d9e-0a1b2c3d4e5f";
-
-/** The PID of a process that has already exited. */
-const deadPid = (): number => spawnSync(process.execPath, ["-e", ""]).pid;
 
 const configOf = (...repos: ReadonlyArray<RepoEntry>) =>
   new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos });
@@ -1322,6 +1316,34 @@ describe("RepoService.clearTrash", () => {
     expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
     expect(await readdir(reposDir)).toEqual([]);
     expect(await readdir(shelfHome)).toEqual(["repos"]);
+  });
+
+  test.skipIf(runningAsRoot)("reports a dead add's folder it can't move to trash", async () => {
+    const dead = tempName("add", "lib", deadPid(), ID);
+    await writeText(join(reposDir, dead, "lib.ts"), "code");
+    // A read-only repos folder: nothing inside it can be renamed.
+    await chmod(reposDir, 0o555);
+    try {
+      const left = await runRepo((repo) => repo.clearTrash(), buildRepoLayer());
+      expect(left).toEqual([
+        { path: join(reposDir, dead), message: expect.stringContaining("EACCES") },
+      ]);
+    } finally {
+      await chmod(reposDir, 0o755);
+    }
+    expect(await readdir(reposDir)).toEqual([dead]);
+  });
+
+  test("leaves dead temp folders for the next try when the config can't be read", async () => {
+    const dead = tempName("removing", "lib", deadPid(), ID);
+    await writeText(join(reposDir, dead, "lib.ts"), "code");
+    await writeText(join(reposDir, tempName("trash", "old", 1, ID), "old.ts"), "old");
+    const layer = buildRepoLayer({
+      load: () => Effect.fail(new ConfigParseError({ message: "Invalid config schema" })),
+    });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    // Trash needs no config, so it still goes.
+    expect(await readdir(reposDir)).toEqual([dead]);
   });
 
   test("keeps the folder of a remove whose process is alive", async () => {
