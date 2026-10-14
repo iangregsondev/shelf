@@ -26,6 +26,7 @@ describe("DaemonService", () => {
 					const result = fn(defaultConfig);
 					return Effect.isEffect(result) ? result : Effect.succeed(result);
 				},
+				updateRepo: () => Effect.succeed(Option.none()),
 				ensureDirectories: () => Effect.void,
 				repoPath: (alias: string) => join(tempDir, "repos", alias),
 				shelfHome: tempDir,

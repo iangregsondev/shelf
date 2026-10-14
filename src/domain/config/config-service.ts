@@ -1,10 +1,11 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
+import * as Option from "effect/Option";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { ShelfConfig } from "./config-schema";
-import { defaultConfig, decodeConfig, encodeConfig } from "./config-schema";
+import type { RepoEntry } from "./config-schema";
+import { ShelfConfig, defaultConfig, decodeConfig, encodeConfig } from "./config-schema";
 import { ConfigParseError, ConfigWriteError } from "./config-errors";
 import { resolveShelfHome } from "./config-utils";
 import { withStateFileLock, writeFileAtomic } from "./state-file-store";
@@ -42,6 +43,8 @@ export class ConfigService extends Context.Service<ConfigService>()(
 					catch: () => new ConfigWriteError({ message: "Failed to write config file" }),
 				});
 
+			const locked = withStateFileLock(configFile, (message) => new ConfigWriteError({ message }));
+
 			/**
 			 * Reads the config, applies `fn` and saves the result, holding the
 			 * in-process and cross-process config locks throughout. `fn` may fail
@@ -56,14 +59,36 @@ export class ConfigService extends Context.Service<ConfigService>()(
 					const next = Effect.isEffect(result) ? yield* result : result;
 					yield* save(next);
 					return next;
-				}).pipe(
-					withStateFileLock(configFile, (message) => new ConfigWriteError({ message })),
-					Effect.withSpan("ConfigService.update"),
-				);
+				}).pipe(locked, Effect.withSpan("ConfigService.update"));
+
+			/**
+			 * Like `update`, for one reference repo: applies `fn` to the repo stored
+			 * under `alias` (and the whole config, for checks) and saves the result.
+			 * Gives `None`, saving nothing, when no repo has that alias.
+			 */
+			const updateRepo = <E = never>(
+				alias: string,
+				fn: (repo: RepoEntry, current: ShelfConfig) => RepoEntry | Effect.Effect<RepoEntry, E>,
+			): Effect.Effect<Option.Option<RepoEntry>, ConfigParseError | ConfigWriteError | E> =>
+				Effect.gen(function* () {
+					const current = yield* load();
+					const repo = current.repos.find((r: RepoEntry) => r.alias === alias);
+					if (repo === undefined) return Option.none();
+					const result = fn(repo, current);
+					const next = Effect.isEffect(result) ? yield* result : result;
+					yield* save(
+						new ShelfConfig({
+							...current,
+							repos: current.repos.map((r: RepoEntry) => (r.alias === alias ? next : r)),
+						}),
+					);
+					return Option.some(next);
+				}).pipe(locked, Effect.withSpan("ConfigService.updateRepo"));
 
 			return {
 				load,
 				update,
+				updateRepo,
 
 				ensureDirectories: Effect.fn("ConfigService.ensureDirectories")(function* () {
 					yield* Effect.tryPromise({

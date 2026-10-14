@@ -2,15 +2,19 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
-import { RepoEntry, ShelfConfig } from "../config/config-schema";
+import { RepoEntry } from "../config/config-schema";
+import type { ConfigParseError, ConfigWriteError } from "../config/config-errors";
 import { ConfigService } from "../config/config-service";
 import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
 
+/** Why syncing one reference repo failed. */
+export type SyncError = GitOperationError | ConfigParseError | ConfigWriteError;
+
 /** A reference repo that failed to sync, and the error it failed with. */
 export interface SyncFailure {
 	readonly alias: string;
-	readonly error: unknown;
+	readonly error: SyncError;
 }
 
 export interface SyncAllResult {
@@ -57,21 +61,15 @@ export class SyncService extends Context.Service<SyncService>()("shelf/domain/sy
 				}
 			});
 
-		const doSync = (repo: RepoEntry): Effect.Effect<void, unknown, never> =>
+		const doSync = (repo: RepoEntry): Effect.Effect<void, SyncError> =>
 			Effect.gen(function* () {
 				const repoDir = config.repoPath(repo.alias);
 				yield* syncCheckout(repoDir, repo);
 				const now = new Date().toISOString();
-				yield* config.update(
-					(cfg) =>
-						new ShelfConfig({
-							...cfg,
-							repos: cfg.repos.map((r: RepoEntry) =>
-								r.alias === repo.alias
-									? new RepoEntry({ ...r, lastSyncedAt: Option.some(now) })
-									: r,
-							),
-						}),
+				// A repo removed while it synced stays removed: None saves nothing.
+				yield* config.updateRepo(
+					repo.alias,
+					(r) => new RepoEntry({ ...r, lastSyncedAt: Option.some(now) }),
 				);
 			});
 
@@ -87,7 +85,7 @@ export class SyncService extends Context.Service<SyncService>()("shelf/domain/sy
 				const failures: Array<SyncFailure> = [];
 				for (const repo of cfg.repos) {
 					yield* doSync(repo).pipe(
-						Effect.catch((error: unknown) =>
+						Effect.catch((error) =>
 							Effect.sync(() => {
 								failures.push({ alias: repo.alias, error });
 							}),

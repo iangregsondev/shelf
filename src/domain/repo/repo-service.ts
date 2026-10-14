@@ -85,18 +85,13 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 					resolved = yield* fullCommitPin(repoDir, hash);
 				}
 				yield* sync.syncRepo(new RepoEntry({ ...repo, pin: Option.some(resolved) }));
-				yield* config.update((current) =>
-					current.repos.some((r: RepoEntry) => r.alias === alias)
-						? Effect.succeed(
-								new ShelfConfig({
-									...current,
-									repos: current.repos.map((r: RepoEntry) =>
-										r.alias === alias ? new RepoEntry({ ...r, pin: Option.some(resolved) }) : r,
-									),
-								}),
-							)
-						: Effect.fail(new RepoNotFoundError({ alias })),
+				const saved = yield* config.updateRepo(
+					alias,
+					(r) => new RepoEntry({ ...r, pin: Option.some(resolved) }),
 				);
+				if (Option.isNone(saved)) {
+					return yield* new RepoNotFoundError({ alias });
+				}
 				return resolved;
 			}),
 
