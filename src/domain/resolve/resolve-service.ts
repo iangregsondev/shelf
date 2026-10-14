@@ -9,6 +9,7 @@ import {
 	expandPrefixed,
 	deriveAliasFromOwnerRepo,
 	builtinRegistry,
+	githubApiBaseUrl,
 } from "./resolve-utils";
 import { deriveAlias } from "../repo/repo-utils";
 
@@ -16,7 +17,7 @@ const resolveViaGitHubApi = Effect.fn("resolveViaGitHubApi")(function* (name: st
 	const response = yield* Effect.tryPromise({
 		try: () =>
 			fetch(
-				`https://api.github.com/search/repositories?q=${encodeURIComponent(name)}&sort=stars&per_page=1`,
+				`${githubApiBaseUrl(process.env)}/search/repositories?q=${encodeURIComponent(name)}&sort=stars&per_page=1`,
 				{ headers: { Accept: "application/vnd.github.v3+json" } },
 			),
 		catch: () => new ResolveError({ input: name, message: "Failed to reach GitHub API" }),

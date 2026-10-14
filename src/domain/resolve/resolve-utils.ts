@@ -153,3 +153,7 @@ export const builtinRegistry: Record<string, string> = {
 	"openai-python": "https://github.com/openai/openai-python.git",
 	"anthropic-sdk": "https://github.com/anthropics/anthropic-sdk-typescript.git",
 };
+
+/** The GitHub API base URL: `SHELF_GITHUB_API_URL` when set, otherwise the public API. */
+export const githubApiBaseUrl = (env: Readonly<Record<string, string | undefined>>): string =>
+	(env["SHELF_GITHUB_API_URL"] || "https://api.github.com").replace(/\/+$/, "");

@@ -79,3 +79,7 @@ export const resolveGoModule = (modulePath: string): Option.Option<string> => {
 	}
 	return Option.none();
 };
+
+/** The npm registry base URL: `SHELF_NPM_REGISTRY_URL` when set, otherwise the public registry. */
+export const npmRegistryBaseUrl = (env: Readonly<Record<string, string | undefined>>): string =>
+	(env["SHELF_NPM_REGISTRY_URL"] || "https://registry.npmjs.org").replace(/\/+$/, "");

@@ -6,18 +6,19 @@ import { homedir } from "node:os";
 import type { ShelfConfig } from "./config-schema";
 import { defaultConfig, decodeConfig, encodeConfig } from "./config-schema";
 import { ConfigParseError } from "./config-errors";
-
-const SHELF_DIR = join(homedir(), ".agents", "shelf");
-const CONFIG_PATH = join(SHELF_DIR, "config.json");
-const REPOS_DIR = join(SHELF_DIR, "repos");
+import { resolveShelfHome } from "./config-utils";
 
 export class ConfigService extends Context.Service<ConfigService>()(
 	"shelf/domain/config/ConfigService",
 	{
 		make: Effect.gen(function* () {
+			const shelfDir = resolveShelfHome(process.env, homedir(), process.cwd());
+			const configFile = join(shelfDir, "config.json");
+			const reposDir = join(shelfDir, "repos");
+
 			return {
 				load: Effect.fn("ConfigService.load")(function* () {
-					const file = Bun.file(CONFIG_PATH);
+					const file = Bun.file(configFile);
 					const exists = yield* Effect.tryPromise({
 						try: () => file.exists(),
 						catch: () => new ConfigParseError({ message: "Failed to check config file" }),
@@ -39,10 +40,10 @@ export class ConfigService extends Context.Service<ConfigService>()(
 					const encoded = encodeConfig(config);
 					yield* Effect.tryPromise({
 						try: async () => {
-							const tmpPath = `${CONFIG_PATH}.tmp`;
+							const tmpPath = `${configFile}.tmp`;
 							await Bun.write(tmpPath, JSON.stringify(encoded, null, "\t"));
 							const { rename } = await import("node:fs/promises");
-							await rename(tmpPath, CONFIG_PATH);
+							await rename(tmpPath, configFile);
 						},
 						catch: () => new ConfigParseError({ message: "Failed to write config file" }),
 					});
@@ -52,18 +53,18 @@ export class ConfigService extends Context.Service<ConfigService>()(
 					yield* Effect.tryPromise({
 						try: async () => {
 							const { mkdir } = await import("node:fs/promises");
-							await mkdir(SHELF_DIR, { recursive: true });
-							await mkdir(REPOS_DIR, { recursive: true });
+							await mkdir(shelfDir, { recursive: true });
+							await mkdir(reposDir, { recursive: true });
 						},
 						catch: () => new ConfigParseError({ message: "Failed to create shelf directories" }),
 					});
 				}),
 
-				repoPath: (alias: string): string => join(REPOS_DIR, alias),
+				repoPath: (alias: string): string => join(reposDir, alias),
 
-				configDir: SHELF_DIR,
-				reposDir: REPOS_DIR,
-				configPath: CONFIG_PATH,
+				configDir: shelfDir,
+				reposDir,
+				configPath: configFile,
 			};
 		}),
 	},

@@ -6,7 +6,13 @@ import { join } from "node:path";
 import { ConfigService } from "../config/config-service";
 import { builtinRegistry } from "../resolve/resolve-utils";
 import { DetectedRepo } from "./detect-schema";
-import { parsePackageJson, parseGoMod, normalizeGitUrl, resolveGoModule } from "./detect-utils";
+import {
+	parsePackageJson,
+	parseGoMod,
+	normalizeGitUrl,
+	resolveGoModule,
+	npmRegistryBaseUrl,
+} from "./detect-utils";
 
 const readFileOrNone = (path: string): Effect.Effect<Option.Option<string>> =>
 	Effect.tryPromise({
@@ -22,7 +28,7 @@ const readFileOrNone = (path: string): Effect.Effect<Option.Option<string>> =>
 const resolveNpmPackage = (name: string): Effect.Effect<Option.Option<string>> =>
 	Effect.gen(function* () {
 		const response = yield* Effect.tryPromise({
-			try: () => fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}`),
+			try: () => fetch(`${npmRegistryBaseUrl(process.env)}/${encodeURIComponent(name)}`),
 			catch: () => "fetch-failed" as const,
 		}).pipe(Effect.catch(() => Effect.succeed(null)));
 

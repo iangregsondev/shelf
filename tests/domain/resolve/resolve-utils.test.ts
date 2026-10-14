@@ -4,6 +4,7 @@ import {
 	expandOwnerRepo,
 	expandPrefixed,
 	deriveAliasFromOwnerRepo,
+	githubApiBaseUrl,
 } from "../../../src/domain/resolve/resolve-utils";
 
 describe("classifyInput", () => {
@@ -73,5 +74,21 @@ describe("deriveAliasFromOwnerRepo", () => {
 
 	test("strips .git suffix", () => {
 		expect(deriveAliasFromOwnerRepo("facebook/react.git")).toBe("react");
+	});
+});
+
+describe("githubApiBaseUrl", () => {
+	test("defaults to the public GitHub API", () => {
+		expect(githubApiBaseUrl({})).toBe("https://api.github.com");
+	});
+
+	test("ignores an empty SHELF_GITHUB_API_URL", () => {
+		expect(githubApiBaseUrl({ SHELF_GITHUB_API_URL: "" })).toBe("https://api.github.com");
+	});
+
+	test("uses SHELF_GITHUB_API_URL without a trailing slash", () => {
+		expect(githubApiBaseUrl({ SHELF_GITHUB_API_URL: "http://127.0.0.1:4874/github/" })).toBe(
+			"http://127.0.0.1:4874/github",
+		);
 	});
 });
