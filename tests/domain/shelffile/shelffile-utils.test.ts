@@ -6,10 +6,30 @@ import {
 	serializeShelffile,
 	parseShelffilePin,
 	parseShelffileLine,
+	possibleShelffileAliases,
 } from "../../../src/domain/shelffile/shelffile-utils";
 import { ShelffileParseError } from "../../../src/domain/shelffile/shelffile-errors";
 
 describe("shelffile-utils", () => {
+	describe("possibleShelffileAliases", () => {
+		test("takes the first word of every line, even lines that don't parse", () => {
+			const content = [
+				"# a comment",
+				"good https://github.com/a/good.git",
+				"bad-pin https://github.com/a/b.git pin:nonsense",
+				"",
+				"  lonely   # only an alias",
+				"bad/alias https://github.com/a/c.git",
+			].join("\n");
+			expect([...possibleShelffileAliases(content)]).toEqual([
+				"good",
+				"bad-pin",
+				"lonely",
+				"bad/alias",
+			]);
+		});
+	});
+
 	describe("parseShelffilePin", () => {
 		test("parses branch pin", () => {
 			const pin = parseShelffilePin("pin:branch:main");

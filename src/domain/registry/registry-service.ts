@@ -1,14 +1,48 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
-import { join } from "node:path";
+import { stat } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import { ConfigService } from "../config/config-service";
 import { ShelffileService } from "../shelffile/shelffile-service";
 import { ShelfRegistry, defaultRegistry, decodeRegistry, encodeRegistry } from "./registry-schema";
 import { RegistryParseError } from "./registry-errors";
+import { possibleShelffileAliases } from "../shelffile/shelffile-utils";
 import { withStateFileLock, writeFileAtomic } from "../config/state-file-utils";
 
 const REGISTRY_FILE = "registry.json";
+
+/** What prune needs to know about which reference repos are still wanted. */
+export interface ReferenceScan {
+	/** Aliases the manual list or a project's shelffile references. */
+	readonly aliases: ReadonlySet<string>;
+	/**
+	 * True when some project's references couldn't be worked out at all, so any
+	 * repo might still be wanted.
+	 */
+	readonly anyMightBeReferenced: boolean;
+	/**
+	 * Registry entries to drop: the folder no longer exists, or the path is
+	 * relative (recorded by an older shelf) so it can't be located.
+	 */
+	readonly staleProjects: ReadonlyArray<string>;
+	/** Problems reading projects, one line each. */
+	readonly warnings: ReadonlyArray<string>;
+}
+
+type ProjectState = "present" | "missing" | { readonly unknown: string };
+
+/** "missing" only when the folder is definitely gone. */
+const projectState = async (dir: string): Promise<ProjectState> => {
+	try {
+		await stat(dir);
+		return "present";
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === "ENOENT" || code === "ENOTDIR") return "missing";
+		return { unknown: error instanceof Error ? error.message : String(error) };
+	}
+};
 
 export class RegistryService extends Context.Service<RegistryService>()(
 	"shelf/domain/registry/RegistryService",
@@ -119,45 +153,85 @@ export class RegistryService extends Context.Service<RegistryService>()(
 					);
 				}),
 
-				getReferencedAliases: Effect.fn("RegistryService.getReferencedAliases")(function* () {
+				/**
+				 * Works out which aliases are referenced: the manual list plus every
+				 * registered project's shelffile. Reads only; never writes.
+				 */
+				scanReferences: Effect.fn("RegistryService.scanReferences")(function* () {
 					const registry = yield* load();
 					const aliases = new Set<string>(registry.manual);
-					const validProjects: string[] = [];
+					const staleProjects: string[] = [];
+					const warnings: string[] = [];
+					let anyMightBeReferenced = false;
 
 					for (const projectDir of registry.projects) {
-						const dirExists = yield* Effect.tryPromise({
-							try: async () => {
-								const { stat } = await import("node:fs/promises");
-								await stat(projectDir);
-								return true;
-							},
-							catch: () => false,
-						});
-						if (!dirExists) continue;
-						validProjects.push(projectDir);
-
-						const sf = yield* shelffile
-							.read(projectDir)
-							.pipe(Effect.catch(() => Effect.succeed(null)));
-						if (sf === null) continue;
-						for (const entry of sf.entries) {
-							aliases.add(entry.alias);
+						if (!isAbsolute(projectDir)) {
+							staleProjects.push(projectDir);
+							anyMightBeReferenced = true;
+							warnings.push(
+								`Registry entry "${projectDir}" is a relative path from an older shelf and can't be located; prune drops it. Run \`shelf install\` in that project again to keep its repos.`,
+							);
+							continue;
 						}
-					}
+						const state = yield* Effect.promise(() => projectState(projectDir));
+						if (state === "missing") {
+							staleProjects.push(projectDir);
+							continue;
+						}
+						if (state !== "present") {
+							anyMightBeReferenced = true;
+							warnings.push(`Can't check project ${projectDir}: ${state.unknown}`);
+							continue;
+						}
 
-					// Clean stale project paths
-					if (validProjects.length !== registry.projects.length) {
-						const stale = new Set(registry.projects.filter((p) => !validProjects.includes(p)));
-						yield* update(
-							(current) =>
-								new ShelfRegistry({
-									...current,
-									projects: current.projects.filter((p) => !stale.has(p)),
-								}),
+						const shelffilePath = join(projectDir, "shelffile");
+						const outcome = yield* shelffile.read(projectDir).pipe(
+							Effect.map((sf) => ({ entries: sf.entries })),
+							Effect.catchTag("ShelffileNotFoundError", () => Effect.succeed({ entries: [] })),
+							Effect.catchTag("ShelffileParseError", (error) =>
+								Effect.succeed({ parseError: error.message }),
+							),
+						);
+						if ("entries" in outcome) {
+							for (const entry of outcome.entries) aliases.add(entry.alias);
+							continue;
+						}
+
+						const content = yield* Effect.promise(() =>
+							Bun.file(shelffilePath)
+								.text()
+								.catch(() => null),
+						);
+						if (content === null) {
+							anyMightBeReferenced = true;
+							warnings.push(
+								`Can't read ${shelffilePath} (${outcome.parseError}); keeping every repo.`,
+							);
+							continue;
+						}
+						for (const alias of possibleShelffileAliases(content)) aliases.add(alias);
+						warnings.push(
+							`Can't parse ${shelffilePath} (${outcome.parseError}); keeping every repo it names.`,
 						);
 					}
 
-					return aliases;
+					const scan: ReferenceScan = { aliases, anyMightBeReferenced, staleProjects, warnings };
+					return scan;
+				}),
+
+				/** Drops the given project folders from the registry. */
+				dropProjects: Effect.fn("RegistryService.dropProjects")(function* (
+					dirs: ReadonlyArray<string>,
+				) {
+					if (dirs.length === 0) return;
+					const drop = new Set(dirs);
+					yield* update(
+						(current) =>
+							new ShelfRegistry({
+								...current,
+								projects: current.projects.filter((p) => !drop.has(p)),
+							}),
+					);
 				}),
 			};
 		}),

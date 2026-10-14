@@ -3,7 +3,7 @@ import * as Layer from "effect/Layer";
 import type { ShelfRegistry } from "../../../src/domain/registry/registry-schema";
 import { defaultRegistry } from "../../../src/domain/registry/registry-schema";
 import type { RegistryParseError } from "../../../src/domain/registry/registry-errors";
-import { RegistryService } from "../../../src/domain/registry/registry-service";
+import { RegistryService, type ReferenceScan } from "../../../src/domain/registry/registry-service";
 
 export type RegistryOverrides = {
 	readonly load?: () => Effect.Effect<typeof ShelfRegistry.Type, RegistryParseError>;
@@ -14,7 +14,8 @@ export type RegistryOverrides = {
 	readonly unregisterProject?: (dir: string) => Effect.Effect<void, RegistryParseError>;
 	readonly addManual?: (alias: string) => Effect.Effect<void, RegistryParseError>;
 	readonly removeManual?: (alias: string) => Effect.Effect<void, RegistryParseError>;
-	readonly getReferencedAliases?: () => Effect.Effect<Set<string>, RegistryParseError>;
+	readonly scanReferences?: () => Effect.Effect<ReferenceScan, RegistryParseError>;
+	readonly dropProjects?: (dirs: ReadonlyArray<string>) => Effect.Effect<void, RegistryParseError>;
 };
 
 const defaultRegistryImpl = {
@@ -28,8 +29,14 @@ const defaultRegistryImpl = {
 	addManual: (): Effect.Effect<void, RegistryParseError> => Effect.void,
 	removeManual: (): Effect.Effect<void, RegistryParseError> => Effect.void,
 	renameManual: (): Effect.Effect<void, RegistryParseError> => Effect.void,
-	getReferencedAliases: (): Effect.Effect<Set<string>, RegistryParseError> =>
-		Effect.succeed(new Set<string>()),
+	scanReferences: (): Effect.Effect<ReferenceScan, RegistryParseError> =>
+		Effect.succeed({
+			aliases: new Set<string>(),
+			anyMightBeReferenced: false,
+			staleProjects: [],
+			warnings: [],
+		}),
+	dropProjects: (): Effect.Effect<void, RegistryParseError> => Effect.void,
 };
 
 export const createMockRegistryLayer = (

@@ -65,6 +65,20 @@ export const parseShelffile = (content: string): Shelffile => {
 	return { entries };
 };
 
+/**
+ * Every alias a shelffile might reference, read leniently: the first word of
+ * each non-comment line, whether or not the line parses. Prune uses this to
+ * keep repos a broken shelffile may still want.
+ */
+export const possibleShelffileAliases = (content: string): ReadonlySet<string> => {
+	const aliases = new Set<string>();
+	for (const raw of content.split("\n")) {
+		const first = stripComment(raw).split(/\s+/)[0];
+		if (first !== undefined && first !== "") aliases.add(first);
+	}
+	return aliases;
+};
+
 export const serializeShelffile = (shelffile: Shelffile): string => {
 	const lines: string[] = [];
 	for (const entry of shelffile.entries) {
