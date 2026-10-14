@@ -36,6 +36,10 @@ Unknown bare names fall back to a GitHub API search by stars.
 
 All clones default to `--depth 1` and `--single-branch` since repos are for code reference, not building. Use `--depth` to override.
 
+Repos on the shelf are caches: sync force-checks out the pinned ref and discards any local edits to tracked files.
+
+`shelf remove <alias>` also cleans up an orphan folder: a folder under `repos/` with no config entry.
+
 ## Detection
 
 | Command                           | Purpose                                           |
@@ -53,6 +57,8 @@ Scans `package.json` (npm) and `go.mod` (Go) for dependencies. Matches against t
 | `shelf install [--dir path] [--concurrency N]` | Install repos from a shelffile (default concurrency: 4) |
 | `shelf share [--filter aliases] [--stdout]`    | Generate a shelffile from current repos                 |
 
+When a shelffile alias is already on the shelf with a different URL or pin, `shelf install` warns and leaves the stored repo as it is.
+
 ## Daemon
 
 | Command                             | Purpose                                     |
@@ -63,7 +69,7 @@ Scans `package.json` (npm) and `go.mod` (Go) for dependencies. Matches against t
 | `shelf daemon logs [--lines N]`     | Show daemon log output (default: 50 lines)  |
 | `shelf daemon restart`              | Stop and restart the daemon                 |
 
-The daemon runs `syncAll()` on a configurable interval (`shelf config syncIntervalMinutes <N>`, default 60). It re-reads config each cycle so new repos are picked up automatically.
+The daemon runs `syncAll()` on a configurable interval (`shelf config syncIntervalMinutes <N>`, default 60), syncing up to 4 repos at a time. It re-reads config each cycle so new repos are picked up automatically. Only one daemon runs at a time: a second `shelf daemon start` reports the running one.
 
 ## Management
 
@@ -76,3 +82,5 @@ The daemon runs `syncAll()` on a configurable interval (`shelf config syncInterv
 | `shelf prune [--dry-run] [--force]`       | Remove unreferenced repos                                                                                         |
 | `shelf config [key] [value]`              | View or modify configuration                                                                                      |
 | `shelf init [--agent name] [--no-detect]` | Scaffold a skill file and detect project repos; `--agent` is claude, opencode or gemini; other names are rejected |
+
+The skill `shelf init` writes names the repos folder of the resolved shelf home (`$SHELF_HOME/repos`, or `~/.agents/shelf/repos` by default).
