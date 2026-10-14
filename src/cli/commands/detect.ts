@@ -25,6 +25,19 @@ export const detectCommand = Command.make("detect", { apply, format, dir }, (con
     const scanDir = Option.getOrElse(config.dir, () => process.cwd());
     const detected = yield* detect.detect(scanDir);
 
+    // Shelffile output is what the project needs, whatever is already on this
+    // shelf, and stdout carries only shelffile lines, since it is often
+    // redirected into a shelffile.
+    if (Option.isSome(config.format) && config.format.value === "shelffile") {
+      if (detected.length === 0) {
+        yield* Console.error("No repos detected from project dependencies.");
+      }
+      for (const d of detected) {
+        yield* Console.log(`${d.name} ${d.url}`);
+      }
+      return;
+    }
+
     if (detected.length === 0) {
       yield* Console.log("No repos detected from project dependencies.");
       return;
@@ -32,13 +45,6 @@ export const detectCommand = Command.make("detect", { apply, format, dir }, (con
 
     const newRepos = detected.filter((d) => !d.alreadyShelved);
     const existingRepos = detected.filter((d) => d.alreadyShelved);
-
-    if (Option.isSome(config.format) && config.format.value === "shelffile") {
-      for (const d of newRepos) {
-        yield* Console.log(`${d.name} ${d.url}`);
-      }
-      return;
-    }
 
     if (newRepos.length > 0) {
       yield* Console.log(`Detected ${newRepos.length} new repo(s):`);

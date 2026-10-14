@@ -11,7 +11,6 @@ export type RegistryOverrides = {
     fn: (current: ShelfRegistry) => ShelfRegistry,
   ) => Effect.Effect<ShelfRegistry, RegistryParseError>;
   readonly registerProject?: (dir: string) => Effect.Effect<void, RegistryParseError>;
-  readonly unregisterProject?: (dir: string) => Effect.Effect<void, RegistryParseError>;
   readonly addManual?: (alias: string) => Effect.Effect<void, RegistryParseError>;
   readonly removeManual?: (alias: string) => Effect.Effect<void, RegistryParseError>;
   readonly scanReferences?: () => Effect.Effect<ReferenceScan, RegistryParseError>;
@@ -25,13 +24,13 @@ const defaultRegistryImpl = {
     fn: (current: ShelfRegistry) => ShelfRegistry,
   ): Effect.Effect<ShelfRegistry, RegistryParseError> => Effect.succeed(fn(defaultRegistry)),
   registerProject: (): Effect.Effect<void, RegistryParseError> => Effect.void,
-  unregisterProject: (): Effect.Effect<void, RegistryParseError> => Effect.void,
   addManual: (): Effect.Effect<void, RegistryParseError> => Effect.void,
   removeManual: (): Effect.Effect<void, RegistryParseError> => Effect.void,
   renameManual: (): Effect.Effect<void, RegistryParseError> => Effect.void,
   scanReferences: (): Effect.Effect<ReferenceScan, RegistryParseError> =>
     Effect.succeed({
       aliases: new Set<string>(),
+      projectsByAlias: new Map<string, ReadonlyArray<string>>(),
       anyMightBeReferenced: false,
       staleProjects: [],
       warnings: [],

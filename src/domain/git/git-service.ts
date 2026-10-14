@@ -191,9 +191,12 @@ export class GitService extends Context.Service<GitService>()("shelf/domain/git/
         return yield* runGit(["ls-remote", "--refs", "--", url]);
       }),
 
-      /** Checks out `ref` as a detached HEAD. */
+      /**
+       * Checks out `ref` with a detached HEAD. Forces it: a reference repo is
+       * a cache, so local edits are thrown away rather than blocking sync.
+       */
       checkout: Effect.fn("GitService.checkout")(function* (repoDir: string, ref: string) {
-        yield* runGit(["checkout", "--detach", ref, "--"], repoDir);
+        yield* runGit(["checkout", "--detach", "--force", ref, "--"], repoDir);
       }),
 
       /** The branch `origin`'s HEAD points at, asked of the remote itself. */

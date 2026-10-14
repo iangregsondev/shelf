@@ -64,7 +64,7 @@ describe("shelf init skill file", () => {
   const expectSkillAt = async (stdout: string, relativeDir: string) => {
     const skillPath = join(project, relativeDir, "SKILL.md");
     expect(stdout).toContain(`Created ${skillPath}`);
-    expect(await readText(skillPath)).toBe(skillTemplate);
+    expect(await readText(skillPath)).toBe(skillTemplate(join(shelf.home, "repos")));
   };
 
   test("with no flags writes the universal skill and reports no repos to add", async () => {
@@ -102,6 +102,41 @@ describe("shelf init skill file", () => {
       expect(await readdir(project)).toEqual(["package.json"]);
     },
   );
+
+  test("a skill file it can't write fails with one clear line, not a stack trace", async () => {
+    // A file stands where the .agents folder should be.
+    await writeText(join(project, ".agents"), "");
+    const result = await shelf.run(["init", "--no-detect"], { cwd: project });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      `Could not write the skill file ${join(project, ".agents/skills/shelf/SKILL.md")}`,
+    );
+    expect(result.stderr).not.toMatch(/^\s+at /m);
+  });
+
+  test("the skill names the SHELF_HOME repos folder", async () => {
+    const result = await shelf.run(["init", "--no-detect"], { cwd: project });
+    expect(result.exitCode).toBe(0);
+    const text = await readText(join(project, ".agents/skills/shelf/SKILL.md"));
+    expect(text).toContain(`\`${join(shelf.home, "repos")}/{alias}/\``);
+    expect(text).not.toContain("~/.agents/shelf/repos");
+  });
+
+  test("with the default shelf home the skill names ~/.agents/shelf/repos", async () => {
+    const userHome = await realpath(await mkdtemp(join(tmpdir(), "shelf-init-user-home-")));
+    // An empty SHELF_HOME means the default: <home>/.agents/shelf.
+    const defaultShelf = await createShelfSandbox({}, { HOME: userHome, SHELF_HOME: "" });
+    try {
+      const result = await defaultShelf.run(["init", "--no-detect"], { cwd: project });
+      expect(result.exitCode).toBe(0);
+      const text = await readText(join(project, ".agents/skills/shelf/SKILL.md"));
+      expect(text).toBe(skillTemplate("~/.agents/shelf/repos"));
+      expect(text).not.toContain(userHome);
+    } finally {
+      await defaultShelf.cleanup();
+      await rm(userHome, { recursive: true, force: true });
+    }
+  });
 
   test("--no-detect writes the skill and skips detection", async () => {
     await writeText(

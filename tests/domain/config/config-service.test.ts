@@ -310,23 +310,27 @@ describe("ConfigService on a shelf home of its own", () => {
       expect(config).toEqual(defaultConfig);
     });
 
-    test("fails with ConfigParseError on malformed JSON", async () => {
+    test("fails with an invalid-json ConfigParseError naming the syntax error on malformed JSON", async () => {
       await writeFile(configFile, "{not json");
       const error = await Effect.runPromise(Effect.flip((await serviceAt(home)).load()));
       expect(error._tag).toBe("ConfigParseError");
-      expect(error.message).toBe("Failed to read config file");
+      expect(error.reason).toBe("invalid-json");
+      expect(error.message).toMatch(/^config\.json is not valid JSON: \S/);
+      expect(error.message).not.toContain("Failed to read");
     });
 
-    test("fails with ConfigParseError on an empty file", async () => {
+    test("fails with an invalid-json ConfigParseError on an empty file", async () => {
       await writeFile(configFile, "");
       const error = await Effect.runPromise(Effect.flip((await serviceAt(home)).load()));
-      expect(error.message).toBe("Failed to read config file");
+      expect(error.reason).toBe("invalid-json");
+      expect(error.message).toMatch(/^config\.json is not valid JSON: \S/);
     });
 
     test("fails with ConfigParseError when the config can't be read", async () => {
       await mkdir(configFile);
       const error = await Effect.runPromise(Effect.flip((await serviceAt(home)).load()));
       expect(error._tag).toBe("ConfigParseError");
+      expect(error.reason).toBeUndefined();
       expect(error.message).toBe("Failed to read config file");
     });
 

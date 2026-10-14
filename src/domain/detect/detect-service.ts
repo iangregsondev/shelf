@@ -17,6 +17,9 @@ import {
   npmRegistryBaseUrl,
 } from "./detect-utils";
 
+/** How many npm registry lookups `detect` makes at once. */
+const NPM_LOOKUP_CONCURRENCY = 8;
+
 /** The file's text; None when it is missing or can't be read. */
 const readFileOrNone = (fs: FileSystem, path: string): Effect.Effect<Option.Option<string>> =>
   readFileIfExists(fs, path).pipe(Effect.orElseSucceed(() => Option.none<string>()));
@@ -68,33 +71,34 @@ export class DetectService extends Context.Service<DetectService>()(
           const pkgJsonPath = join(dir, "package.json");
           const pkgContent = yield* readFileOrNone(fs, pkgJsonPath);
           if (Option.isSome(pkgContent)) {
-            const deps = parsePackageJson(pkgContent.value);
-            for (const dep of deps) {
-              // `@scope/name` can't be a folder name; the alias is `scope-name`.
-              const alias = deriveAlias(dep.name);
-              const registryUrl = lookupBuiltin(dep.name);
-              if (registryUrl) {
-                detected.push(
-                  new DetectedRepo({
-                    name: alias,
-                    url: registryUrl,
-                    source: "npm",
-                    alreadyShelved: shelvedAliases.has(alias) || shelvedUrls.has(registryUrl),
-                  }),
-                );
-                continue;
-              }
-              const npmUrl = yield* resolveNpmPackage(dep.name);
-              if (Option.isSome(npmUrl)) {
-                detected.push(
-                  new DetectedRepo({
-                    name: alias,
-                    url: npmUrl.value,
-                    source: "npm",
-                    alreadyShelved: shelvedAliases.has(alias) || shelvedUrls.has(npmUrl.value),
-                  }),
-                );
-              }
+            // The built-in registry answers at once; the rest are npm lookups,
+            // made several at a time. forEach keeps package.json order.
+            const npmRepos = yield* Effect.forEach(
+              parsePackageJson(pkgContent.value),
+              (dep) =>
+                Effect.gen(function* () {
+                  const builtin = lookupBuiltin(dep.name);
+                  const url =
+                    builtin === undefined
+                      ? yield* resolveNpmPackage(dep.name)
+                      : Option.some(builtin);
+                  // `@scope/name` can't be a folder name; the alias is `scope-name`.
+                  const alias = deriveAlias(dep.name);
+                  return Option.map(
+                    url,
+                    (value) =>
+                      new DetectedRepo({
+                        name: alias,
+                        url: value,
+                        source: "npm",
+                        alreadyShelved: shelvedAliases.has(alias) || shelvedUrls.has(value),
+                      }),
+                  );
+                }),
+              { concurrency: NPM_LOOKUP_CONCURRENCY },
+            );
+            for (const repo of npmRepos) {
+              if (Option.isSome(repo)) detected.push(repo.value);
             }
           }
 
@@ -106,8 +110,9 @@ export class DetectService extends Context.Service<DetectService>()(
             for (const dep of deps) {
               const goUrl = resolveGoModule(dep.name);
               if (Option.isSome(goUrl)) {
-                // `.../chi/v5` is named `chi`, not `v5`.
-                const alias = deriveAlias(dep.name);
+                // Named after the repo, not the module path: `.../chi/v5` is
+                // `chi`, and `.../aws-sdk-go-v2/service/s3` is `aws-sdk-go-v2`.
+                const alias = deriveAlias(goUrl.value);
                 detected.push(
                   new DetectedRepo({
                     name: alias,

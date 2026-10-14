@@ -110,6 +110,22 @@ describe("daemon start", () => {
     expect(again.exitCode).toBe(1);
     expect(again.stderr).toContain(`already running (PID: ${pid})`);
   }, 20_000);
+
+  test("two concurrent starts launch one daemon; the other reports it running", async () => {
+    const [first, second] = await Promise.all([
+      shelf.run(["daemon", "start"]),
+      shelf.run(["daemon", "start"]),
+    ]);
+    const state = await readState();
+    expect(state).toBeDefined();
+    otherPids.push(state!.pid);
+    const results = [first, second].sort((a, b) => a.exitCode - b.exitCode);
+    expect(results.map((r) => r.exitCode)).toEqual([0, 1]);
+    expect(results[0]!.stdout).toContain(`PID: ${state!.pid}`);
+    expect(results[1]!.stderr).toContain(`already running (PID: ${state!.pid})`);
+    // The loser did not kill the winner.
+    expect(isAlive(state!.pid)).toBe(true);
+  }, 40_000);
 });
 
 describe("daemon start --foreground", () => {

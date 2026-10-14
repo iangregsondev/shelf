@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBareRepo } from "../helpers/temp-repo";
 import { writeText } from "../helpers/files";
+import { git } from "../helpers/process";
 
 const uniqueAlias = (prefix: string): string =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -79,6 +80,72 @@ describe("install command", () => {
     const result = await runShelf(["install", "--dir", tempDir]);
     expect(result.exitCode).toBe(0);
     expect(result.output).toContain("1 already present");
+    expect(result.stderr).not.toContain("Warning");
+
+    await repo.cleanup();
+  });
+
+  test("warns and keeps the stored repo when an existing alias has a different URL", async () => {
+    const alias = uniqueAlias("url-drift");
+    const stored = await createBareRepo({ "lib.ts": "export {};" });
+    const other = await createBareRepo({ "other.ts": "export {};" });
+    await writeText(join(tempDir, "shelffile"), `${alias} ${stored.dir}\n`);
+    await runShelf(["install", "--dir", tempDir]);
+
+    await writeText(join(tempDir, "shelffile"), `${alias} ${other.dir}\n`);
+    const result = await runShelf(["install", "--dir", tempDir]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain(`Warning: "${alias}"`);
+    expect(result.stderr).toContain(stored.dir);
+    expect(result.stderr).toContain(other.dir);
+    expect(result.output).toContain("1 already present");
+    const info = await runShelf(["info", alias]);
+    expect(info.stdout).toContain(stored.dir);
+    expect(info.stdout).not.toContain(other.dir);
+
+    await stored.cleanup();
+    await other.cleanup();
+  });
+
+  test("warns and keeps the stored pin when an existing alias has a different pin", async () => {
+    const alias = uniqueAlias("pin-drift");
+    const repo = await createBareRepo({ "lib.ts": "export {};" });
+    await writeText(join(tempDir, "shelffile"), `${alias} ${repo.dir}\n`);
+    await runShelf(["install", "--dir", tempDir]);
+
+    await writeText(join(tempDir, "shelffile"), `${alias} ${repo.dir} pin:branch:release\n`);
+    const result = await runShelf(["install", "--dir", tempDir]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain(`Warning: "${alias}"`);
+    expect(result.stderr).toContain("(default branch)");
+    expect(result.stderr).toContain("branch:release");
+    const info = await runShelf(["info", alias]);
+    expect(info.stdout).not.toContain("branch:release");
+
+    await repo.cleanup();
+  });
+
+  test("stays silent when the stored entry matches in another form", async () => {
+    const alias = uniqueAlias("same");
+    const repo = await createBareRepo({ "lib.ts": "export {};" });
+    const hash = await git(["rev-parse", "HEAD"], repo.dir);
+    await writeText(
+      join(tempDir, "shelffile"),
+      `${alias} ${repo.dir} pin:commit:${hash.slice(0, 7)}\n`,
+    );
+    const first = await runShelf(["install", "--dir", tempDir]);
+    expect(first.output).toContain(`Added "${alias}"`);
+
+    // The stored pin is the full hash; the shelffile still has the short one.
+    const again = await runShelf(["install", "--dir", tempDir]);
+    expect(again.exitCode).toBe(0);
+    expect(again.stderr).not.toContain("Warning");
+
+    // A trailing .git is the same URL.
+    await writeText(join(tempDir, "shelffile"), `${alias} ${repo.dir}.git pin:${hash}\n`);
+    const normalized = await runShelf(["install", "--dir", tempDir]);
+    expect(normalized.exitCode).toBe(0);
+    expect(normalized.stderr).not.toContain("Warning");
 
     await repo.cleanup();
   });

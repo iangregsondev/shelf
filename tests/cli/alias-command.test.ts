@@ -1,8 +1,8 @@
-// `shelf alias <old> <new>`: a rename, a missing alias and a taken alias.
+// `shelf alias <old> <new>`: a rename, a case-only rename, a missing alias and a taken alias.
 
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
@@ -43,6 +43,16 @@ describe("shelf alias", () => {
     expect(existsSync(join(shelf.home, "repos", "lib"))).toBe(false);
     expect(await storedAliases()).toEqual(["renamed"]);
     expect(await manualAliases()).toEqual(["renamed"]);
+  });
+
+  test("a case-only rename renames the folder, the config entry and the manual reference", async () => {
+    const result = await shelf.run(["alias", "lib", "Lib"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(await readdir(join(shelf.home, "repos"))).toEqual(["Lib"]);
+    expect(existsSync(join(shelf.home, "repos", "Lib", "file.txt"))).toBe(true);
+    expect(await storedAliases()).toEqual(["Lib"]);
+    expect(await manualAliases()).toEqual(["Lib"]);
   });
 
   test("an alias that doesn't exist fails with exit 1 and changes nothing", async () => {

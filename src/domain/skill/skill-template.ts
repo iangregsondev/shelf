@@ -1,8 +1,23 @@
-export const skillTemplate = `---
+import { relative, sep } from "node:path";
+
+/**
+ * How the skill names the repos folder: `~/...` when it sits inside the user's
+ * home folder `home` (so the default reads `~/.agents/shelf/repos` and holds no
+ * user name), otherwise the absolute path.
+ */
+export const skillReposPath = (reposDir: string, home: string): string => {
+  const inside = relative(home, reposDir);
+  if (inside === "") return "~";
+  if (inside.split(sep)[0] === "..") return reposDir;
+  return `~/${inside}`;
+};
+
+/** The shelf skill file, naming `reposPath` as the folder that holds the repos. */
+export const skillTemplate = (reposPath: string): string => `---
 name: shelf
 description: >
   Access code reference repositories managed by shelf. Repos are cached at
-  ~/.agents/shelf/repos/{alias}/ and kept in sync. Use your native tools
+  ${reposPath}/{alias}/ and kept in sync. Use your native tools
   (Grep, Read, Glob) to explore them.
 
   ALWAYS consult this skill before searching for code references, looking up
@@ -21,7 +36,7 @@ description: >
 # Shelf — Code Reference Repos
 
 Shelf maintains a local cache of code reference repositories at
-\`~/.agents/shelf/repos/{alias}/\`. These repos let you answer questions about
+\`${reposPath}/{alias}/\`. These repos let you answer questions about
 library internals, API surfaces, implementation patterns, and real-world
 usage — without searching the web or relying on training data that may be stale.
 
@@ -45,10 +60,10 @@ queries.
 
 1. Run \`shelf list\` to see which repos are available and their local paths.
 2. Use your native tools on those paths:
-   - **Search**: \`Grep\` or \`rg\` on \`~/.agents/shelf/repos/{alias}/\`
+   - **Search**: \`Grep\` or \`rg\` on \`${reposPath}/{alias}/\`
    - **Read files**: \`Read\` on any file in the repo
-   - **Find files**: \`Glob\` with patterns like \`~/.agents/shelf/repos/{alias}/**/*.ts\`
-   - **Explore structure**: \`ls ~/.agents/shelf/repos/{alias}/src/\`
+   - **Find files**: \`Glob\` with patterns like \`${reposPath}/{alias}/**/*.ts\`
+   - **Explore structure**: \`ls ${reposPath}/{alias}/src/\`
 
 ## Workflow
 

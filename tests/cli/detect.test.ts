@@ -135,6 +135,31 @@ describe("detect flags", () => {
     expect(lines[0]).toMatch(/^shelf-detect-fixture \S*\.git$/);
   });
 
+  test("--format shelffile still lists a dependency that is already shelved", async () => {
+    expect((await shelf.run(["detect", "--apply"], { cwd: project })).exitCode).toBe(0);
+
+    const result = await shelf.run(["detect", "--format", "shelffile"], { cwd: project });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trimEnd().split("\n")).toEqual([
+      expect.stringMatching(/^shelf-detect-fixture \S*\.git$/),
+    ]);
+  });
+
+  test("--format shelffile prints nothing to stdout when nothing is detected", async () => {
+    const empty = await mkdtemp(join(tmpdir(), "shelf-detect-empty-"));
+    try {
+      const result = await shelf.run(["detect", "--format", "shelffile"], { cwd: empty });
+
+      expect(result.exitCode).toBe(0);
+      // `detect --format shelffile > shelffile` must leave a shelffile that parses.
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("No repos detected");
+    } finally {
+      await rm(empty, { recursive: true, force: true });
+    }
+  });
+
   test("--apply adds the detected repos, and a second run skips them", async () => {
     const result = await shelf.run(["detect", "--apply"], { cwd: project });
     expect(result.exitCode).toBe(0);

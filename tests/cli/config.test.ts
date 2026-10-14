@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { join } from "node:path";
+import { writeFile } from "node:fs/promises";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createBareRepo } from "../helpers/temp-repo";
 import { readJson } from "../helpers/files";
@@ -38,6 +39,14 @@ describe("shelf config", () => {
     }
   });
 
+  test("reports a config.json with a JSON syntax error as not valid JSON, not a read failure", async () => {
+    await writeFile(join(shelf.home, "config.json"), "{not json");
+    const result = await shelf.run(["config"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toMatch(/config\.json is not valid JSON: \S/);
+    expect(result.stderr).not.toContain("Failed to read config file");
+  });
+
   test("with the version key prints the config version", async () => {
     const result = await shelf.run(["config", "version"]);
     expect(result.exitCode).toBe(0);
@@ -59,6 +68,16 @@ describe("shelf config syncIntervalMinutes", () => {
     expect(set.stderr).toContain("syncIntervalMinutes must be a whole number of 1 or more");
     const get = await shelf.run(["config", "syncIntervalMinutes"]);
     expect(get.stdout.trim()).toBe("60");
+  });
+});
+
+describe("shelf config version <value>", () => {
+  test("fails with exit 1, says version is read-only, and keeps it", async () => {
+    const result = await shelf.run(["config", "version", "2"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("version is read-only");
+    expect(result.stderr).not.toContain("Unknown config key");
+    expect((await shelf.run(["config", "version"])).stdout.trim()).toBe("1");
   });
 });
 

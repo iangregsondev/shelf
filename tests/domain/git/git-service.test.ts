@@ -345,7 +345,7 @@ describe("GitService against a local origin", () => {
       await git(["clone", url, clone]);
       const error = await failGit((service) => service.checkout(clone, "no-such-ref"));
       expect(error._tag).toBe("GitOperationError");
-      expect(error.command).toBe("git checkout --detach no-such-ref --");
+      expect(error.command).toBe("git checkout --detach --force no-such-ref --");
       expect(error.message).toContain("no-such-ref");
     });
 
@@ -371,7 +371,7 @@ describe("GitService against a local origin", () => {
       const missing = join(tempDir, "missing");
       const error = await failGit((service) => service.checkout(missing, "main"));
       expect(error._tag).toBe("GitOperationError");
-      expect(error.command).toBe("git checkout --detach main --");
+      expect(error.command).toBe("git checkout --detach --force main --");
       expect(error.message.length).toBeGreaterThan(0);
     });
 
@@ -632,6 +632,16 @@ describe("GitService against a local origin", () => {
       await runGit((service) => service.checkout(clone, "old"));
       expect(await readText(join(clone, "file.txt"))).toBe("one");
       expect(await readText(join(clone, ".git", "HEAD"))).toBe(`${commits[0]}\n`);
+    });
+
+    test("discards local edits to tracked files, since a reference repo is a cache", async () => {
+      const { url, commits } = await createOrigin();
+      const clone = join(tempDir, "clone");
+      await git(["clone", url, clone]);
+      await writeText(join(clone, "file.txt"), "local edit");
+      await runGit((service) => service.checkout(clone, commits[0]!));
+      expect(await readText(join(clone, "file.txt"))).toBe("one");
+      expect(await git(["status", "--porcelain"], clone)).toBe("");
     });
   });
 });

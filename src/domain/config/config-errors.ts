@@ -1,12 +1,12 @@
 import * as Schema from "effect/Schema";
 
-export class ConfigNotFoundError extends Schema.TaggedError<ConfigNotFoundError>()(
-  "ConfigNotFoundError",
-  { path: Schema.String },
-) {}
-
+/**
+ * config.json could not be loaded. `reason` is "invalid-json" when the file
+ * was read but is not valid JSON; the message then carries the syntax error.
+ */
 export class ConfigParseError extends Schema.TaggedError<ConfigParseError>()("ConfigParseError", {
   message: Schema.String,
+  reason: Schema.optionalKey(Schema.Literal("invalid-json")),
 }) {}
 
 /** Writing, locking or creating shelf state on disk failed. */

@@ -335,6 +335,19 @@ describe("ResolveService", () => {
       );
     });
 
+    test.each([
+      ["null", "null"],
+      ["a number", "42"],
+      ["a string", '"rate limited"'],
+      ["an object whose items is not an array", '{"items":"nope"}'],
+      ["an item without a clone_url", '{"items":[{"name":"cool-lib"}]}'],
+    ])("fails when the GitHub API answers with %s", async (_label, body) => {
+      process.env["SHELF_GITHUB_API_URL"] = await serveRaw(200, body);
+      expect(await failureOf("my-cool-lib")).toEqual(
+        searchError("GitHub API returned an unexpected response"),
+      );
+    });
+
     test("an invalid input fails with the reason, without searching GitHub", async () => {
       process.env["SHELF_GITHUB_API_URL"] = await serveRaw(500, "{}");
       expect(await failureOf("ftp://example.com/repo.git")).toEqual({

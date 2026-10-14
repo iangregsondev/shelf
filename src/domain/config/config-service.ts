@@ -9,7 +9,7 @@ import type { RepoEntry } from "./config-schema";
 import { ShelfConfig, defaultConfig, decodeConfig, encodeConfig } from "./config-schema";
 import { ConfigParseError, ConfigWriteError, type InvalidAliasError } from "./config-errors";
 import { checkAlias, resolveShelfHome } from "./config-utils";
-import { readJsonIfExists } from "./file-store";
+import { readFileIfExists } from "./file-store";
 import { withStateFileLock, writeFileAtomic } from "./state-file-store";
 
 export class ConfigService extends Context.Service<ConfigService>()(
@@ -22,7 +22,7 @@ export class ConfigService extends Context.Service<ConfigService>()(
       const reposDir = join(shelfHome, "repos");
 
       const load = Effect.fn("ConfigService.load")(function* () {
-        const raw = yield* readJsonIfExists(fs, configFile).pipe(
+        const text = yield* readFileIfExists(fs, configFile).pipe(
           Effect.mapError(
             (error) =>
               new ConfigParseError({
@@ -33,11 +33,19 @@ export class ConfigService extends Context.Service<ConfigService>()(
               }),
           ),
         );
-        if (Option.isNone(raw)) {
+        if (Option.isNone(text)) {
           return defaultConfig;
         }
+        const raw = yield* Effect.try({
+          try: (): unknown => JSON.parse(text.value),
+          catch: (error) =>
+            new ConfigParseError({
+              reason: "invalid-json",
+              message: `config.json is not valid JSON: ${String((error as Error).message)}`,
+            }),
+        });
         return yield* Effect.try({
-          try: () => decodeConfig(raw.value),
+          try: () => decodeConfig(raw),
           catch: () => new ConfigParseError({ message: "Invalid config schema" }),
         });
       });

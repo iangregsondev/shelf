@@ -26,14 +26,8 @@ export const initCommand = Command.make("init", { agent, noDetect }, (config) =>
 
     // Step 1: Write skill file (always)
     const skill = yield* SkillService;
-    const skillPath = yield* skill.install(cwd, config.agent).pipe(
-      // An unknown agent keeps its typed error, so the error handler can list the known agents.
-      Effect.mapError((error) =>
-        error._tag === "UnknownAgentError"
-          ? error
-          : new Error(`Failed to write skill file: ${String(error)}`),
-      ),
-    );
+    // Both failures are typed, so the error handler prints each as one line.
+    const skillPath = yield* skill.install(cwd, config.agent);
     yield* Console.log(`Created ${skillPath}`);
 
     // Step 2: Detect and add repos (unless --no-detect)

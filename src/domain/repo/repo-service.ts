@@ -3,7 +3,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
 import { FileSystem } from "effect/FileSystem";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
 import { ConfigService } from "../config/config-service";
 import { checkAlias, errorCode, osError, osErrorMessage } from "../config/config-utils";
@@ -18,10 +19,18 @@ import {
   RepoAlreadyExistsError,
   RepoFolderError,
   RepoNotFoundError,
+  RepoRemoveError,
 } from "./repo-errors";
 import { declaredVersion, deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
-import { dirSize, listFolder, pathExists } from "./repo-store";
+import { dirSize, listFolder, pathExists, sameFolder } from "./repo-store";
+
+/** What `RepoService.remove` removed. */
+export interface RemovedRepo {
+  readonly alias: string;
+  /** True when only a folder was there, with no config entry for it. */
+  readonly orphan: boolean;
+}
 
 /** What is on disk for a reference repo. */
 export interface RepoFolder {
@@ -168,16 +177,38 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
         return resolvedAlias;
       }),
 
+      /**
+       * Removes a reference repo: its folder, then its config entry. A folder
+       * with no config entry (an orphan, which would block `add`) is removed
+       * too. If the folder can't be deleted, the config entry is kept.
+       */
       remove: Effect.fn("RepoService.remove")(function* (aliasOrUrl: string) {
+        const deleteFolder = (alias: string, path: string) =>
+          fs
+            .remove(path, { recursive: true, force: true })
+            .pipe(
+              Effect.mapError(
+                (error) => new RepoRemoveError({ alias, path, message: osErrorMessage(error) }),
+              ),
+            );
         const cfg = yield* config.load();
         const repo = cfg.repos.find(
           (r: RepoEntry) => r.alias === aliasOrUrl || r.url === aliasOrUrl,
         );
         if (!repo) {
-          return yield* new RepoNotFoundError({ alias: aliasOrUrl });
+          // A URL or unsafe name is never an orphan folder's alias.
+          const orphanDir = yield* checkAlias(aliasOrUrl).pipe(
+            Effect.flatMap(config.repoPath),
+            Effect.option,
+          );
+          if (Option.isNone(orphanDir) || !(yield* pathExists(orphanDir.value))) {
+            return yield* new RepoNotFoundError({ alias: aliasOrUrl });
+          }
+          yield* deleteFolder(aliasOrUrl, orphanDir.value);
+          const removed: RemovedRepo = { alias: aliasOrUrl, orphan: true };
+          return removed;
         }
-        const repoDir = yield* config.repoPath(repo.alias);
-        yield* fs.remove(repoDir, { recursive: true, force: true }).pipe(Effect.ignore);
+        yield* deleteFolder(repo.alias, yield* config.repoPath(repo.alias));
         yield* config.update(
           (current) =>
             new ShelfConfig({
@@ -185,13 +216,15 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
               repos: current.repos.filter((r: RepoEntry) => r.alias !== repo.alias),
             }),
         );
-        return repo.alias;
+        const removed: RemovedRepo = { alias: repo.alias, orphan: false };
+        return removed;
       }),
 
       /**
        * Renames a reference repo: its folder, its config entry and its manual
-       * registry entry. If the config can't follow, the folder is moved back,
-       * so the two never disagree.
+       * registry entry. If the config can't follow, the folder is moved back;
+       * if the registry can't, the config entry and the folder are both moved
+       * back, so the three never disagree.
        */
       rename: Effect.fn("RepoService.rename")(function* (from: string, to: string) {
         yield* checkAlias(to);
@@ -204,21 +237,39 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
         }
         const oldPath = yield* config.repoPath(from);
         const newPath = yield* config.repoPath(to);
-        // rename() silently replaces an empty folder, so refuse any folder already there.
-        if (yield* pathExists(newPath)) {
+        // rename() silently replaces an empty folder, so refuse any folder
+        // already there. On a case-insensitive file system a case-only rename
+        // (react -> React) finds the repo's own folder there: that one is fine.
+        if ((yield* pathExists(newPath)) && !(yield* sameFolder(oldPath, newPath))) {
           return yield* new AliasRenameError({
             from,
             to,
             message: `a folder already exists at ${newPath}`,
           });
         }
-        yield* fs
-          .rename(oldPath, newPath)
-          .pipe(
-            Effect.mapError(
-              (error) => new AliasRenameError({ from, to, message: osErrorMessage(error) }),
+        // A case-only rename goes through a temp name, so the file system
+        // can't treat it as a no-op.
+        const caseOnly = oldPath.toLowerCase() === newPath.toLowerCase();
+        const moveFolder = (src: string, dst: string) => {
+          if (!caseOnly) {
+            return fs.rename(src, dst);
+          }
+          const tmp = join(dirname(dst), `.shelf-rename-${randomUUID()}`);
+          return fs.rename(src, tmp).pipe(
+            Effect.andThen(
+              fs.rename(tmp, dst).pipe(
+                /* v8 ignore next -- unreachable in tests: dst was freed by the first step */
+                Effect.onError(() => fs.rename(tmp, src).pipe(Effect.ignore)),
+              ),
             ),
           );
+        };
+        const moveBack = moveFolder(newPath, oldPath).pipe(Effect.ignore);
+        yield* moveFolder(oldPath, newPath).pipe(
+          Effect.mapError(
+            (error) => new AliasRenameError({ from, to, message: osErrorMessage(error) }),
+          ),
+        );
         yield* config
           .updateRepo(from, (repo, current) =>
             current.repos.some((r: RepoEntry) => r.alias === to)
@@ -231,9 +282,24 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
                 ? Effect.fail(new RepoNotFoundError({ alias: from }))
                 : Effect.void,
             ),
-            Effect.onError(() => fs.rename(newPath, oldPath).pipe(Effect.ignore)),
+            Effect.onError(() => moveBack),
           );
-        yield* registry.renameManual(from, to);
+        yield* registry.renameManual(from, to).pipe(
+          Effect.onError(() =>
+            config
+              .updateRepo(to, (repo) => new RepoEntry({ ...repo, alias: from }))
+              .pipe(
+                // Move the folder back only once the config points at it again.
+                Effect.flatMap((restored) => (Option.isSome(restored) ? moveBack : Effect.void)),
+                Effect.ignore,
+              ),
+          ),
+        );
+      }),
+
+      /** Total bytes of every file in the reference repo `alias`'s folder; 0 when it is missing. */
+      size: Effect.fn("RepoService.size")(function* (alias: string) {
+        return yield* dirSize(yield* config.repoPath(alias));
       }),
 
       /** What is on disk for the reference repo `alias`. */
@@ -275,13 +341,13 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
             message: `Package "${packageName}" not found in dependencies or devDependencies`,
           });
         }
-        const stripped = stripSemverRange(version);
         const lsRemoteOutput = yield* git.lsRemoteTags(url);
         const remoteTags = parseRemoteTags(lsRemoteOutput);
-        const matchedTag = findMatchingTag(packageName, stripped, remoteTags);
+        // findMatchingTag strips the semver range itself.
+        const matchedTag = findMatchingTag(packageName, version, remoteTags);
         if (!matchedTag) {
           return yield* new AutoPinResolutionError({
-            message: `No matching tag found for ${packageName}@${stripped}`,
+            message: `No matching tag found for ${packageName}@${stripSemverRange(version)}`,
           });
         }
         return Option.some(new RepoPin({ type: "tag", value: matchedTag }));

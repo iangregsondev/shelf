@@ -60,6 +60,12 @@ const FAKE_DAEMON_SCRIPTS: Record<FakeDaemonKind, string> = {
 
 type Spawn = ChildProcessSpawner["Service"]["spawn"];
 
+/** A spawner on a system without `ps`: spawning it fails, everything else is real. */
+const withoutPs =
+  (real: Spawn): Spawn =>
+  (command) =>
+    isPs(command) ? Effect.fail(failure("spawn")) : real(command);
+
 interface LayerOptions {
   /** The daemon entry point to launch; the built dist/daemon.mjs by default. */
   readonly entry?: string;
@@ -70,6 +76,8 @@ interface LayerOptions {
 describe("DaemonService", () => {
   let tempDir: string;
   let startedPids: number[] = [];
+  /** Foreground runs a test forked; interrupted in afterEach, which stops their daemons. */
+  let foregroundFibers: Fiber.Fiber<unknown, unknown>[] = [];
 
   const configLayer = () => createMockConfigLayer({ shelfHome: tempDir });
 
@@ -224,6 +232,8 @@ describe("DaemonService", () => {
 
   afterEach(async () => {
     delete process.env["SHELF_DAEMON_STOP_TIMEOUT_MS"];
+    for (const fiber of foregroundFibers) await Effect.runPromise(Fiber.interrupt(fiber));
+    foregroundFibers = [];
     await chmod(tempDir, 0o755);
     // Runs even when a test fails: never leave a daemon behind.
     await stopDaemonIn(tempDir, startedPids);
@@ -267,12 +277,15 @@ describe("DaemonService", () => {
       expect(result).toEqual({ running: false, wasStale: true });
     });
 
-    test("treats the daemon as stale when its command line can't be read", async () => {
-      await startFakeDaemon("exits");
-      const result = await runOk((daemon) => daemon.status(), {
-        spawner: (real) => (command) =>
-          isPs(command) ? Effect.fail(failure("spawn")) : real(command),
-      });
+    test("treats a live daemon as running when ps can't be spawned", async () => {
+      const { pid } = await startFakeDaemon("exits");
+      const result = await runOk((daemon) => daemon.status(), { spawner: withoutPs });
+      expect(result).toMatchObject({ running: true, pid });
+    });
+
+    test("treats a dead PID as stale when ps can't be spawned", async () => {
+      await writeStaleState();
+      const result = await runOk((daemon) => daemon.status(), { spawner: withoutPs });
       expect(result).toEqual({ running: false, wasStale: true });
     });
 
@@ -340,6 +353,13 @@ describe("DaemonService", () => {
       expect(existsSync(statePath())).toBe(false);
     }, 20_000);
 
+    test("stops a live daemon when ps can't be spawned", async () => {
+      const { pid } = await startFakeDaemon("exits");
+      await runOk((daemon) => daemon.stop(), { spawner: withoutPs });
+      expect(isAlive(pid)).toBe(false);
+      expect(existsSync(statePath())).toBe(false);
+    });
+
     test("clears the state file a stopped daemon left behind", async () => {
       const { pid } = await startFakeDaemon("exits");
       await runOk((daemon) => daemon.stop());
@@ -369,6 +389,42 @@ describe("DaemonService", () => {
       const { pid } = await startFakeDaemon("exits");
       const error = await errorOf((daemon) => daemon.start());
       expect(error).toMatchObject({ _tag: "DaemonAlreadyRunningError", pid });
+    });
+
+    test("reports a live daemon as already running when ps can't be spawned", async () => {
+      const { pid } = await startFakeDaemon("exits");
+      const error = await errorOf((daemon) => daemon.start(), { spawner: withoutPs });
+      expect(error).toMatchObject({ _tag: "DaemonAlreadyRunningError", pid });
+    });
+
+    test("two concurrent starts launch one daemon; the other reports it running", async () => {
+      const previousHome = process.env["SHELF_HOME"];
+      process.env["SHELF_HOME"] = tempDir;
+      try {
+        const [first, second] = await Promise.all([
+          run((daemon) => daemon.start()),
+          run((daemon) => daemon.start()),
+        ]);
+        const state = (await readJson(statePath())) as { pid: number };
+        startedPids.push(state.pid);
+        const exits = [first, second];
+        const ok = exits.filter(Exit.isSuccess);
+        expect(ok.map((exit) => exit.value)).toEqual([state.pid]);
+        const failed = exits.find(Exit.isFailure);
+        expect(failed && String(failed.cause)).toContain("DaemonAlreadyRunningError");
+        // The loser did not kill the winner.
+        expect(isAlive(state.pid)).toBe(true);
+      } finally {
+        process.env["SHELF_HOME"] = previousHome;
+      }
+    }, 30_000);
+
+    test("fails with DaemonStartError when the state file can't be locked", async () => {
+      // A directory where the lock file goes can never be taken as a lock.
+      await mkdir(`${statePath()}.lock`);
+      const error = await errorOf((daemon) => daemon.start());
+      expect(error._tag).toBe("DaemonStartError");
+      expect(messageOf(error)).toContain("Failed to lock");
     });
 
     test("cleans up stale state and starts a real daemon in the shelf home", async () => {
@@ -467,6 +523,39 @@ describe("DaemonService", () => {
   });
 
   describe("runForeground", () => {
+    test("start waits for a foreground daemon starting up, then reports it running", async () => {
+      const previousHome = process.env["SHELF_HOME"];
+      process.env["SHELF_HOME"] = tempDir;
+      try {
+        const foreground = Effect.runFork(
+          Effect.gen(function* () {
+            return yield* (yield* DaemonService).runForeground();
+          }).pipe(Effect.provide(createTestLayer())),
+        );
+        foregroundFibers.push(foreground);
+        // Let the foreground run take the lock and spawn before start begins.
+        await waitUntil(() => existsSync(`${statePath()}.lock`));
+        const error = await errorOf((daemon) => daemon.start());
+        const state = (await readJson(statePath())) as { pid: number };
+        startedPids.push(state.pid);
+        expect(error).toMatchObject({ _tag: "DaemonAlreadyRunningError", pid: state.pid });
+        // Interrupting the foreground run stops its daemon.
+        await Effect.runPromise(Fiber.interrupt(foreground));
+        await waitUntil(() => !isAlive(state.pid));
+      } finally {
+        process.env["SHELF_HOME"] = previousHome;
+      }
+    }, 30_000);
+
+    test("fails with DaemonStartError when the state file can't be locked", async () => {
+      await mkdir(`${statePath()}.lock`);
+      // Should the lock be skipped, this daemon exits at once rather than running on.
+      const entry = await writeEntry("exits", "process.exit(0);");
+      const error = await errorOf((daemon) => daemon.runForeground(), { entry });
+      expect(error._tag).toBe("DaemonStartError");
+      expect(messageOf(error)).toContain("Failed to lock");
+    });
+
     test("fails with DaemonAlreadyRunningError when a daemon is running", async () => {
       const { pid } = await startFakeDaemon("exits");
       const error = await errorOf((daemon) => daemon.runForeground());
@@ -527,6 +616,11 @@ describe("DaemonService", () => {
     test("returns all lines when fewer than requested", async () => {
       await writeFile(logPath(), "line 1\nline 2\nline 3\n");
       expect(await runOk((daemon) => daemon.logs(50))).toBe("line 1\nline 2\nline 3");
+    });
+
+    test.each([0, -2])("returns no lines when asked for %i, like tail -n 0", async (n) => {
+      await writeFile(logPath(), "line 1\nline 2\nline 3\n");
+      expect(await runOk((daemon) => daemon.logs(n))).toBe("");
     });
   });
 });

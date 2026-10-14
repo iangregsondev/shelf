@@ -3,9 +3,12 @@ import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
 import * as Option from "effect/Option";
 import { FileSystem } from "effect/FileSystem";
+import { homedir } from "node:os";
 import { join } from "node:path";
-import { UnknownAgentError } from "./skill-errors";
-import { skillTemplate } from "./skill-template";
+import { ConfigService } from "../config/config-service";
+import { osErrorMessage } from "../config/config-utils";
+import { SkillWriteError, UnknownAgentError } from "./skill-errors";
+import { skillReposPath, skillTemplate } from "./skill-template";
 import { defaultSkillDir, knownAgents, resolveSkillDir } from "./skill-utils";
 
 export class SkillService extends Context.Service<SkillService>()(
@@ -13,11 +16,15 @@ export class SkillService extends Context.Service<SkillService>()(
   {
     make: Effect.gen(function* () {
       const fs = yield* FileSystem;
+      const config = yield* ConfigService;
+      // The repos folder this shelf home uses, as the skill shows it to agents.
+      const skillText = skillTemplate(skillReposPath(config.reposDir, homedir()));
 
       return {
         /**
          * Writes the shelf skill file into `projectDir`, in the folder `agent`
          * reads skills from, replacing any older copy. Returns its path.
+         * The skill names the shelf home's repos folder (`~/...` inside the user's home).
          * Fails with `UnknownAgentError`, writing nothing, for an agent shelf doesn't know.
          */
         install: Effect.fn("SkillService.install")(function* (
@@ -34,8 +41,12 @@ export class SkillService extends Context.Service<SkillService>()(
           }
           const skillDir = join(projectDir, relativeDir);
           const skillPath = join(skillDir, "SKILL.md");
-          yield* fs.makeDirectory(skillDir, { recursive: true });
-          yield* fs.writeFileString(skillPath, skillTemplate);
+          yield* fs.makeDirectory(skillDir, { recursive: true }).pipe(
+            Effect.andThen(fs.writeFileString(skillPath, skillText)),
+            Effect.mapError(
+              (error) => new SkillWriteError({ path: skillPath, message: osErrorMessage(error) }),
+            ),
+          );
           return skillPath;
         }),
       };

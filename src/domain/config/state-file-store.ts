@@ -12,7 +12,8 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { errorCode } from "./config-utils";
 
@@ -54,45 +55,107 @@ export const parseLockPid = (content: string): number | undefined => {
   return pid > 0 ? pid : undefined;
 };
 
-/** Is the existing lock file at `lockPath` stale (its owner gone)? */
-const isLockStale = async (lockPath: string): Promise<boolean> => {
-  let content: string;
+/**
+ * What a lock entry looked like: which file it was and what it held. Two
+ * snapshots that match are the same lock, not a newer one in its place.
+ */
+interface LockSnapshot {
+  readonly dev: number;
+  readonly ino: number;
+  readonly mtimeMs: number;
+  /** The lock's content; undefined when the entry points at nothing (a dangling link). */
+  readonly content: string | undefined;
+}
+
+/** Snapshots the lock entry at `path`, or undefined when there is none. */
+const snapshotLock = async (path: string): Promise<LockSnapshot | undefined> => {
+  let info: Awaited<ReturnType<typeof lstat>>;
   try {
-    content = await readFile(lockPath, "utf8");
+    info = await lstat(path);
   } catch (error) {
-    // Released between our create attempt and this read: retry at once.
-    if (errorCode(error) === "ENOENT") return true;
+    if (errorCode(error) === "ENOENT") return undefined;
     throw error;
   }
-  const pid = parseLockPid(content);
-  if (pid !== undefined) return !isProcessAlive(pid);
+  let content: string | undefined;
+  try {
+    content = await readFile(path, "utf8");
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") throw error;
+  }
+  return { dev: info.dev, ino: info.ino, mtimeMs: info.mtimeMs, content };
+};
+
+const sameLock = (a: LockSnapshot, b: LockSnapshot): boolean =>
+  a.dev === b.dev && a.ino === b.ino && a.mtimeMs === b.mtimeMs && a.content === b.content;
+
+/** Is this lock stale (its owner gone)? */
+const isLockStale = (lock: LockSnapshot): boolean => {
+  // Points at nothing, as if released between our create attempt and the read.
+  if (lock.content === undefined) return true;
+  const pid = parseLockPid(lock.content);
+  // Fibers in this process take turns before touching the lock file, so a lock
+  // naming this PID was left by an earlier process that had the same PID.
+  if (pid !== undefined) return pid === process.pid || !isProcessAlive(pid);
   // No PID yet: the owner may be mid-write, or crashed before writing one.
-  try {
-    const info = await stat(lockPath);
-    return Date.now() - info.mtimeMs > EMPTY_LOCK_STALE_MS;
-  } catch (error) {
-    /* v8 ignore next -- only when another process removes the lock between our read and stat */
-    if (errorCode(error) === "ENOENT") return true;
-    /* v8 ignore next -- stat failing just after a read of the same file succeeded */
-    throw error;
-  }
+  return Date.now() - lock.mtimeMs > EMPTY_LOCK_STALE_MS;
 };
 
 /**
- * Removes a stale lock without racing another process that is taking it over
- * at the same time: the lock is first renamed to a unique name, so only one
- * process gets to remove the file it judged stale.
+ * Removes the stale lock `seen` without racing another process that is taking
+ * it over at the same time: the lock is first renamed to a unique name, so only
+ * one process gets the file. If what it got is not `seen` (another process took
+ * the stale lock over first and made a fresh one), it puts that lock back and
+ * gives "held". Gives "stale" when the stale lock is gone, to try again at once.
  */
-const takeOverStaleLock = async (lockPath: string): Promise<void> => {
+const takeOverStaleLock = async (
+  lockPath: string,
+  seen: LockSnapshot,
+): Promise<"held" | "stale"> => {
   const claimed = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
   try {
     await rename(lockPath, claimed);
   } catch (error) {
     /* v8 ignore next -- only when another process takes over the same stale lock first */
-    if (errorCode(error) === "ENOENT") return;
+    if (errorCode(error) === "ENOENT") return "stale";
     throw error;
   }
+  const got = await snapshotLock(claimed);
+  // Gone from under its unique name: nothing to put back, so try again.
+  if (got === undefined) return "stale";
+  if (sameLock(got, seen)) {
+    await rm(claimed, { force: true });
+    return "stale";
+  }
+  // A live lock, claimed by mistake: put it back without replacing any lock
+  // made since (link fails if one exists, where rename would overwrite it).
+  try {
+    await link(claimed, lockPath);
+  } catch (error) {
+    if (errorCode(error) !== "EEXIST") throw error;
+  }
   await rm(claimed, { force: true });
+  return "held";
+};
+
+/** Creates the lock file holding this PID; false if a lock file already exists. */
+const createLock = async (lockPath: string): Promise<boolean> => {
+  let handle: FileHandle;
+  try {
+    handle = await open(lockPath, "wx");
+  } catch (error) {
+    if (errorCode(error) === "EEXIST") return false;
+    throw error;
+  }
+  try {
+    await handle.writeFile(String(process.pid));
+  } catch (error) {
+    // Leave no empty lock behind for others to wait on.
+    await handle.close();
+    await rm(lockPath, { force: true });
+    throw error;
+  }
+  await handle.close();
+  return true;
 };
 
 /**
@@ -100,20 +163,12 @@ const takeOverStaleLock = async (lockPath: string): Promise<void> => {
  * "stale" means a dead owner's lock was just removed, so try again at once.
  */
 const attemptLock = async (lockPath: string): Promise<"acquired" | "held" | "stale"> => {
-  try {
-    const handle = await open(lockPath, "wx");
-    try {
-      await handle.writeFile(String(process.pid));
-    } finally {
-      await handle.close();
-    }
-    return "acquired";
-  } catch (error) {
-    if (errorCode(error) !== "EEXIST") throw error;
-  }
-  if (!(await isLockStale(lockPath))) return "held";
-  await takeOverStaleLock(lockPath);
-  return "stale";
+  if (await createLock(lockPath)) return "acquired";
+  const lock = await snapshotLock(lockPath);
+  // Released between our create attempt and the snapshot: retry at once.
+  if (lock === undefined) return "stale";
+  if (!isLockStale(lock)) return "held";
+  return takeOverStaleLock(lockPath, lock);
 };
 
 const acquireLockFile = <E>(
@@ -135,7 +190,9 @@ const acquireLockFile = <E>(
         if (Date.now() > deadline) {
           return yield* Effect.fail(fail(new Error("timed out waiting for another shelf process")));
         }
-        yield* Effect.sleep(Duration.millis(10 + Math.random() * 40));
+        // This runs as acquireUseRelease's uninterruptible acquire; no lock is
+        // held while waiting, so let an interrupt (Ctrl+C) end the wait.
+        yield* Effect.interruptible(Effect.sleep(Duration.millis(10 + Math.random() * 40)));
       }
     }
   });

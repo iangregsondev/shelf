@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dirSize, listFolder, pathExists } from "../../../src/domain/repo/repo-store";
+import { dirSize, listFolder, pathExists, sameFolder } from "../../../src/domain/repo/repo-store";
 import { writeText } from "../../helpers/files";
 
 describe("dirSize", () => {
@@ -83,5 +83,35 @@ describe("pathExists", () => {
 
   test("is false for a missing path", async () => {
     expect(await Effect.runPromise(pathExists(join(dir, "missing")))).toBe(false);
+  });
+});
+
+describe("sameFolder", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "shelf-samefolder-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("is true for two paths to the same folder", async () => {
+    await mkdir(join(dir, "a"));
+    expect(await Effect.runPromise(sameFolder(join(dir, "a"), join(dir, "sub", "..", "a")))).toBe(
+      true,
+    );
+  });
+
+  test("is false for two different folders", async () => {
+    await mkdir(join(dir, "a"));
+    await mkdir(join(dir, "b"));
+    expect(await Effect.runPromise(sameFolder(join(dir, "a"), join(dir, "b")))).toBe(false);
+  });
+
+  test("is false when either path is missing", async () => {
+    await mkdir(join(dir, "a"));
+    expect(await Effect.runPromise(sameFolder(join(dir, "a"), join(dir, "missing")))).toBe(false);
   });
 });

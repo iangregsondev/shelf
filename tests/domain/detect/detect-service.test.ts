@@ -375,6 +375,31 @@ describe("DetectService.detect resolving packages through the npm registry", () 
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  test("asks the registry about several packages at once, and keeps package.json order", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    // Each answer waits a little, so lookups made one at a time never overlap.
+    const server = createServer((request, response) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      const name = decodeURIComponent((request.url ?? "/").slice(1));
+      setTimeout(() => {
+        inFlight--;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ repository: `acme/${name}` }));
+      }, 100);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    stops.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    useRegistry(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+    await writePackageJson({ "pkg-a-xyz": "1", "pkg-b-xyz": "1", "pkg-c-xyz": "1" });
+
+    const result = await detectIn(tempDir);
+
+    expect(result.map((d) => d.name)).toEqual(["pkg-a-xyz", "pkg-b-xyz", "pkg-c-xyz"]);
+    expect(maxInFlight).toBeGreaterThan(1);
+  });
+
   test("uses the repository url the registry gives, normalized to an https clone url", async () => {
     await useStubRegistry({
       "left-pad-xyz": {
@@ -529,6 +554,22 @@ describe("DetectService.detect with unusual manifests", () => {
         name: "chi",
         url: "https://github.com/go-chi/chi.git",
         source: "go",
+      }),
+    ]);
+  });
+
+  test("names a go module in a repo's subfolder after the repo, not the subfolder", async () => {
+    await writeText(
+      join(tempDir, "go.mod"),
+      "module x\n\nrequire github.com/aws/aws-sdk-go-v2/service/s3 v1.50.0\n",
+    );
+
+    const result = await detectIn(tempDir);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        name: "aws-sdk-go-v2",
+        url: "https://github.com/aws/aws-sdk-go-v2.git",
       }),
     ]);
   });

@@ -31,3 +31,10 @@ export class AliasRenameError extends Schema.TaggedError<AliasRenameError>()("Al
   to: Schema.String,
   message: Schema.String,
 }) {}
+
+/** A reference repo's folder could not be deleted; its config entry is kept. */
+export class RepoRemoveError extends Schema.TaggedError<RepoRemoveError>()("RepoRemoveError", {
+  alias: Schema.String,
+  path: Schema.String,
+  message: Schema.String,
+}) {}

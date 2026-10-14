@@ -249,6 +249,38 @@ describe("SyncService", () => {
       expect(synced).toEqual([dir("a"), dir("c")]);
     });
 
+    test("syncs up to four repos at once and reports failures in config order", async () => {
+      const events: Array<string> = [];
+      const aliases = ["a", "b", "c", "d", "e"];
+      const repos = aliases.map((alias) => makeTestRepo({ alias }));
+      // Earlier repos take longer, so they finish last; "b" and "d" fail.
+      const delayMs: Record<string, number> = { a: 80, b: 60, c: 40, d: 20, e: 10 };
+      const aliasOf = (repoDir: string) => repoDir.slice(repoDir.lastIndexOf("/") + 1);
+      const result = await runSyncAll(
+        buildSyncLayer(
+          { load: () => Effect.succeed(configOf(repos)) },
+          {
+            fetch: (repoDir) => {
+              const alias = aliasOf(repoDir);
+              return Effect.gen(function* () {
+                events.push(`start ${alias}`);
+                yield* Effect.sleep(delayMs[alias]!);
+                events.push(`end ${alias}`);
+                if (alias === "b" || alias === "d") {
+                  return yield* new GitOperationError({ command: "git fetch", message: alias });
+                }
+              });
+            },
+          },
+        ),
+      );
+      // The first four start before any finishes; the fifth waits for a free slot.
+      expect(events.slice(0, 4)).toEqual(["start a", "start b", "start c", "start d"]);
+      expect(events.indexOf("start e")).toBeGreaterThan(events.indexOf("end d"));
+      expect(result.total).toBe(5);
+      expect(result.failures.map((f) => f.alias)).toEqual(["b", "d"]);
+    });
+
     test("an empty shelf syncs nothing", async () => {
       const result = await runSyncAll(buildSyncLayer({ load: () => Effect.succeed(configOf([])) }));
       expect(result).toEqual({ total: 0, failures: [] });
@@ -293,7 +325,7 @@ describe("SyncService", () => {
         ),
       );
 
-    test("reports each repo: up to date and behind sync, missing and dirty folders fail", async () => {
+    test("reports each repo: up to date, behind and dirty sync, a missing folder fails", async () => {
       const behind = await clone("behind");
       const dirty = await clone("dirty");
       await writeText(join(dirty, "file.txt"), "local edit");
@@ -305,11 +337,12 @@ describe("SyncService", () => {
       expect(result.total).toBe(4);
       expect(result.failures.map((f) => [f.alias, f.error._tag])).toEqual([
         ["missing", "GitOperationError"],
-        ["dirty", "GitOperationError"],
       ]);
       expect(await git(["rev-parse", "HEAD"], upToDate)).toBe(newest);
       expect(await git(["rev-parse", "HEAD"], behind)).toBe(newest);
-      expect(await git(["rev-parse", "HEAD"], dirty)).toBe(remote.commits.third);
+      // A reference repo is a cache: sync discards local edits.
+      expect(await git(["rev-parse", "HEAD"], dirty)).toBe(newest);
+      expect(await git(["status", "--porcelain"], dirty)).toBe("");
     });
   });
 });

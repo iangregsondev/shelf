@@ -8,6 +8,34 @@ import { ShelffileService } from "../../domain/shelffile/shelffile-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 import type { ShelffileEntry } from "../../domain/shelffile/shelffile-schema";
 import { InstallFailedError } from "../../domain/shelffile/shelffile-errors";
+import type { RepoEntry, RepoPin } from "../../domain/config/config-schema";
+import { describePin } from "../../domain/repo/repo-utils";
+import { normalizeGitUrl } from "../../domain/detect/detect-utils";
+
+// A stored commit pin is the full hash; the shelffile may give a short one.
+const samePin = (stored: Option.Option<RepoPin>, wanted: Option.Option<RepoPin>): boolean => {
+  if (Option.isNone(stored) || Option.isNone(wanted)) {
+    return Option.isNone(stored) && Option.isNone(wanted);
+  }
+  const s = stored.value;
+  const w = wanted.value;
+  if (s.type !== w.type) return false;
+  return s.type === "commit" ? s.value.startsWith(w.value) : s.value === w.value;
+};
+
+/** Where a stored repo differs from its shelffile entry, one line per field. */
+const differences = (stored: RepoEntry, entry: ShelffileEntry): ReadonlyArray<string> => {
+  const lines: string[] = [];
+  if (normalizeGitUrl(stored.url) !== normalizeGitUrl(entry.url)) {
+    lines.push(`URL is "${stored.url}" on the shelf but "${entry.url}" in the shelffile`);
+  }
+  if (!samePin(stored.pin, entry.pin)) {
+    lines.push(
+      `pin is ${describePin(stored.pin)} on the shelf but ${describePin(entry.pin)} in the shelffile`,
+    );
+  }
+  return lines;
+};
 
 const dir = Flag.String("dir").pipe(
   Flag.optional,
@@ -43,7 +71,16 @@ export const installCommand = Command.make("install", { dir, concurrency }, (con
         repo.add({ url: entry.url, alias: Option.some(entry.alias), pin: entry.pin }).pipe(
           Effect.map(() => ({ alias: entry.alias, status: "added" as const })),
           Effect.catchTag("RepoAlreadyExistsError", () =>
-            Effect.succeed({ alias: entry.alias, status: "existing" as const }),
+            Effect.gen(function* () {
+              // Never overwrite the stored repo; only say where it differs.
+              const stored = (yield* repo.list()).find((r) => r.alias === entry.alias);
+              for (const line of stored === undefined ? [] : differences(stored, entry)) {
+                yield* Console.error(
+                  `  Warning: "${entry.alias}" already exists and was left as is: ${line}`,
+                );
+              }
+              return { alias: entry.alias, status: "existing" as const };
+            }),
           ),
           Effect.catchTag("GitOperationError", (error) =>
             Effect.gen(function* () {
