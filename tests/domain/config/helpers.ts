@@ -14,6 +14,8 @@ export type ConfigOverrides = {
   readonly repoPath?: (alias: string) => string;
   /** The shelf home; `reposDir`, `configPath` and the default `repoPath` sit inside it. */
   readonly shelfHome?: string;
+  /** The user's home folder. */
+  readonly userHome?: string;
 };
 
 const defaultConfigImpl = (shelfHome: string) => ({
@@ -23,6 +25,7 @@ const defaultConfigImpl = (shelfHome: string) => ({
   ensureDirectories: (): Effect.Effect<void, ConfigWriteError> => Effect.void,
   repoPath: (alias: string): string => join(shelfHome, "repos", alias),
   shelfHome,
+  userHome: "/tmp/shelf-test-user",
   reposDir: join(shelfHome, "repos"),
   configPath: join(shelfHome, "config.json"),
 });

@@ -293,6 +293,16 @@ describe("ConfigService on a shelf home of its own", () => {
       const svc = await serviceAt("relative-shelf");
       expect(svc.shelfHome).toBe(join(process.cwd(), "relative-shelf"));
     });
+
+    test.skipIf(process.platform === "win32")("give the user's home folder from HOME", async () => {
+      const previous = process.env["HOME"];
+      process.env["HOME"] = "/home/someone";
+      try {
+        expect((await serviceAt(home)).userHome).toBe("/home/someone");
+      } finally {
+        process.env["HOME"] = previous;
+      }
+    });
   });
 
   describe("load", () => {

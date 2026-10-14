@@ -3,7 +3,6 @@ import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
 import * as Option from "effect/Option";
 import { FileSystem } from "effect/FileSystem";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { ConfigService } from "../config/config-service";
 import { osErrorMessage } from "../config/config-utils";
@@ -18,7 +17,7 @@ export class SkillService extends Context.Service<SkillService>()(
       const fs = yield* FileSystem;
       const config = yield* ConfigService;
       // The repos folder this shelf home uses, as the skill shows it to agents.
-      const skillText = skillTemplate(skillReposPath(config.reposDir, homedir()));
+      const skillText = skillTemplate(skillReposPath(config.reposDir, config.userHome));
 
       return {
         /**

@@ -17,7 +17,9 @@ export class ConfigService extends Context.Service<ConfigService>()(
   {
     make: Effect.gen(function* () {
       const fs = yield* FileSystem;
-      const shelfHome = resolveShelfHome(process.env, homedir(), process.cwd());
+      // The only place shelf reads the user's home folder.
+      const userHome = homedir();
+      const shelfHome = resolveShelfHome(process.env, userHome, process.cwd());
       const configFile = join(shelfHome, "config.json");
       const reposDir = join(shelfHome, "repos");
 
@@ -124,6 +126,8 @@ export class ConfigService extends Context.Service<ConfigService>()(
           checkAlias(alias).pipe(Effect.map((safe) => join(reposDir, safe))),
 
         shelfHome,
+        /** The user's home folder, for showing paths inside it as `~/…`. */
+        userHome,
         reposDir,
         configPath: configFile,
       };

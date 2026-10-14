@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SkillWriteError, UnknownAgentError } from "../../../src/domain/skill/skill-errors";
 import { SkillService } from "../../../src/domain/skill/skill-service";
@@ -11,6 +11,8 @@ import { createMockConfigLayer } from "../config/helpers";
 import { readText, writeText } from "../../helpers/files";
 import { PlatformLayer } from "../../helpers/platform";
 
+/** The user's home folder the tests' config reports. */
+const userHome = "/home/someone";
 /** The shelf home the tests' config reports, outside the user's home folder. */
 const shelfHome = "/tmp/shelf-skill-home";
 /** The skill text written for `shelfHome`. */
@@ -19,7 +21,7 @@ const expectedSkill = skillTemplate(join(shelfHome, "repos"));
 const runInstall = (projectDir: string, agent: Option.Option<string>, home = shelfHome) =>
   SkillService.use((skill) => skill.install(projectDir, agent)).pipe(
     Effect.provide(SkillService.layer),
-    Effect.provide(createMockConfigLayer({ shelfHome: home })),
+    Effect.provide(createMockConfigLayer({ shelfHome: home, userHome })),
     Effect.provide(PlatformLayer),
   );
 
@@ -91,11 +93,11 @@ describe("SkillService.install", () => {
   });
 
   test("names the default shelf home's repos folder as ~/.agents/shelf/repos", async () => {
-    const path = await install(projectDir, Option.none(), join(homedir(), ".agents", "shelf"));
+    const path = await install(projectDir, Option.none(), join(userHome, ".agents", "shelf"));
     const text = await readText(path);
     expect(text).toBe(skillTemplate("~/.agents/shelf/repos"));
     expect(text).toContain("`~/.agents/shelf/repos/{alias}/`");
-    expect(text).not.toContain(homedir() + "/");
+    expect(text).not.toContain(userHome + "/");
   });
 
   test("replaces an existing skill file", async () => {
