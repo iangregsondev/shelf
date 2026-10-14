@@ -54,3 +54,17 @@ Dependency direction: `command → service → storage boundary`. Reverse import
 - Registry: `~/.agents/shelf/registry.json`
 - Repos: `~/.agents/shelf/repos/{alias}/`
 - Shelffile: `./shelffile` (per-project)
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `iangregsondev/shelf`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
