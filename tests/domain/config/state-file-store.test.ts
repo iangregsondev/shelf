@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vite-plus/test";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import { spawnSync } from "node:child_process";
 import {
@@ -12,6 +13,7 @@ import {
   utimes,
   writeFile,
 } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -21,6 +23,53 @@ import {
   writeFileAtomic,
 } from "../../../src/domain/config/state-file-store";
 import { runningAsRoot } from "../../helpers/process";
+
+// Hooks into the store's file-system calls, to stage races between processes
+// at exact points. Every hook is cleared after each test.
+const fsHooks = vi.hoisted(() => ({
+  beforeLstat: undefined as undefined | ((path: string) => Promise<void>),
+  afterRename: undefined as undefined | ((from: string, to: string) => Promise<void>),
+  beforeRename: undefined as undefined | ((from: string, to: string) => Promise<void>),
+  link: undefined as undefined | ((from: string, to: string) => Promise<void>),
+  wrapHandle: undefined as undefined | ((handle: FileHandle) => FileHandle),
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    lstat: async (path: string) => {
+      await fsHooks.beforeLstat?.(path);
+      return actual.lstat(path);
+    },
+    rename: async (from: string, to: string) => {
+      await fsHooks.beforeRename?.(from, to);
+      await actual.rename(from, to);
+      await fsHooks.afterRename?.(from, to);
+    },
+    link: async (from: string, to: string) => {
+      await fsHooks.link?.(from, to);
+      return actual.link(from, to);
+    },
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args);
+      return fsHooks.wrapHandle === undefined ? handle : fsHooks.wrapHandle(handle);
+    },
+  };
+});
+
+/** Runs `hook` once, the first time `matches` holds for the call's arguments. */
+const once = <Args extends Array<string>>(
+  matches: (...args: Args) => boolean,
+  hook: (...args: Args) => Promise<void>,
+) => {
+  let done = false;
+  return async (...args: Args): Promise<void> => {
+    if (done || !matches(...args)) return;
+    done = true;
+    await hook(...args);
+  };
+};
 
 class LockError {
   readonly _tag = "LockError";
@@ -83,6 +132,11 @@ describe("state file store on disk", () => {
 
   afterEach(async () => {
     vi.useRealTimers();
+    fsHooks.beforeLstat = undefined;
+    fsHooks.afterRename = undefined;
+    fsHooks.beforeRename = undefined;
+    fsHooks.link = undefined;
+    fsHooks.wrapHandle = undefined;
     await chmod(dir, 0o700);
     await rm(dir, { recursive: true, force: true });
   });
@@ -283,5 +337,110 @@ describe("state file store on disk", () => {
         expect(await exists(lockPath)).toBe(true);
       },
     );
+
+    /** Runs a no-op under the lock, giving up after `ms`; Some when it got the lock. */
+    const runWithin = (ms: number) =>
+      Effect.runPromise(
+        Effect.succeed("ran").pipe(
+          withStateFileLock(statePath, onError),
+          Effect.timeoutOption(Duration.millis(ms)),
+        ),
+      );
+
+    const isClaim = (_from: string, to: string) => to.includes(".stale-");
+
+    test("leaves a fresh lock alone when another process took over the stale lock first", async () => {
+      // Two processes see the same stale lock. The other one renames it aside
+      // and creates its own lock just before this one renames "the stale lock".
+      await writeFile(lockPath, String(deadPid()));
+      fsHooks.beforeRename = once(isClaim, async () => {
+        await rm(lockPath);
+        await writeFile(lockPath, "1");
+      });
+      const result = await runWithin(300);
+      expect(result._tag).toBe("None");
+      expect(await readFile(lockPath, "utf8")).toBe("1");
+      expect(await readdir(dir)).toEqual(["state.json.lock"]);
+    });
+
+    test("leaves a fresh empty lock alone when its owner is mid-write", async () => {
+      await writeFile(lockPath, String(deadPid()));
+      fsHooks.beforeRename = once(isClaim, async () => {
+        await rm(lockPath);
+        await writeFile(lockPath, "");
+      });
+      const result = await runWithin(300);
+      expect(result._tag).toBe("None");
+      expect(await readFile(lockPath, "utf8")).toBe("");
+      expect(await readdir(dir)).toEqual(["state.json.lock"]);
+    });
+
+    test("keeps a newer lock when a fresh lock it claimed by mistake can't go back", async () => {
+      // After this process claims a fresh lock by mistake, a third process
+      // finds no lock and creates one; that newer lock stays in place.
+      await writeFile(lockPath, String(deadPid()));
+      fsHooks.beforeRename = once(isClaim, async () => {
+        await rm(lockPath);
+        await writeFile(lockPath, "1");
+      });
+      // Also PID 1 (always alive); the newline tells the two locks apart.
+      fsHooks.afterRename = once(isClaim, () => writeFile(lockPath, "1\n"));
+      const result = await runWithin(300);
+      expect(result._tag).toBe("None");
+      expect(await readFile(lockPath, "utf8")).toBe("1\n");
+      expect(await readdir(dir)).toEqual(["state.json.lock"]);
+    });
+
+    test("fails through onError when a fresh lock it claimed by mistake can't be put back", async () => {
+      await writeFile(lockPath, String(deadPid()));
+      fsHooks.beforeRename = once(isClaim, async () => {
+        await rm(lockPath);
+        await writeFile(lockPath, "1");
+      });
+      fsHooks.link = () =>
+        Promise.reject(
+          Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" }),
+        );
+      const exit = await runExit(Effect.succeed("ran"));
+      expect(JSON.stringify(exit)).toContain(`Failed to lock ${lockPath}: EPERM`);
+    });
+
+    test("tries again when the lock it claimed vanishes from under its unique name", async () => {
+      await writeFile(lockPath, String(deadPid()));
+      fsHooks.afterRename = once(isClaim, (_from, to) => rm(to));
+      expect(await run(Effect.succeed("ran"))).toBe("ran");
+      expect(await readdir(dir)).toEqual([]);
+    });
+
+    test("fails through onError when the existing lock can't be looked at", async () => {
+      await writeFile(lockPath, "1");
+      fsHooks.beforeLstat = () =>
+        Promise.reject(Object.assign(new Error("EIO: i/o error"), { code: "EIO" }));
+      const exit = await runExit(Effect.succeed("ran"));
+      expect(JSON.stringify(exit)).toContain(`Failed to lock ${lockPath}: EIO`);
+    });
+
+    test("takes the lock at once when the lock is released just after it blocked us", async () => {
+      await writeFile(lockPath, "1");
+      fsHooks.beforeLstat = once<[string]>(
+        (path) => path === lockPath,
+        () => rm(lockPath),
+      );
+      expect(await run(Effect.succeed("ran"))).toBe("ran");
+      expect(await readdir(dir)).toEqual([]);
+    });
+
+    test("removes its new lock file when writing its PID fails", async () => {
+      fsHooks.wrapHandle = (handle) => {
+        handle.writeFile = () =>
+          Promise.reject(
+            Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" }),
+          );
+        return handle;
+      };
+      const exit = await runExit(Effect.succeed("ran"));
+      expect(JSON.stringify(exit)).toContain(`Failed to lock ${lockPath}: ENOSPC`);
+      expect(await readdir(dir)).toEqual([]);
+    });
   });
 });
