@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -6,7 +7,7 @@ import * as Context from "effect/Context";
 import * as Stream from "effect/Stream";
 import { FileSystem } from "effect/FileSystem";
 import * as ChildProcess from "effect/process/ChildProcess";
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
+import { ChildProcessSpawner, type ChildProcessHandle } from "effect/process/ChildProcessSpawner";
 import { ConfigService } from "../config/config-service";
 import { SyncService } from "../sync/sync-service";
 import { DaemonState, encodeDaemonState, decodeDaemonState } from "./daemon-schema";
@@ -26,7 +27,7 @@ import {
 import { defaultConfig } from "../config/config-schema";
 import { parseSyncInterval } from "../config/config-utils";
 import { readFileIfExists, readJsonIfExists } from "../config/file-store";
-import { isProcessAlive } from "../config/state-file-store";
+import { isProcessAlive, withStateFileLock } from "../config/state-file-store";
 import { SHELF_VERSION } from "../../version";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,6 +53,9 @@ const POLL_MS = 50;
 export const DaemonEntry = Context.Reference<string>("shelf/domain/daemon/DaemonEntry", {
   defaultValue: () => fileURLToPath(new URL("./daemon.mjs", import.meta.url)),
 });
+
+const spawnError = (err: unknown): DaemonStartError =>
+  new DaemonStartError({ message: `Failed to spawn daemon process: ${String(err)}` });
 
 /** Where the daemon's stdout and stderr go: appended to the log file, or this terminal. */
 type DaemonOutput = { readonly log: string } | "terminal";
@@ -86,11 +90,20 @@ const daemonCommand = (
   );
 };
 
-/** The command line of a running process, or undefined if there is no such process. */
+/**
+ * What `ps` says about a process: its command line, that there is no such
+ * process, or nothing at all because `ps` is missing or could not be run.
+ */
+type CommandLine =
+  | { readonly _tag: "Found"; readonly commandLine: string }
+  | { readonly _tag: "NotFound" }
+  | { readonly _tag: "Unknown" };
+
+/** The command line of process `pid`, as `ps` reports it. */
 const commandLineOf = (
   spawner: ChildProcessSpawner["Service"],
   pid: number,
-): Effect.Effect<string | undefined> =>
+): Effect.Effect<CommandLine> =>
   Effect.gen(function* () {
     const proc = yield* spawner.spawn(
       ChildProcess.make("ps", ["-ww", "-o", "command=", "-p", String(pid)], {
@@ -104,10 +117,12 @@ const commandLineOf = (
       [Stream.mkString(Stream.decodeText(proc.stdout)), proc.exitCode],
       { concurrency: "unbounded" },
     );
-    return exitCode === 0 ? stdout.trim() : undefined;
+    return exitCode === 0
+      ? ({ _tag: "Found", commandLine: stdout.trim() } as const)
+      : ({ _tag: "NotFound" } as const);
   }).pipe(
     Effect.scoped,
-    Effect.catch(() => Effect.succeed(undefined)),
+    Effect.catch(() => Effect.succeed({ _tag: "Unknown" } as const)),
   );
 
 /** The recorded daemon state, or null when there is none or it can't be read. */
@@ -147,12 +162,18 @@ export class DaemonService extends Context.Service<DaemonService>()(
       const removeState = (): Effect.Effect<void> =>
         fs.remove(statePath, { force: true }).pipe(Effect.catch(() => Effect.void));
 
-      /** Whether `pid` is alive and is the shelf daemon started with `token`. */
+      /**
+       * Whether `pid` is alive and is the shelf daemon started with `token`.
+       * Liveness comes from signal 0, so it needs no external tool. Identity
+       * comes from the command line `ps` reports; where `ps` is missing or
+       * can't be run, a live process is taken to be the daemon.
+       */
       const isShelfDaemon = (pid: number, token: string): Effect.Effect<boolean> =>
         Effect.gen(function* () {
           if (!isProcessAlive(pid)) return false;
-          const commandLine = yield* commandLineOf(spawner, pid);
-          return commandLine !== undefined && isDaemonCommandLine(commandLine, token);
+          const result = yield* commandLineOf(spawner, pid);
+          if (result._tag === "Unknown") return true;
+          return result._tag === "Found" && isDaemonCommandLine(result.commandLine, token);
         });
 
       const verifyDaemon = (
@@ -164,64 +185,97 @@ export class DaemonService extends Context.Service<DaemonService>()(
           return { alive: true, state } as const;
         });
 
+      /** Fails if a daemon is running; otherwise clears any stale state. */
+      const ensureNotRunning = Effect.gen(function* () {
+        const existing = yield* readState();
+        const check = yield* verifyDaemon(existing);
+        if (check.alive) {
+          return yield* Effect.fail(new DaemonAlreadyRunningError({ pid: check.state.pid }));
+        }
+        if (existing) {
+          yield* removeState();
+        }
+      });
+
+      /**
+       * Waits for the daemon `child`, started with `token`, to record itself
+       * as running, and returns its pid; undefined if it exited first. A
+       * daemon that doesn't report running in time is killed.
+       */
+      const awaitRunning = (
+        child: ChildProcessHandle,
+        token: string,
+      ): Effect.Effect<number | undefined, DaemonStartError> =>
+        Effect.gen(function* () {
+          const deadline = Date.now() + START_TIMEOUT_MS;
+          while (true) {
+            const state = yield* readState();
+            if (state && state.token === token && (yield* isShelfDaemon(state.pid, token))) {
+              return state.pid;
+            }
+            const running = yield* child.isRunning.pipe(Effect.orElseSucceed(() => false));
+            if (!running) return undefined;
+            if (Date.now() > deadline) {
+              yield* child.kill({ killSignal: "SIGKILL" }).pipe(Effect.ignore);
+              return yield* Effect.fail(
+                new DaemonStartError({
+                  message: `daemon did not report running within ${START_TIMEOUT_MS / 1000}s; see \`shelf daemon logs\``,
+                }),
+              );
+            }
+            yield* Effect.sleep(POLL_MS);
+          }
+        });
+
+      /** Spawns the daemon unless one is running, and waits for it to report running. */
+      const startUnlocked = Effect.gen(function* () {
+        yield* ensureNotRunning;
+
+        // Rotate log if too large
+        yield* Effect.gen(function* () {
+          const info = yield* fs.stat(logPath);
+          if (Number(info.size) > LOG_MAX_BYTES) {
+            yield* fs.rename(logPath, `${logPath}.1`);
+          }
+        }).pipe(Effect.catch(() => Effect.void));
+
+        const token = generateToken();
+        return yield* Effect.scoped(
+          Effect.gen(function* () {
+            const child = yield* spawner
+              .spawn(daemonCommand(daemonEntry, token, { log: logPath }))
+              .pipe(Effect.mapError(spawnError));
+            // Unreferenced, the daemon outlives this process and the scope.
+            yield* child.unref.pipe(Effect.mapError(spawnError));
+
+            // Return only once the daemon has recorded itself as running.
+            const pid = yield* awaitRunning(child, token);
+            if (pid === undefined) {
+              return yield* Effect.fail(
+                new DaemonStartError({
+                  message: `daemon exited during startup; see \`shelf daemon logs\``,
+                }),
+              );
+            }
+            return pid;
+          }),
+        );
+      });
+
+      /**
+       * Holds the daemon.json lock, so concurrent starts take turns: the
+       * first spawns the daemon and waits for it to report running, and the
+       * next then finds it running instead of spawning a second one.
+       */
+      const withStartLock = withStateFileLock(
+        statePath,
+        (message) => new DaemonStartError({ message }),
+      );
+
       return {
         start: Effect.fn("DaemonService.start")(function* () {
           yield* config.ensureDirectories();
-          const existing = yield* readState();
-          const check = yield* verifyDaemon(existing);
-          if (check.alive) {
-            return yield* Effect.fail(new DaemonAlreadyRunningError({ pid: check.state.pid }));
-          }
-          if (existing) {
-            yield* removeState();
-          }
-
-          // Rotate log if too large
-          yield* Effect.gen(function* () {
-            const info = yield* fs.stat(logPath);
-            if (Number(info.size) > LOG_MAX_BYTES) {
-              yield* fs.rename(logPath, `${logPath}.1`);
-            }
-          }).pipe(Effect.catch(() => Effect.void));
-
-          const token = generateToken();
-          const spawnError = (err: unknown): DaemonStartError =>
-            new DaemonStartError({ message: `Failed to spawn daemon process: ${String(err)}` });
-          return yield* Effect.scoped(
-            Effect.gen(function* () {
-              const child = yield* spawner
-                .spawn(daemonCommand(daemonEntry, token, { log: logPath }))
-                .pipe(Effect.mapError(spawnError));
-              // Unreferenced, the daemon outlives this process and the scope.
-              yield* child.unref.pipe(Effect.mapError(spawnError));
-
-              // Return only once the daemon has recorded itself as running.
-              const deadline = Date.now() + START_TIMEOUT_MS;
-              while (true) {
-                const state = yield* readState();
-                if (state && state.token === token && (yield* isShelfDaemon(state.pid, token))) {
-                  return state.pid;
-                }
-                const running = yield* child.isRunning.pipe(Effect.orElseSucceed(() => false));
-                if (!running) {
-                  return yield* Effect.fail(
-                    new DaemonStartError({
-                      message: `daemon exited during startup; see \`shelf daemon logs\``,
-                    }),
-                  );
-                }
-                if (Date.now() > deadline) {
-                  yield* child.kill({ killSignal: "SIGKILL" }).pipe(Effect.ignore);
-                  return yield* Effect.fail(
-                    new DaemonStartError({
-                      message: `daemon did not report running within ${START_TIMEOUT_MS / 1000}s; see \`shelf daemon logs\``,
-                    }),
-                  );
-                }
-                yield* Effect.sleep(POLL_MS);
-              }
-            }),
-          );
+          return yield* withStartLock(startUnlocked);
         }),
 
         /**
@@ -232,32 +286,28 @@ export class DaemonService extends Context.Service<DaemonService>()(
          */
         runForeground: Effect.fn("DaemonService.runForeground")(function* () {
           yield* config.ensureDirectories();
-          const existing = yield* readState();
-          const check = yield* verifyDaemon(existing);
-          if (check.alive) {
-            return yield* new DaemonAlreadyRunningError({ pid: check.state.pid });
-          }
-          if (existing) {
-            yield* removeState();
-          }
-          const token = generateToken();
           yield* Effect.scoped(
             Effect.gen(function* () {
-              const child = yield* spawner
-                .spawn(daemonCommand(daemonEntry, token, "terminal"))
-                .pipe(
-                  Effect.mapError(
-                    (err) =>
-                      new DaemonStartError({
-                        message: `Failed to spawn daemon process: ${String(err)}`,
-                      }),
-                  ),
-                );
-              // On interrupt, SIGTERM the daemon and wait for it to finish its step.
-              yield* child.exitCode.pipe(
-                Effect.onInterrupt(() => child.kill({ killSignal: "SIGTERM" }).pipe(Effect.ignore)),
-                Effect.ignore,
+              // Like start, hold the lock until the daemon has recorded itself,
+              // so a concurrent start sees it running; then release it.
+              const child = yield* withStartLock(
+                Effect.gen(function* () {
+                  yield* ensureNotRunning;
+                  const token = generateToken();
+                  const child = yield* spawner
+                    .spawn(daemonCommand(daemonEntry, token, "terminal"))
+                    .pipe(Effect.mapError(spawnError));
+                  // On interrupt, SIGTERM the daemon so it finishes its step and exits.
+                  yield* Effect.addFinalizer((exit) =>
+                    Exit.hasInterrupts(exit)
+                      ? child.kill({ killSignal: "SIGTERM" }).pipe(Effect.ignore)
+                      : Effect.void,
+                  );
+                  yield* awaitRunning(child, token);
+                  return child;
+                }),
               );
+              yield* child.exitCode.pipe(Effect.ignore);
             }),
           );
         }),
