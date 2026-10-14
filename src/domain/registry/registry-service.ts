@@ -19,6 +19,11 @@ export interface ReferenceScan {
   /** Aliases the manual list or a project's shelffile references. */
   readonly aliases: ReadonlySet<string>;
   /**
+   * The registry's project folders whose shelffile names each alias, in
+   * registry order. The manual list is not included.
+   */
+  readonly projectsByAlias: ReadonlyMap<string, ReadonlyArray<string>>;
+  /**
    * True when some project's references couldn't be worked out at all, so any
    * repo might still be wanted.
    */
@@ -160,6 +165,15 @@ export class RegistryService extends Context.Service<RegistryService>()(
         scanReferences: Effect.fn("RegistryService.scanReferences")(function* () {
           const registry = yield* load();
           const aliases = new Set<string>(registry.manual);
+          const projectsByAlias = new Map<string, string[]>();
+          const addProjectAliases = (projectDir: string, named: Iterable<string>) => {
+            for (const alias of named) {
+              aliases.add(alias);
+              const projects = projectsByAlias.get(alias) ?? [];
+              projects.push(projectDir);
+              projectsByAlias.set(alias, projects);
+            }
+          };
           const staleProjects: string[] = [];
           const warnings: string[] = [];
           let anyMightBeReferenced = false;
@@ -193,7 +207,10 @@ export class RegistryService extends Context.Service<RegistryService>()(
               ),
             );
             if ("entries" in outcome) {
-              for (const entry of outcome.entries) aliases.add(entry.alias);
+              addProjectAliases(
+                projectDir,
+                outcome.entries.map((entry) => entry.alias),
+              );
               continue;
             }
 
@@ -207,13 +224,19 @@ export class RegistryService extends Context.Service<RegistryService>()(
               );
               continue;
             }
-            for (const alias of possible) aliases.add(alias);
+            addProjectAliases(projectDir, possible);
             warnings.push(
               `Can't parse ${shelffilePath} (${outcome.parseError}); keeping every repo it names.`,
             );
           }
 
-          const scan: ReferenceScan = { aliases, anyMightBeReferenced, staleProjects, warnings };
+          const scan: ReferenceScan = {
+            aliases,
+            projectsByAlias,
+            anyMightBeReferenced,
+            staleProjects,
+            warnings,
+          };
           return scan;
         }),
 

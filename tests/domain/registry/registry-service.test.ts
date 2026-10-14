@@ -98,20 +98,33 @@ describe("RegistryService", () => {
         { alias: "lib-b", url: "https://github.com/test/lib-b.git", pin: Option.none() },
       ],
     };
+    const otherDir = await mkdtemp(join(tmpdir(), "shelf-project-"));
+    const otherData: Shelffile = {
+      entries: [{ alias: "lib-a", url: "https://github.com/test/lib-a.git", pin: Option.none() }],
+    };
     const layer = buildLayer({
       read: (dir: string) => {
         if (dir === projectDir) return Effect.succeed(shelffileData);
+        if (dir === otherDir) return Effect.succeed(otherData);
         return Effect.fail(new ShelffileNotFoundError({ path: dir }));
       },
     });
-    const result = await Effect.runPromise(
+    const scan = await Effect.runPromise(
       Effect.gen(function* () {
         const svc = yield* RegistryService;
         yield* svc.addManual("manual-repo");
         yield* svc.registerProject(projectDir);
-        return (yield* svc.scanReferences()).aliases;
+        yield* svc.registerProject(otherDir);
+        return yield* svc.scanReferences();
       }).pipe(Effect.provide(layer)),
     );
+    const result = scan.aliases;
+    // Which projects name each alias; the manual list is not a project.
+    expect(Object.fromEntries(scan.projectsByAlias)).toEqual({
+      "lib-a": [projectDir, otherDir],
+      "lib-b": [projectDir],
+    });
+    await rm(otherDir, { recursive: true, force: true });
     expect(result.has("lib-a")).toBe(true);
     expect(result.has("lib-b")).toBe(true);
     expect(result.has("manual-repo")).toBe(true);
@@ -360,6 +373,10 @@ describe("RegistryService edge cases", () => {
       });
       const scan = await run((svc) => svc.scanReferences(), layer);
       expect([...scan.aliases].sort()).toEqual(["lib-a", "lib-b"]);
+      expect(Object.fromEntries(scan.projectsByAlias)).toEqual({
+        "lib-a": [projectDir],
+        "lib-b": [projectDir],
+      });
       expect(scan.anyMightBeReferenced).toBe(false);
       expect(scan.warnings).toEqual([
         `Can't parse ${join(projectDir, "shelffile")} (bad line 3); keeping every repo it names.`,

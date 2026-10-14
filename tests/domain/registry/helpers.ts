@@ -30,6 +30,7 @@ const defaultRegistryImpl = {
   scanReferences: (): Effect.Effect<ReferenceScan, RegistryParseError> =>
     Effect.succeed({
       aliases: new Set<string>(),
+      projectsByAlias: new Map<string, ReadonlyArray<string>>(),
       anyMightBeReferenced: false,
       staleProjects: [],
       warnings: [],

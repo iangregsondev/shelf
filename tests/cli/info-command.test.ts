@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createRemote, type Remote } from "../helpers/git-remote";
+import { writeText } from "../helpers/files";
 
 let shelf: ShelfSandbox;
 let tempDir: string;
@@ -63,5 +64,48 @@ describe("shelf info", () => {
     expect(result.stderr).toContain(
       'Repo "missing" not found. Run `shelf list` to see available repos.',
     );
+  });
+
+  test("lists the projects whose shelffile uses the repo", async () => {
+    const project = join(tempDir, "project");
+    await writeText(join(project, "shelffile"), `lib ${remote.url}\n`);
+    expect((await shelf.run(["install", "--dir", project])).exitCode).toBe(0);
+
+    const result = await shelf.run(["info", "lib"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(`Referenced:  ${project}\n`);
+  });
+
+  test("a relative registry entry is not read against the working directory", async () => {
+    expect((await shelf.run(["add", remote.url, "--alias", "lib"])).exitCode).toBe(0);
+    // An older shelf recorded projects as relative paths.
+    await writeText(
+      join(shelf.home, "registry.json"),
+      JSON.stringify({ projects: ["proj"], manual: [] }),
+    );
+    const cwd = join(tempDir, "cwd");
+    await writeText(join(cwd, "proj", "shelffile"), `lib ${remote.url}\n`);
+
+    const result = await shelf.run(["info", "lib"], { cwd });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain('Warning: Registry entry "proj" is a relative path');
+    expect(result.stdout).not.toContain("Referenced:  proj");
+    expect(result.stdout).not.toContain("candidate for `shelf prune`");
+    expect(result.stdout).toContain("Referenced:  unknown (see the warnings above)\n");
+  });
+
+  test("still names a project whose shelffile no longer parses, with a warning", async () => {
+    const project = join(tempDir, "project");
+    await writeText(join(project, "shelffile"), `lib ${remote.url}\n`);
+    expect((await shelf.run(["install", "--dir", project])).exitCode).toBe(0);
+    await writeText(join(project, "shelffile"), `lib ${remote.url}\njunk\n`);
+
+    const result = await shelf.run(["info", "lib"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain(`Warning: Can't parse ${join(project, "shelffile")}`);
+    expect(result.stdout).toContain(`Referenced:  ${project}\n`);
   });
 });
