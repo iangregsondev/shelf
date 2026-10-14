@@ -9,7 +9,7 @@ const skillFilePath = join(import.meta.dirname, "../../.claude/skills/shelf/SKIL
 describe("shelf skill", () => {
   test("init template is identical to the repo's skill file", async () => {
     const skillFile = await readText(skillFilePath);
-    expect(skillTemplate).toBe(skillFile);
+    expect(skillTemplate("~/.agents/shelf/repos")).toBe(skillFile);
   });
 
   test("description fits the 1,024-character skill limit", async () => {

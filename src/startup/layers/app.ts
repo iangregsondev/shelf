@@ -27,7 +27,7 @@ const RepoLive = RepoService.layer.pipe(
 const ResolveLive = ResolveService.layer;
 const DetectLive = DetectService.layer.pipe(Layer.provide(ConfigLive));
 const DaemonLive = DaemonService.layer.pipe(Layer.provide(ConfigLive));
-const SkillLive = SkillService.layer;
+const SkillLive = SkillService.layer.pipe(Layer.provide(ConfigLive));
 export const AppLayer = Layer.mergeAll(
   ConfigLive,
   GitLive,
