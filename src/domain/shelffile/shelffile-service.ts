@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
 import { join } from "node:path";
 import { ShelffileNotFoundError, ShelffileParseError } from "./shelffile-errors";
 import { parseShelffile, serializeShelffile } from "./shelffile-utils";
@@ -8,7 +8,7 @@ import type { Shelffile } from "./shelffile-schema";
 
 const SHELFFILE_NAME = "shelffile";
 
-export class ShelffileService extends ServiceMap.Service<ShelffileService>()(
+export class ShelffileService extends Context.Service<ShelffileService>()(
 	"shelf/domain/shelffile/ShelffileService",
 	{
 		make: Effect.gen(function* () {

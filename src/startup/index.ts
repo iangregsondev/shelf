@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { runMain } from "@effect/platform-bun/BunRuntime";
 import { layer as BunServicesLayer } from "@effect/platform-bun/BunServices";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 import { addCommand } from "../cli/commands/add";
 import { removeCommand } from "../cli/commands/remove";
 import { listCommand } from "../cli/commands/list";

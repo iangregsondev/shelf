@@ -1,13 +1,13 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
-import { Argument, Command } from "effect/unstable/cli";
+import { Argument, Command } from "effect/cli";
 import { ConfigService } from "../../domain/config/config-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 import { RepoNotFoundError, RepoAlreadyExistsError } from "../../domain/repo/repo-errors";
 import { RepoEntry, ShelfConfig } from "../../domain/config/config-schema";
 
-const oldAlias = Argument.string("old");
-const newAlias = Argument.string("new");
+const oldAlias = Argument.String("old");
+const newAlias = Argument.String("new");
 
 export const aliasCommand = Command.make("alias", { oldAlias, newAlias }, (config) =>
 	Effect.gen(function* () {

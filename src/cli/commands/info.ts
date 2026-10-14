@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Argument, Command } from "effect/unstable/cli";
+import { Argument, Command } from "effect/cli";
 import { ConfigService } from "../../domain/config/config-service";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
@@ -10,7 +10,7 @@ import { RepoNotFoundError } from "../../domain/repo/repo-errors";
 import type { RepoEntry } from "../../domain/config/config-schema";
 import { dirSize } from "../../domain/repo/repo-utils";
 
-const alias = Argument.string("alias");
+const alias = Argument.String("alias");
 
 export const infoCommand = Command.make("info", { alias }, (config) =>
 	Effect.gen(function* () {

@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ShelfConfig } from "./config-schema";
@@ -11,7 +11,7 @@ const SHELF_DIR = join(homedir(), ".agents", "shelf");
 const CONFIG_PATH = join(SHELF_DIR, "config.json");
 const REPOS_DIR = join(SHELF_DIR, "repos");
 
-export class ConfigService extends ServiceMap.Service<ConfigService>()(
+export class ConfigService extends Context.Service<ConfigService>()(
 	"shelf/domain/config/ConfigService",
 	{
 		make: Effect.gen(function* () {

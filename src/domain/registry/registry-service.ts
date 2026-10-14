@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
 import { join } from "node:path";
 import { ConfigService } from "../config/config-service";
 import { ShelffileService } from "../shelffile/shelffile-service";
@@ -9,7 +9,7 @@ import { RegistryParseError } from "./registry-errors";
 
 const REGISTRY_FILE = "registry.json";
 
-export class RegistryService extends ServiceMap.Service<RegistryService>()(
+export class RegistryService extends Context.Service<RegistryService>()(
 	"shelf/domain/registry/RegistryService",
 	{
 		make: Effect.gen(function* () {

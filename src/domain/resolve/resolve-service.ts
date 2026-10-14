@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
 import { ResolvedRepo } from "./resolve-schema";
 import { ResolveError } from "./resolve-errors";
 import {
@@ -53,7 +53,7 @@ const resolveViaGitHubApi = Effect.fn("resolveViaGitHubApi")(function* (name: st
 	});
 });
 
-export class ResolveService extends ServiceMap.Service<ResolveService>()(
+export class ResolveService extends Context.Service<ResolveService>()(
 	"shelf/domain/resolve/ResolveService",
 	{
 		make: Effect.gen(function* () {

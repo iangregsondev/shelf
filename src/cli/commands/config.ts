@@ -1,12 +1,12 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Argument, Command } from "effect/unstable/cli";
+import { Argument, Command } from "effect/cli";
 import { ConfigService } from "../../domain/config/config-service";
 import { ShelfConfig } from "../../domain/config/config-schema";
 
-const key = Argument.string("key").pipe(Argument.optional);
-const value = Argument.string("value").pipe(Argument.optional);
+const key = Argument.String("key").pipe(Argument.optional);
+const value = Argument.String("value").pipe(Argument.optional);
 
 export const configCommand = Command.make("config", { key, value }, (args) =>
 	Effect.gen(function* () {

@@ -1,15 +1,15 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Argument, Command } from "effect/unstable/cli";
+import { Argument, Command } from "effect/cli";
 import { ConfigService } from "../../domain/config/config-service";
 import { SyncService } from "../../domain/sync/sync-service";
 import { RepoNotFoundError } from "../../domain/repo/repo-errors";
 import { RepoEntry, ShelfConfig } from "../../domain/config/config-schema";
 import { parsePin } from "../../domain/repo/repo-utils";
 
-const alias = Argument.string("alias");
-const ref = Argument.string("ref");
+const alias = Argument.String("alias");
+const ref = Argument.String("ref");
 
 export const pinCommand = Command.make("pin", { alias, ref }, (config) =>
 	Effect.gen(function* () {

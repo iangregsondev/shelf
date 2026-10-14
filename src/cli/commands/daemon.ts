@@ -1,10 +1,10 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { DaemonService } from "../../domain/daemon/daemon-service";
 
-const startForeground = Flag.boolean("foreground").pipe(
+const startForeground = Flag.Boolean("foreground").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription("Run daemon in foreground (for debugging)"),
 );
@@ -53,7 +53,7 @@ const statusCommand = Command.make("status", {}, () =>
 	}),
 ).pipe(Command.withDescription("Show daemon status"));
 
-const logLines = Flag.integer("lines").pipe(
+const logLines = Flag.Int("lines").pipe(
 	Flag.withDefault(50),
 	Flag.withDescription("Number of log lines to show"),
 );

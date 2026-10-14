@@ -1,25 +1,25 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Argument, Command, Flag } from "effect/unstable/cli";
+import { Argument, Command, Flag } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 import { ResolveService } from "../../domain/resolve/resolve-service";
 import { parsePin } from "../../domain/repo/repo-utils";
 
-const repo = Argument.string("repo");
-const alias = Flag.string("alias").pipe(Flag.optional, Flag.withDescription("Alias for the repo"));
-const pin = Flag.string("pin").pipe(
+const repo = Argument.String("repo");
+const alias = Flag.String("alias").pipe(Flag.optional, Flag.withDescription("Alias for the repo"));
+const pin = Flag.String("pin").pipe(
 	Flag.optional,
 	Flag.withDescription(
 		"Pin to branch:<name>, tag:<name>, a commit hash, or 'auto' to resolve from package.json",
 	),
 );
-const depth = Flag.integer("depth").pipe(
+const depth = Flag.Int("depth").pipe(
 	Flag.optional,
 	Flag.withDescription("Clone depth for shallow clones (e.g., 1 for latest only)"),
 );
-const sparse = Flag.string("sparse").pipe(
+const sparse = Flag.String("sparse").pipe(
 	Flag.optional,
 	Flag.withDescription("Comma-separated sparse checkout paths (e.g., 'src,packages/core')"),
 );

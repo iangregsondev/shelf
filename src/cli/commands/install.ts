@@ -1,18 +1,18 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { ShelffileService } from "../../domain/shelffile/shelffile-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 import type { ShelffileEntry } from "../../domain/shelffile/shelffile-schema";
 
-const dir = Flag.string("dir").pipe(
+const dir = Flag.String("dir").pipe(
 	Flag.optional,
 	Flag.withDescription("Directory containing the shelffile (defaults to cwd)"),
 );
 
-const concurrency = Flag.integer("concurrency").pipe(
+const concurrency = Flag.Int("concurrency").pipe(
 	Flag.withDefault(4),
 	Flag.withDescription("Number of repos to clone in parallel (default: 4)"),
 );

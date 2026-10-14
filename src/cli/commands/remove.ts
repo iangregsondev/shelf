@@ -1,10 +1,10 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
-import { Argument, Command } from "effect/unstable/cli";
+import { Argument, Command } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 
-const aliasOrUrl = Argument.string("alias-or-url");
+const aliasOrUrl = Argument.String("alias-or-url");
 
 export const removeCommand = Command.make("remove", { aliasOrUrl }, (config) =>
 	Effect.gen(function* () {

@@ -1,11 +1,11 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
 import type { RepoPin } from "../config/config-schema";
 import { runGit } from "./git-utils";
 
-export class GitService extends ServiceMap.Service<GitService>()("shelf/domain/git/GitService", {
+export class GitService extends Context.Service<GitService>()("shelf/domain/git/GitService", {
 	make: Effect.gen(function* () {
 		return {
 			clone: Effect.fn("GitService.clone")(function* (

@@ -1,18 +1,18 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { ShelffileService } from "../../domain/shelffile/shelffile-service";
 import type { RepoEntry } from "../../domain/config/config-schema";
 import { serializeShelffile } from "../../domain/shelffile/shelffile-utils";
 import type { ShelffileEntry } from "../../domain/shelffile/shelffile-schema";
 
-const filter = Flag.string("filter").pipe(
+const filter = Flag.String("filter").pipe(
 	Flag.optional,
 	Flag.withDescription("Comma-separated aliases to include"),
 );
-const stdout = Flag.boolean("stdout").pipe(
+const stdout = Flag.Boolean("stdout").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription("Print to stdout instead of writing shelffile"),
 );

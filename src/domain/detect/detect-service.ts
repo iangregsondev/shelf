@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
 import { join } from "node:path";
 import { ConfigService } from "../config/config-service";
 import { builtinRegistry } from "../resolve/resolve-utils";
@@ -47,7 +47,7 @@ const resolveNpmPackage = (name: string): Effect.Effect<Option.Option<string>> =
 		return Option.some(normalizeGitUrl(repoUrl));
 	});
 
-export class DetectService extends ServiceMap.Service<DetectService>()(
+export class DetectService extends Context.Service<DetectService>()(
 	"shelf/domain/detect/DetectService",
 	{
 		make: Effect.gen(function* () {

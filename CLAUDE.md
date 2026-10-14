@@ -29,19 +29,20 @@ Domains: `config`, `git`, `sync`, `repo`, `shelffile`, `registry`.
 
 Dependency direction: `command → service → storage boundary`. Reverse imports forbidden.
 
-## Effect-TS v4 Patterns
+## Effect-TS v4 Patterns (effect 4.0.4)
 
-- Services use `ServiceMap.Service<Self>()("tag", { make })` with `static layer`
+- Services use `Context.Service<Self>()("tag", { make })` (`import * as Context from "effect/Context"`) with `static layer`
 - Methods use `Effect.fn("ClassName.methodName")(function* (args) { ... })`
 - Zero-arg methods still need `()` to call: `service.method()`
-- Errors use `Schema.TaggedErrorClass<Self>()("Tag", { fields })`
-- `Schema.Literal` accepts a single value; for unions use `Schema.Union([Schema.Literal("a"), Schema.Literal("b")])`
+- Errors use `Schema.TaggedError<Self>()("Tag", { fields })`; an error's `name` equals its tag
+- `Schema.Literal` accepts a single value; for unions use `Schema.Union([Schema.Literal("a"), Schema.Literal("b")])` or `Schema.Literals(["a", "b"])`
 - Optional fields decoded to `Option`: use `Schema.OptionFromOptionalKey(schema)`
 - `Effect.catch` replaces v3's `Effect.catchAll`
 - `Effect.catchTag` still works for tagged error handling
-- Import CLI from `effect/unstable/cli` (`Command`, `Flag`, `Argument`)
+- Import CLI from `effect/cli` (`Command`, `Flag`, `Argument`); constructors are PascalCase: `Flag.String`, `Flag.Boolean`, `Flag.Int`, `Argument.String`
 - Import BunRuntime from `@effect/platform-bun/BunRuntime`
 
+- Versions are pinned exactly and `bun.lock` is committed; bump `effect` and `@effect/platform-bun` together
 ## Testing
 
 - Tests mirror source in `tests/domain/{domain}/`

@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { ConfigService } from "../../domain/config/config-service";
 import type { RepoEntry } from "../../domain/config/config-schema";

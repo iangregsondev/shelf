@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
 import { ConfigService } from "../config/config-service";
 import { SyncService } from "../sync/sync-service";
 import { DaemonState, encodeDaemonState, decodeDaemonState } from "./daemon-schema";
@@ -38,7 +38,7 @@ const formatUptime = (startedAt: string): string => {
 	return `${seconds}s`;
 };
 
-export class DaemonService extends ServiceMap.Service<DaemonService>()(
+export class DaemonService extends Context.Service<DaemonService>()(
 	"shelf/domain/daemon/DaemonService",
 	{
 		make: Effect.gen(function* () {

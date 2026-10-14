@@ -1,20 +1,20 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { DetectService } from "../../domain/detect/detect-service";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 
-const apply = Flag.boolean("apply").pipe(
+const apply = Flag.Boolean("apply").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription("Add all detected repos to shelf"),
 );
-const format = Flag.string("format").pipe(
+const format = Flag.String("format").pipe(
 	Flag.optional,
 	Flag.withDescription("Output format: 'shelffile' for shelffile-compatible output"),
 );
-const dir = Flag.string("dir").pipe(
+const dir = Flag.String("dir").pipe(
 	Flag.optional,
 	Flag.withDescription("Directory to scan (defaults to current directory)"),
 );

@@ -17,7 +17,7 @@
 	"scripts": {
 		"shelf": "bun run src/startup/index.ts",
 		"typecheck": "tsgo --noEmit",
-		"test": "bun test",
+		"test": "HOME=$(mktemp -d) bun test",
 		"format": "oxfmt src tests",
 		"format:check": "oxfmt --check src tests",
 		"lint": "oxlint --tsconfig tsconfig.json src tests",
@@ -26,12 +26,13 @@
 		"fix": "oxfmt src tests && oxlint --fix --tsconfig tsconfig.json src tests"
 	},
 	"dependencies": {
-		"@effect/platform-bun": "4.0.0-beta.31",
-		"effect": "4.0.0-beta.31"
+		"@effect/platform-bun": "4.0.4",
+		"effect": "4.0.4"
 	},
 	"devDependencies": {
-		"@types/bun": "latest",
-		"oxfmt": "^0.40.0",
-		"oxlint": "^1.55.0"
+		"@types/bun": "1.3.14",
+		"oxfmt": "0.40.0",
+		"oxlint": "1.55.0",
+		"typescript": "7.0.2"
 	}
 }
