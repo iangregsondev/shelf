@@ -3,7 +3,7 @@ import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
 import { join } from "node:path";
 import { ShelffileNotFoundError, ShelffileParseError } from "./shelffile-errors";
-import { parseShelffile, serializeShelffile } from "./shelffile-utils";
+import { parseShelffile, possibleShelffileAliases, serializeShelffile } from "./shelffile-utils";
 import type { Shelffile } from "./shelffile-schema";
 
 const SHELFFILE_NAME = "shelffile";
@@ -34,6 +34,19 @@ export class ShelffileService extends Context.Service<ShelffileService>()(
 							return new ShelffileParseError({ message: `Failed to parse ${filePath}` });
 						},
 					});
+				}),
+
+				/**
+				 * Every alias the shelffile in `dir` might reference, read leniently
+				 * (see `possibleShelffileAliases`), for a shelffile that won't parse.
+				 */
+				possibleAliases: Effect.fn("ShelffileService.possibleAliases")(function* (dir: string) {
+					const filePath = join(dir, SHELFFILE_NAME);
+					const content = yield* Effect.tryPromise({
+						try: () => Bun.file(filePath).text(),
+						catch: () => new ShelffileParseError({ message: `Failed to read ${filePath}` }),
+					});
+					return possibleShelffileAliases(content);
 				}),
 
 				write: Effect.fn("ShelffileService.write")(function* (dir: string, shelffile: Shelffile) {

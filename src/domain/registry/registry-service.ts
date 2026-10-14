@@ -8,7 +8,6 @@ import { errorCode } from "../config/config-utils";
 import { ShelffileService } from "../shelffile/shelffile-service";
 import { ShelfRegistry, defaultRegistry, decodeRegistry, encodeRegistry } from "./registry-schema";
 import { RegistryParseError, RegistryWriteError } from "./registry-errors";
-import { possibleShelffileAliases } from "../shelffile/shelffile-utils";
 import { withStateFileLock, writeFileAtomic } from "../config/state-file-store";
 
 const REGISTRY_FILE = "registry.json";
@@ -198,19 +197,17 @@ export class RegistryService extends Context.Service<RegistryService>()(
 							continue;
 						}
 
-						const content = yield* Effect.promise(() =>
-							Bun.file(shelffilePath)
-								.text()
-								.catch(() => null),
-						);
-						if (content === null) {
+						const possible = yield* shelffile
+							.possibleAliases(projectDir)
+							.pipe(Effect.orElseSucceed(() => null));
+						if (possible === null) {
 							anyMightBeReferenced = true;
 							warnings.push(
 								`Can't read ${shelffilePath} (${outcome.parseError}); keeping every repo.`,
 							);
 							continue;
 						}
-						for (const alias of possibleShelffileAliases(content)) aliases.add(alias);
+						for (const alias of possible) aliases.add(alias);
 						warnings.push(
 							`Can't parse ${shelffilePath} (${outcome.parseError}); keeping every repo it names.`,
 						);
