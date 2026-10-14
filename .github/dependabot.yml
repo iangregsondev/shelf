@@ -1,0 +1,54 @@
+# Dependabot version updates.
+#
+# Security updates and alerts are repository settings and run without this file —
+# this only adds routine version bumps.
+#
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # package.json + pnpm-lock.yaml. vite-plus versions live in pnpm-workspace.yaml
+  # under `catalog:`; Dependabot understands catalogs and edits that file directly.
+  #
+  # Do not add a `dependency-type` filter here — catalog entries are reported as
+  # `production` regardless of where they are declared, so a `development` filter
+  # would silently skip them.
+  # See dependabot/dependabot-core#14824.
+  #
+  # `effect` and `@effect/platform-node` are pinned exactly and must move together;
+  # the single group below keeps them in one PR.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Keep at or above pnpm's `minimumReleaseAge` (pnpm-workspace.yaml; pnpm's
+    # default is one day). A shorter cooldown lets Dependabot open a PR for a
+    # version pnpm then refuses to install, so CI fails on the bot's own branch.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+
+  # Actions pinned in .github/workflows/
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Same week as the npm ecosystem above, so there is one cooldown to reason
+    # about. `default-days` is the only cooldown option github-actions supports.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions:
+        patterns:
+          - "*"

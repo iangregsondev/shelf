@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a new command, or a change to how shelf behaves.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues first.
+
+        For CI, tooling, docs or repo configuration, use the **Tooling or repo change** template instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve?
+      description: The situation you keep hitting, and what it costs you today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should shelf do?
+      description: The command, flag or behaviour you have in mind, and how you'd know it worked.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: compatibility
+    attributes:
+      label: Compatibility
+      options:
+        - label: This changes the shelf home layout, a file format, or the shelffile format.
+          required: false
