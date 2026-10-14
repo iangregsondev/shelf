@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
-import { ResolvedRepo } from "./resolve-schema";
+import { decodeGitHubSearchResponse, ResolvedRepo } from "./resolve-schema";
 import { ResolveError } from "./resolve-errors";
 import { githubApiBaseUrl, resolveLocally } from "./resolve-utils";
 import { deriveAlias } from "../repo/repo-utils";
@@ -25,10 +25,17 @@ const resolveViaGitHubApi = Effect.fn("resolveViaGitHubApi")(function* (name: st
     );
   }
 
-  const data = yield* Effect.tryPromise({
-    try: () => response.json() as Promise<{ items: Array<{ clone_url: string; name: string }> }>,
+  const body = yield* Effect.tryPromise({
+    try: (): Promise<unknown> => response.json(),
     catch: () => new ResolveError({ input: name, message: "Failed to parse GitHub API response" }),
   });
+
+  const data = yield* decodeGitHubSearchResponse(body).pipe(
+    Effect.mapError(
+      () =>
+        new ResolveError({ input: name, message: "GitHub API returned an unexpected response" }),
+    ),
+  );
 
   const firstItem = data.items?.at(0);
   if (!firstItem) {
