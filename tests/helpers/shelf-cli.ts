@@ -6,9 +6,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stopDaemonIn } from "./daemon";
+import { run as runProcess } from "./process";
 import { startStubServices, type StubResponses } from "./stub-services";
 
-const CLI = join(import.meta.dir, "../../src/startup/index.ts");
+const CLI = join(import.meta.dirname, "../../src/startup/index.ts");
 
 export interface ShelfResult {
 	readonly stdout: string;
@@ -39,7 +40,7 @@ export const createShelfSandbox = async (
 	extraEnv: Readonly<Record<string, string>> = {},
 ): Promise<ShelfSandbox> => {
 	const home = await mkdtemp(join(tmpdir(), "shelf-home-"));
-	const services = startStubServices(stubs);
+	const services = await startStubServices(stubs);
 	const env: Record<string, string> = {
 		...(process.env as Record<string, string>),
 		SHELF_HOME: home,
@@ -52,17 +53,10 @@ export const createShelfSandbox = async (
 		args: ReadonlyArray<string>,
 		options: { cwd?: string | undefined } = {},
 	): Promise<ShelfResult> => {
-		const proc = Bun.spawn(["bun", "run", CLI, ...args], {
-			stdout: "pipe",
-			stderr: "pipe",
+		const { exitCode, stdout, stderr } = await runProcess(["bun", "run", CLI, ...args], {
 			cwd: options.cwd ?? process.cwd(),
 			env,
 		});
-		const [exitCode, stdout, stderr] = await Promise.all([
-			proc.exited,
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-		]);
 		return { stdout, stderr, exitCode, output: stdout + stderr };
 	};
 

@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { writeText } from "../helpers/files";
 
 const BAD = "../outside";
 const URL = "https://example.com/outside.git";
@@ -19,9 +20,9 @@ beforeEach(async () => {
 	shelf = await createShelfSandbox();
 	outside = join(shelf.home, "outside");
 	await mkdir(outside, { recursive: true });
-	await Bun.write(join(outside, "precious.txt"), "keep me");
+	await writeText(join(outside, "precious.txt"), "keep me");
 	await mkdir(join(shelf.home, "repos"), { recursive: true });
-	await Bun.write(
+	await writeText(
 		join(shelf.home, "config.json"),
 		JSON.stringify({
 			version: 1,

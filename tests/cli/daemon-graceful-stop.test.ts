@@ -2,13 +2,15 @@
 // shim on PATH makes every fetch slow, so the stop lands mid-sync.
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { existsSync } from "node:fs";
+import { accessSync, constants, existsSync, statSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { stopDaemonIn } from "../helpers/daemon";
 import { createRemote, git, type Remote } from "../helpers/git-remote";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { readJson, readText, writeText } from "../helpers/files";
+import { setTimeout as sleep } from "node:timers/promises";
 
 let tempDir: string;
 let shimDir: string;
@@ -16,7 +18,22 @@ let shelf: ShelfSandbox;
 let remote: Remote;
 let daemonPid: number | undefined;
 
-const realGit = Bun.which("git") ?? "/usr/bin/git";
+/** The first executable `command` on PATH, like `which`. */
+const which = (command: string): string | undefined =>
+	(process.env["PATH"] ?? "")
+		.split(delimiter)
+		.filter((dir) => dir !== "")
+		.map((dir) => join(dir, command))
+		.find((path) => {
+			try {
+				accessSync(path, constants.X_OK);
+				return statSync(path).isFile();
+			} catch {
+				return false;
+			}
+		});
+
+const realGit = which("git") ?? "/usr/bin/git";
 
 /** Puts a `git` on PATH that sleeps `seconds` before each fetch and leaves marker files. */
 const installGitShim = async (seconds: number): Promise<void> => {
@@ -32,7 +49,7 @@ const installGitShim = async (seconds: number): Promise<void> => {
 		"fi",
 		`exec "${realGit}" "$@"`,
 	].join("\n");
-	await Bun.write(join(shimDir, "git"), `${script}\n`);
+	await writeText(join(shimDir, "git"), `${script}\n`);
 	await chmod(join(shimDir, "git"), 0o755);
 };
 
@@ -40,7 +57,7 @@ const waitFor = async (check: () => boolean, ms = 10_000): Promise<boolean> => {
 	const deadline = Date.now() + ms;
 	while (Date.now() < deadline) {
 		if (check()) return true;
-		await Bun.sleep(50);
+		await sleep(50);
 	}
 	return false;
 };
@@ -55,7 +72,7 @@ const isAlive = (pid: number): boolean => {
 };
 
 const readConfig = async (): Promise<{ repos: Array<{ alias: string; lastSyncedAt?: string }> }> =>
-	(await Bun.file(join(shelf.home, "config.json")).json()) as {
+	(await readJson(join(shelf.home, "config.json"))) as {
 		repos: Array<{ alias: string; lastSyncedAt?: string }>;
 	};
 
@@ -68,7 +85,7 @@ const startMidSync = async (shimSeconds: number, extraEnv: Record<string, string
 	const tip = await remote.commit("main", "fourth");
 	const start = await shelf.run(["daemon", "start"]);
 	expect(start.exitCode).toBe(0);
-	daemonPid = ((await Bun.file(join(shelf.home, "daemon.json")).json()) as { pid: number }).pid;
+	daemonPid = ((await readJson(join(shelf.home, "daemon.json"))) as { pid: number }).pid;
 	expect(await waitFor(() => existsSync(join(shimDir, "fetch-started")))).toBe(true);
 	return { syncedAtAdd, tip };
 };
@@ -102,7 +119,7 @@ describe("daemon stop mid-sync", () => {
 		expect(await git(["rev-parse", "HEAD"], join(shelf.home, "repos", "lib"))).toBe(tip);
 		expect((await readConfig()).repos[0]?.lastSyncedAt).not.toBe(syncedAtAdd);
 		expect(existsSync(join(shelf.home, "daemon.json"))).toBe(false);
-		expect(await Bun.file(join(shelf.home, "daemon.log")).text()).toContain("Sync cycle complete");
+		expect(await readText(join(shelf.home, "daemon.log"))).toContain("Sync cycle complete");
 	}, 30_000);
 
 	test("never kills a daemon still mid-step: reports it and exits 1, leaving it running", async () => {

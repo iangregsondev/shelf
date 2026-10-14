@@ -8,6 +8,9 @@ import { runGit } from "../../../src/domain/git/git-utils";
 import { RepoPin } from "../../../src/domain/config/config-schema";
 import { GitService } from "../../../src/domain/git/git-service";
 import { createBareRepo, createTempRepo } from "../../helpers/temp-repo";
+import { readText, writeText } from "../../helpers/files";
+import { run } from "../../helpers/process";
+import { existsSync } from "node:fs";
 
 describe("runGit", () => {
 	let tempDir: string;
@@ -25,27 +28,23 @@ describe("runGit", () => {
 			const source = await createBareRepo({ "hello.txt": "world" });
 			const targetDir = join(tempDir, "cloned");
 			await Effect.runPromise(runGit(["clone", source.dir, targetDir]));
-			const file = Bun.file(join(targetDir, "hello.txt"));
-			expect(await file.exists()).toBe(true);
-			expect(await file.text()).toBe("world");
+			const filePath = join(targetDir, "hello.txt");
+			expect(existsSync(filePath)).toBe(true);
+			expect(await readText(filePath)).toBe("world");
 			await source.cleanup();
 		});
 
 		test("clones with branch pin", async () => {
 			const bareSource = await createBareRepo({ "file.txt": "content" });
-			const proc = Bun.spawn(["git", "symbolic-ref", "HEAD", "--short"], {
-				cwd: bareSource.dir,
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			await proc.exited;
-			const defaultBranch = (await new Response(proc.stdout as ReadableStream).text()).trim();
+			const defaultBranch = (
+				await run(["git", "symbolic-ref", "HEAD", "--short"], { cwd: bareSource.dir })
+			).stdout.trim();
 			const targetDir = join(tempDir, "branch-clone");
 			await Effect.runPromise(
 				runGit(["clone", "--branch", defaultBranch, bareSource.dir, targetDir]),
 			);
-			const file = Bun.file(join(targetDir, "file.txt"));
-			expect(await file.exists()).toBe(true);
+			const filePath = join(targetDir, "file.txt");
+			expect(existsSync(filePath)).toBe(true);
 			await bareSource.cleanup();
 		});
 
@@ -76,59 +75,31 @@ describe("runGit", () => {
 	describe("checkout", () => {
 		test("checks out a commit by hash", async () => {
 			const source = await createTempRepo({ "file.txt": "initial content" });
-			await Bun.spawn(["git", "checkout", "-b", "feature-branch"], {
-				cwd: source.dir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited;
-			await Bun.write(join(source.dir, "file.txt"), "feature content");
-			await Bun.spawn(["git", "add", "."], {
-				cwd: source.dir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited;
-			await Bun.spawn(["git", "commit", "-m", "feature commit"], {
-				cwd: source.dir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited;
+			await run(["git", "checkout", "-b", "feature-branch"], { cwd: source.dir });
+			await writeText(join(source.dir, "file.txt"), "feature content");
+			await run(["git", "add", "."], { cwd: source.dir });
+			await run(["git", "commit", "-m", "feature commit"], { cwd: source.dir });
 
-			const hashProc = Bun.spawn(["git", "rev-list", "--max-parents=0", "HEAD"], {
-				cwd: source.dir,
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			await hashProc.exited;
-			const initialHash = (await new Response(hashProc.stdout as ReadableStream).text()).trim();
+			const initialHash = (
+				await run(["git", "rev-list", "--max-parents=0", "HEAD"], { cwd: source.dir })
+			).stdout.trim();
 
 			await Effect.runPromise(runGit(["checkout", initialHash], source.dir));
-			const file = Bun.file(join(source.dir, "file.txt"));
-			expect(await file.text()).toBe("initial content");
+			const filePath = join(source.dir, "file.txt");
+			expect(await readText(filePath)).toBe("initial content");
 			await source.cleanup();
 		});
 
 		test("checks out a named branch", async () => {
 			const source = await createTempRepo({ "file.txt": "v1" });
-			await Bun.spawn(["git", "checkout", "-b", "release-v2"], {
-				cwd: source.dir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited;
-			await Bun.write(join(source.dir, "file.txt"), "v2");
-			await Bun.spawn(["git", "add", "."], {
-				cwd: source.dir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited;
-			await Bun.spawn(["git", "commit", "-m", "v2"], {
-				cwd: source.dir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited;
+			await run(["git", "checkout", "-b", "release-v2"], { cwd: source.dir });
+			await writeText(join(source.dir, "file.txt"), "v2");
+			await run(["git", "add", "."], { cwd: source.dir });
+			await run(["git", "commit", "-m", "v2"], { cwd: source.dir });
 
 			await Effect.runPromise(runGit(["checkout", "release-v2"], source.dir));
-			const file = Bun.file(join(source.dir, "file.txt"));
-			expect(await file.text()).toBe("v2");
+			const filePath = join(source.dir, "file.txt");
+			expect(await readText(filePath)).toBe("v2");
 			await source.cleanup();
 		});
 	});
@@ -154,19 +125,15 @@ describe("GitService", () => {
 				yield* git.clone(source.dir, targetDir, Option.none(), Option.none(), Option.none());
 			}).pipe(Effect.provide(GitService.layer)),
 		);
-		expect(await Bun.file(join(targetDir, "test.txt")).exists()).toBe(true);
+		expect(existsSync(join(targetDir, "test.txt"))).toBe(true);
 		await source.cleanup();
 	});
 
 	test("clone with branch pin", async () => {
 		const source = await createBareRepo({ "test.txt": "hello" });
-		const proc = Bun.spawn(["git", "symbolic-ref", "HEAD", "--short"], {
-			cwd: source.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		await proc.exited;
-		const defaultBranch = (await new Response(proc.stdout as ReadableStream).text()).trim();
+		const defaultBranch = (
+			await run(["git", "symbolic-ref", "HEAD", "--short"], { cwd: source.dir })
+		).stdout.trim();
 		const targetDir = join(tempDir, "svc-branch-clone");
 		await Effect.runPromise(
 			Effect.gen(function* () {
@@ -180,24 +147,16 @@ describe("GitService", () => {
 				);
 			}).pipe(Effect.provide(GitService.layer)),
 		);
-		expect(await Bun.file(join(targetDir, "test.txt")).exists()).toBe(true);
+		expect(existsSync(join(targetDir, "test.txt"))).toBe(true);
 		await source.cleanup();
 	});
 
 	test("clone with tag pin", async () => {
 		const source = await createTempRepo({ "test.txt": "hello" });
-		await Bun.spawn(["git", "tag", "v1.0.0"], {
-			cwd: source.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await run(["git", "tag", "v1.0.0"], { cwd: source.dir });
 		const bareSource = await createBareRepo({ "test.txt": "hello" });
 		// Add tag to bare repo manually
-		await Bun.spawn(["git", "tag", "v1.0.0"], {
-			cwd: bareSource.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await run(["git", "tag", "v1.0.0"], { cwd: bareSource.dir });
 		const targetDir = join(tempDir, "svc-tag-clone");
 		await Effect.runPromise(
 			Effect.gen(function* () {
@@ -211,7 +170,7 @@ describe("GitService", () => {
 				);
 			}).pipe(Effect.provide(GitService.layer)),
 		);
-		expect(await Bun.file(join(targetDir, "test.txt")).exists()).toBe(true);
+		expect(existsSync(join(targetDir, "test.txt"))).toBe(true);
 		await source.cleanup();
 		await bareSource.cleanup();
 	});
@@ -219,20 +178,12 @@ describe("GitService", () => {
 	test("shallow clone creates .git/shallow", async () => {
 		// Need multiple commits and file:// protocol (--depth is ignored for local paths)
 		const sourceRepo = await createTempRepo({ "test.txt": "hello" });
-		await Bun.write(join(sourceRepo.dir, "test.txt"), "updated");
-		await Bun.spawn(["git", "add", "."], { cwd: sourceRepo.dir, stdout: "pipe", stderr: "pipe" })
-			.exited;
-		await Bun.spawn(["git", "commit", "-m", "second"], {
-			cwd: sourceRepo.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await writeText(join(sourceRepo.dir, "test.txt"), "updated");
+		await run(["git", "add", "."], { cwd: sourceRepo.dir });
+		await run(["git", "commit", "-m", "second"], { cwd: sourceRepo.dir });
 		const bareDir = await mkdtemp(join(tmpdir(), "shelf-bare-shallow-"));
 		await rm(bareDir, { recursive: true, force: true });
-		await Bun.spawn(["git", "clone", "--bare", sourceRepo.dir, bareDir], {
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await run(["git", "clone", "--bare", sourceRepo.dir, bareDir]);
 		const targetDir = join(tempDir, "svc-shallow-clone");
 		await Effect.runPromise(
 			Effect.gen(function* () {
@@ -246,8 +197,8 @@ describe("GitService", () => {
 				);
 			}).pipe(Effect.provide(GitService.layer)),
 		);
-		expect(await Bun.file(join(targetDir, "test.txt")).exists()).toBe(true);
-		expect(await Bun.file(join(targetDir, ".git", "shallow")).exists()).toBe(true);
+		expect(existsSync(join(targetDir, "test.txt"))).toBe(true);
+		expect(existsSync(join(targetDir, ".git", "shallow"))).toBe(true);
 		await sourceRepo.cleanup();
 		await rm(bareDir, { recursive: true, force: true });
 	});
@@ -265,8 +216,8 @@ describe("GitService", () => {
 				yield* git.clone(source.dir, targetDir, Option.none(), Option.none(), Option.some(["src"]));
 			}).pipe(Effect.provide(GitService.layer)),
 		);
-		expect(await Bun.file(join(targetDir, "src", "index.ts")).exists()).toBe(true);
-		expect(await Bun.file(join(targetDir, "docs", "readme.md")).exists()).toBe(false);
+		expect(existsSync(join(targetDir, "src", "index.ts"))).toBe(true);
+		expect(existsSync(join(targetDir, "docs", "readme.md"))).toBe(false);
 		await source.cleanup();
 	});
 
@@ -286,20 +237,12 @@ describe("GitService", () => {
 	test("shallow fetch preserves shallow clone", async () => {
 		// Use file:// protocol so --depth works with local repos
 		const sourceRepo = await createTempRepo({ "test.txt": "hello" });
-		await Bun.write(join(sourceRepo.dir, "test.txt"), "updated");
-		await Bun.spawn(["git", "add", "."], { cwd: sourceRepo.dir, stdout: "pipe", stderr: "pipe" })
-			.exited;
-		await Bun.spawn(["git", "commit", "-m", "second"], {
-			cwd: sourceRepo.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await writeText(join(sourceRepo.dir, "test.txt"), "updated");
+		await run(["git", "add", "."], { cwd: sourceRepo.dir });
+		await run(["git", "commit", "-m", "second"], { cwd: sourceRepo.dir });
 		const bareDir = await mkdtemp(join(tmpdir(), "shelf-bare-sfetch-"));
 		await rm(bareDir, { recursive: true, force: true });
-		await Bun.spawn(["git", "clone", "--bare", sourceRepo.dir, bareDir], {
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await run(["git", "clone", "--bare", sourceRepo.dir, bareDir]);
 		const targetDir = join(tempDir, "svc-shallow-fetch");
 		await Effect.runPromise(runGit(["clone", "--depth", "1", `file://${bareDir}`, targetDir]));
 		await Effect.runPromise(
@@ -308,7 +251,7 @@ describe("GitService", () => {
 				yield* git.fetch(targetDir, "+refs/heads/*:refs/remotes/origin/*", Option.some(1));
 			}).pipe(Effect.provide(GitService.layer)),
 		);
-		expect(await Bun.file(join(targetDir, ".git", "shallow")).exists()).toBe(true);
+		expect(existsSync(join(targetDir, ".git", "shallow"))).toBe(true);
 		await sourceRepo.cleanup();
 		await rm(bareDir, { recursive: true, force: true });
 	});

@@ -11,6 +11,7 @@ import { createMockConfigLayer } from "../config/helpers";
 import { createMockGitLayer } from "../git/helpers";
 import { createMockSyncLayer } from "../sync/helpers";
 import { createMockRegistryLayer } from "../registry/helpers";
+import { writeText } from "../../helpers/files";
 
 // `add` claims the repo folder on disk before cloning, so point repoPath at a
 // fresh temp folder per test.
@@ -328,7 +329,7 @@ describe("RepoService", () => {
 		beforeEach(async () => {
 			originalCwd = process.cwd();
 			fixtureDir = await mkdtemp(join(tmpdir(), "shelf-autopin-"));
-			await Bun.write(
+			await writeText(
 				join(fixtureDir, "package.json"),
 				JSON.stringify({
 					dependencies: { effect: "^3.10.2" },

@@ -1,10 +1,11 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { readJson } from "../helpers/files";
 
 // The package manifest is the source of truth for the installed version.
 const manifestVersion = async (): Promise<string> => {
-	const manifest = (await Bun.file(join(import.meta.dir, "../../package.json")).json()) as {
+	const manifest = (await readJson(join(import.meta.dirname, "../../package.json"))) as {
 		version: string;
 	};
 	return manifest.version;
@@ -31,7 +32,7 @@ describe("version", () => {
 		// shelf.cleanup() stops the daemon recorded in the state file.
 		const result = await shelf.run(["daemon", "start"]);
 		expect(result.exitCode).toBe(0);
-		const state = (await Bun.file(join(shelf.home, "daemon.json")).json()) as { version?: string };
+		const state = (await readJson(join(shelf.home, "daemon.json"))) as { version?: string };
 		expect(state.version).toBe(await manifestVersion());
 	}, 20_000);
 });

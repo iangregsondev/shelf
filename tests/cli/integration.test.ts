@@ -4,6 +4,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBareRepo } from "../helpers/temp-repo";
+import { existsSync } from "node:fs";
+import { readText } from "../helpers/files";
 
 const uniqueAlias = (prefix: string): string =>
 	`${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -49,28 +51,28 @@ describe("CLI integration", () => {
 
 		test("default creates .agents/skills/shelf/SKILL.md", async () => {
 			await runShelf(["init"], tempDir);
-			const skillFile = Bun.file(join(tempDir, ".agents", "skills", "shelf", "SKILL.md"));
-			expect(await skillFile.exists()).toBe(true);
-			const content = await skillFile.text();
+			const skillPath = join(tempDir, ".agents", "skills", "shelf", "SKILL.md");
+			expect(existsSync(skillPath)).toBe(true);
+			const content = await readText(skillPath);
 			expect(content).toContain("shelf");
 		});
 
 		test("--agent claude creates .claude/skills/shelf/SKILL.md", async () => {
 			await runShelf(["init", "--agent", "claude"], tempDir);
-			const skillFile = Bun.file(join(tempDir, ".claude", "skills", "shelf", "SKILL.md"));
-			expect(await skillFile.exists()).toBe(true);
+			const skillPath = join(tempDir, ".claude", "skills", "shelf", "SKILL.md");
+			expect(existsSync(skillPath)).toBe(true);
 		});
 
 		test("--agent opencode creates .opencode/skills/shelf/SKILL.md", async () => {
 			await runShelf(["init", "--agent", "opencode"], tempDir);
-			const skillFile = Bun.file(join(tempDir, ".opencode", "skills", "shelf", "SKILL.md"));
-			expect(await skillFile.exists()).toBe(true);
+			const skillPath = join(tempDir, ".opencode", "skills", "shelf", "SKILL.md");
+			expect(existsSync(skillPath)).toBe(true);
 		});
 
 		test("--agent gemini creates .gemini/skills/shelf/SKILL.md", async () => {
 			await runShelf(["init", "--agent", "gemini"], tempDir);
-			const skillFile = Bun.file(join(tempDir, ".gemini", "skills", "shelf", "SKILL.md"));
-			expect(await skillFile.exists()).toBe(true);
+			const skillPath = join(tempDir, ".gemini", "skills", "shelf", "SKILL.md");
+			expect(existsSync(skillPath)).toBe(true);
 		});
 	});
 

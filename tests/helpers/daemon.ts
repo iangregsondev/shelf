@@ -2,6 +2,8 @@
 // names, plus any PIDs the test already knows about, and wait until they exit.
 
 import { join } from "node:path";
+import { readJson } from "./files";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const isAlive = (pid: number): boolean => {
 	try {
@@ -14,7 +16,7 @@ const isAlive = (pid: number): boolean => {
 
 const readStatePid = async (home: string): Promise<number | undefined> => {
 	try {
-		const raw = (await Bun.file(join(home, "daemon.json")).json()) as { pid?: unknown };
+		const raw = (await readJson(join(home, "daemon.json"))) as { pid?: unknown };
 		return typeof raw.pid === "number" ? raw.pid : undefined;
 	} catch {
 		return undefined;
@@ -40,6 +42,6 @@ export const stopDaemonIn = async (
 	}
 	const deadline = Date.now() + 5000;
 	while ([...pids].some(isAlive) && Date.now() < deadline) {
-		await Bun.sleep(50);
+		await sleep(50);
 	}
 };

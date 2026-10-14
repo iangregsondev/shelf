@@ -1,13 +1,14 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { writeText } from "./files";
+import { run } from "./process";
 
 export const createTempRepo = async (
 	files: Record<string, string> = { "README.md": "# Test Repo" },
 ): Promise<{ dir: string; cleanup: () => Promise<void> }> => {
 	const dir = await mkdtemp(join(tmpdir(), "shelf-test-"));
-	const spawn = (args: string[]) =>
-		Bun.spawn(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" }).exited;
+	const spawn = (args: string[]) => run(["git", ...args], { cwd: dir });
 	await spawn(["init"]);
 	await spawn(["config", "user.email", "test@test.com"]);
 	await spawn(["config", "user.name", "Test"]);
@@ -16,7 +17,7 @@ export const createTempRepo = async (
 		const parentDir = join(filePath, "..");
 		const { mkdir } = await import("node:fs/promises");
 		await mkdir(parentDir, { recursive: true });
-		await Bun.write(filePath, content);
+		await writeText(filePath, content);
 	}
 	await spawn(["add", "."]);
 	await spawn(["commit", "-m", "initial"]);
@@ -33,11 +34,7 @@ export const createBareRepo = async (
 	const source = await createTempRepo(files);
 	const bareDir = await mkdtemp(join(tmpdir(), "shelf-bare-"));
 	await rm(bareDir, { recursive: true, force: true });
-	const proc = Bun.spawn(["git", "clone", "--bare", source.dir, bareDir], {
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	await proc.exited;
+	await run(["git", "clone", "--bare", source.dir, bareDir]);
 	await source.cleanup();
 	return {
 		dir: bareDir,

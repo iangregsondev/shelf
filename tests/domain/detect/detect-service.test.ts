@@ -9,6 +9,7 @@ import { DetectService } from "../../../src/domain/detect/detect-service";
 import type { ConfigService } from "../../../src/domain/config/config-service";
 import { defaultConfig, RepoEntry, ShelfConfig } from "../../../src/domain/config/config-schema";
 import { createMockConfigLayer } from "../../domain/config/helpers";
+import { writeText } from "../../helpers/files";
 
 const runWithLayers = <A, E>(
 	effect: Effect.Effect<A, E, DetectService>,
@@ -42,7 +43,7 @@ describe("DetectService", () => {
 		});
 
 		test("detects repos from package.json via built-in registry", async () => {
-			await Bun.write(
+			await writeText(
 				join(tempDir, "package.json"),
 				JSON.stringify({
 					dependencies: { react: "^18.2.0", zod: "^3.22.0" },
@@ -67,7 +68,7 @@ describe("DetectService", () => {
 		});
 
 		test("marks repos as alreadyShelved when alias matches", async () => {
-			await Bun.write(
+			await writeText(
 				join(tempDir, "package.json"),
 				JSON.stringify({ dependencies: { react: "^18.2.0" } }),
 			);
@@ -103,7 +104,7 @@ describe("DetectService", () => {
 		});
 
 		test("marks repos as alreadyShelved when URL matches", async () => {
-			await Bun.write(
+			await writeText(
 				join(tempDir, "package.json"),
 				JSON.stringify({ dependencies: { react: "^18.2.0" } }),
 			);
@@ -139,7 +140,7 @@ describe("DetectService", () => {
 		});
 
 		test("detects repos from go.mod", async () => {
-			await Bun.write(
+			await writeText(
 				join(tempDir, "go.mod"),
 				`module example.com/myapp
 
@@ -172,7 +173,7 @@ require (
 			// it should be deduped. We can test by having the same dep twice in package.json
 			// (which merges deps + devDeps, so duplicates aren't possible there).
 			// Instead, test with a go.mod that has two paths pointing to the same org/repo
-			await Bun.write(
+			await writeText(
 				join(tempDir, "go.mod"),
 				`module example.com/myapp
 
@@ -196,11 +197,11 @@ require (
 		});
 
 		test("detects from both package.json and go.mod", async () => {
-			await Bun.write(
+			await writeText(
 				join(tempDir, "package.json"),
 				JSON.stringify({ dependencies: { react: "^18.2.0" } }),
 			);
-			await Bun.write(
+			await writeText(
 				join(tempDir, "go.mod"),
 				`module example.com/myapp
 
@@ -224,7 +225,7 @@ require github.com/gin-gonic/gin v1.9.1
 		});
 
 		test("handles invalid package.json gracefully", async () => {
-			await Bun.write(join(tempDir, "package.json"), "not valid json");
+			await writeText(join(tempDir, "package.json"), "not valid json");
 
 			const result = await runWithLayers(
 				Effect.gen(function* () {
@@ -237,7 +238,7 @@ require github.com/gin-gonic/gin v1.9.1
 		});
 
 		test("handles empty package.json", async () => {
-			await Bun.write(join(tempDir, "package.json"), "{}");
+			await writeText(join(tempDir, "package.json"), "{}");
 
 			const result = await runWithLayers(
 				Effect.gen(function* () {
@@ -251,7 +252,7 @@ require github.com/gin-gonic/gin v1.9.1
 
 		test("only detects known registry packages without network", async () => {
 			// Packages not in registry and with no npm API would return none
-			await Bun.write(
+			await writeText(
 				join(tempDir, "package.json"),
 				JSON.stringify({
 					dependencies: {
@@ -275,7 +276,7 @@ require github.com/gin-gonic/gin v1.9.1
 		});
 
 		test("handles devDependencies", async () => {
-			await Bun.write(
+			await writeText(
 				join(tempDir, "package.json"),
 				JSON.stringify({
 					devDependencies: { vitest: "^1.0.0", eslint: "^9.0.0" },

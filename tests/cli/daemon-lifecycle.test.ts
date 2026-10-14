@@ -5,6 +5,10 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { join } from "node:path";
 import { stopDaemonIn } from "../helpers/daemon";
 import { SHELF_CLI, createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { readJson, readText, writeText } from "../helpers/files";
+import { existsSync, statSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { setTimeout as sleep } from "node:timers/promises";
 
 let shelf: ShelfSandbox;
 let otherPids: number[] = [];
@@ -14,7 +18,7 @@ const logPath = () => join(shelf.home, "daemon.log");
 
 const readState = async (): Promise<{ pid: number; token: string } | undefined> => {
 	try {
-		return (await Bun.file(statePath()).json()) as { pid: number; token: string };
+		return (await readJson(statePath())) as { pid: number; token: string };
 	} catch {
 		return undefined;
 	}
@@ -33,7 +37,7 @@ const waitFor = async (check: () => Promise<boolean> | boolean, ms = 10_000): Pr
 	const deadline = Date.now() + ms;
 	while (Date.now() < deadline) {
 		if (await check()) return true;
-		await Bun.sleep(50);
+		await sleep(50);
 	}
 	return false;
 };
@@ -50,13 +54,13 @@ const startDaemon = async (): Promise<number> => {
 
 /** A live process that is not the shelf daemon. */
 const spawnOtherProcess = (): number => {
-	const proc = Bun.spawn(["sleep", "60"], { stdio: ["ignore", "ignore", "ignore"] });
-	otherPids.push(proc.pid);
-	return proc.pid;
+	const proc = spawn("sleep", ["60"], { stdio: ["ignore", "ignore", "ignore"] });
+	otherPids.push(proc.pid!);
+	return proc.pid!;
 };
 
 const writeState = async (pid: number, token: string): Promise<void> => {
-	await Bun.write(
+	await writeText(
 		statePath(),
 		JSON.stringify({ pid, token, startedAt: new Date().toISOString(), version: "0.0.0" }),
 	);
@@ -104,11 +108,11 @@ describe("daemon start", () => {
 
 describe("daemon start --foreground", () => {
 	test("status, start and stop all see the foreground daemon", async () => {
-		const foreground = Bun.spawn(["bun", "run", SHELF_CLI, "daemon", "start", "--foreground"], {
+		const foreground = spawn("bun", ["run", SHELF_CLI, "daemon", "start", "--foreground"], {
 			stdio: ["ignore", "pipe", "pipe"],
 			env: shelf.env,
 		});
-		otherPids.push(foreground.pid);
+		otherPids.push(foreground.pid!);
 		expect(await waitFor(async () => (await readState()) !== undefined)).toBe(true);
 		const state = await readState();
 		otherPids.push(state!.pid);
@@ -125,7 +129,7 @@ describe("daemon start --foreground", () => {
 		const stop = await shelf.run(["daemon", "stop"]);
 		expect(stop.exitCode).toBe(0);
 		expect(await waitFor(() => foreground.exitCode !== null)).toBe(true);
-		expect(await Bun.file(statePath()).exists()).toBe(false);
+		expect(existsSync(statePath())).toBe(false);
 	}, 30_000);
 });
 
@@ -146,7 +150,7 @@ describe("daemon identity", () => {
 		const stop = await shelf.run(["daemon", "stop"]);
 		expect(stop.exitCode).toBe(1);
 		expect(stop.stderr).toContain("No daemon is currently running");
-		await Bun.sleep(200);
+		await sleep(200);
 		expect(isAlive(other)).toBe(true);
 	});
 
@@ -169,36 +173,36 @@ describe("daemon stop", () => {
 		expect(stop.exitCode).toBe(0);
 		expect(stop.stdout).toContain("Daemon stopped");
 		expect(isAlive(pid)).toBe(false);
-		expect(await Bun.file(statePath()).exists()).toBe(false);
+		expect(existsSync(statePath())).toBe(false);
 	}, 20_000);
 
 	test("on SIGTERM the daemon removes its own state file and exits", async () => {
 		const pid = await startDaemon();
 		process.kill(pid, "SIGTERM");
 		expect(await waitFor(() => !isAlive(pid))).toBe(true);
-		expect(await Bun.file(statePath()).exists()).toBe(false);
-		expect(await Bun.file(logPath()).text()).toContain("Daemon stopped");
+		expect(existsSync(statePath())).toBe(false);
+		expect(await readText(logPath())).toContain("Daemon stopped");
 	}, 20_000);
 });
 
 describe("daemon log", () => {
 	test("start appends to the existing log", async () => {
-		await Bun.write(logPath(), "earlier line\n");
+		await writeText(logPath(), "earlier line\n");
 		await startDaemon();
-		expect(
-			await waitFor(async () => (await Bun.file(logPath()).text()).includes("Daemon started")),
-		).toBe(true);
-		expect(await Bun.file(logPath()).text()).toStartWith("earlier line\n");
+		expect(await waitFor(async () => (await readText(logPath())).includes("Daemon started"))).toBe(
+			true,
+		);
+		expect(await readText(logPath())).toStartWith("earlier line\n");
 	}, 20_000);
 
 	test("start rotates a log over 5 MB to daemon.log.1", async () => {
 		const big = "x".repeat(5_242_881);
-		await Bun.write(logPath(), big);
+		await writeText(logPath(), big);
 		await startDaemon();
-		expect(await Bun.file(`${logPath()}.1`).text()).toBe(big);
-		expect(
-			await waitFor(async () => (await Bun.file(logPath()).text()).includes("Daemon started")),
-		).toBe(true);
-		expect(Bun.file(logPath()).size).toBeLessThan(5_242_881);
+		expect(await readText(`${logPath()}.1`)).toBe(big);
+		expect(await waitFor(async () => (await readText(logPath())).includes("Daemon started"))).toBe(
+			true,
+		);
+		expect(statSync(logPath()).size).toBeLessThan(5_242_881);
 	}, 20_000);
 });

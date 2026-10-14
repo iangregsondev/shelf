@@ -24,15 +24,13 @@ describe("add resolves the URL forms users paste", () => {
 		const result = await shelf.run(["add", `file://${repo.dir}`, "--alias", "via-file-url"]);
 		expect(result.output).not.toContain("Resolved");
 		expect(result.exitCode).toBe(0);
-		expect(await Bun.file(join(shelf.home, "repos", "via-file-url", "found.ts")).exists()).toBe(
-			true,
-		);
+		expect(existsSync(join(shelf.home, "repos", "via-file-url", "found.ts"))).toBe(true);
 	});
 
 	test("a prototype name like toString is searched for as a package", async () => {
 		const result = await shelf.run(["add", "toString"]);
 		expect(result.exitCode).toBe(0);
-		expect(await Bun.file(join(shelf.home, "repos", "toString", "found.ts")).exists()).toBe(true);
+		expect(existsSync(join(shelf.home, "repos", "toString", "found.ts"))).toBe(true);
 	});
 
 	test("an unparsable URL gives a clear error and exits 1", async () => {

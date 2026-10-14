@@ -12,6 +12,8 @@ import { ConfigService } from "../../../src/domain/config/config-service";
 import { defaultConfig } from "../../../src/domain/config/config-schema";
 import { stopDaemonIn } from "../../helpers/daemon";
 import { SHELF_VERSION } from "../../../src/version";
+import { readJson } from "../../helpers/files";
+import { existsSync } from "node:fs";
 
 describe("DaemonService", () => {
 	let tempDir: string;
@@ -97,7 +99,7 @@ describe("DaemonService", () => {
 			);
 			expect(result.running).toBe(false);
 			// Should have cleaned up the stale state file
-			const exists = await Bun.file(join(tempDir, "daemon.json")).exists();
+			const exists = existsSync(join(tempDir, "daemon.json"));
 			expect(exists).toBe(false);
 		});
 
@@ -182,7 +184,7 @@ describe("DaemonService", () => {
 			const pid = await startRealDaemon();
 
 			expect(pid).not.toBe(999_999_999);
-			const written = (await Bun.file(join(tempDir, "daemon.json")).json()) as { pid: number };
+			const written = (await readJson(join(tempDir, "daemon.json"))) as { pid: number };
 			expect(written.pid).toBe(pid);
 		}, 20_000);
 	});

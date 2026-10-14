@@ -2,12 +2,15 @@
 // config entry, a stale lock is taken over, and a failed add cleans up.
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createBareRepo } from "../helpers/temp-repo";
+import { writeText } from "../helpers/files";
 
 let shelf: ShelfSandbox;
 let projectDir: string;
@@ -44,7 +47,7 @@ describe("safe writes to shelf state", () => {
 		for (const name of names) {
 			lines.push(`${name} ${await bareRepo(name)}`);
 		}
-		await Bun.write(join(projectDir, "shelffile"), `${lines.join("\n")}\n`);
+		await writeText(join(projectDir, "shelffile"), `${lines.join("\n")}\n`);
 
 		const result = await shelf.run(["install", "--dir", projectDir, "--concurrency", "6"]);
 		expect(result.exitCode).toBe(0);
@@ -69,8 +72,8 @@ describe("safe writes to shelf state", () => {
 	});
 
 	test("a lock file left by a dead process is taken over", async () => {
-		const dead = Bun.spawn(["true"]);
-		await dead.exited;
+		const dead = spawn("true");
+		await once(dead, "exit");
 		await mkdir(shelf.home, { recursive: true });
 		await writeFile(join(shelf.home, "config.json.lock"), String(dead.pid));
 

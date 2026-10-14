@@ -13,6 +13,7 @@ import {
 } from "../../../src/domain/config/config-schema";
 import * as Option from "effect/Option";
 import { ConfigService } from "../../../src/domain/config/config-service";
+import { readText, writeText } from "../../helpers/files";
 
 describe("ConfigService", () => {
 	let tempDir: string;
@@ -214,8 +215,8 @@ describe("ConfigService", () => {
 		test("save writes valid JSON", async () => {
 			await mkdir(tempDir, { recursive: true });
 			const encoded = encodeConfig(defaultConfig);
-			await Bun.write(configPath, JSON.stringify(encoded, null, "\t"));
-			const content = await Bun.file(configPath).text();
+			await writeText(configPath, JSON.stringify(encoded, null, "\t"));
+			const content = await readText(configPath);
 			const parsed = JSON.parse(content);
 			expect(parsed.version).toBe(1);
 		});
@@ -227,8 +228,8 @@ describe("ConfigService", () => {
 				repos: [],
 			});
 			const encoded = encodeConfig(config);
-			await Bun.write(configPath, JSON.stringify(encoded, null, "\t"));
-			const content = await Bun.file(configPath).text();
+			await writeText(configPath, JSON.stringify(encoded, null, "\t"));
+			const content = await readText(configPath);
 			const reloaded = decodeConfig(JSON.parse(content));
 			expect(reloaded.syncIntervalMinutes).toBe(120);
 		});

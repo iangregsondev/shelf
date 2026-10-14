@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createBareRepo } from "../helpers/temp-repo";
+import { writeText } from "../helpers/files";
 
 let shelf: ShelfSandbox;
 let projectDir: string;
@@ -59,7 +60,7 @@ describe("aliases", () => {
 	test("install rejects a shelffile with a bad alias and adds nothing", async () => {
 		const good = await bareRepo("good");
 		const evil = await bareRepo("evil");
-		await Bun.write(join(projectDir, "shelffile"), `good ${good}\n../../evil ${evil}\n`);
+		await writeText(join(projectDir, "shelffile"), `good ${good}\n../../evil ${evil}\n`);
 
 		const result = await shelf.run(["install", "--dir", projectDir]);
 		expect(result.exitCode).toBe(1);
@@ -124,7 +125,7 @@ describe("aliases", () => {
 	});
 
 	test("detect names a Go module ending in /vN after the segment before it", async () => {
-		await Bun.write(
+		await writeText(
 			join(projectDir, "go.mod"),
 			"module example.com/app\n\ngo 1.21\n\nrequire (\n\tgithub.com/go-chi/chi/v5 v5.0.12\n)\n",
 		);

@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBareRepo } from "../helpers/temp-repo";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { readJson, writeText } from "../helpers/files";
+import { run } from "../helpers/process";
 
 // A monorepo tags each package separately. Auto-pin must pick the tag for the
 // package the user named, not one derived from the repo's URL.
@@ -13,16 +15,12 @@ describe("add --pin auto", () => {
 	let project: string;
 
 	const tag = async (name: string) => {
-		const proc = Bun.spawn(["git", "tag", name, "HEAD"], {
-			cwd: monorepo.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		expect(await proc.exited).toBe(0);
+		const result = await run(["git", "tag", name, "HEAD"], { cwd: monorepo.dir });
+		expect(result.exitCode).toBe(0);
 	};
 
 	const savedPin = async (alias: string) => {
-		const config = (await Bun.file(join(shelf.home, "config.json")).json()) as {
+		const config = (await readJson(join(shelf.home, "config.json"))) as {
 			repos: Array<{ alias: string; pin?: { type: string; value: string } }>;
 		};
 		return config.repos.find((r) => r.alias === alias)?.pin;
@@ -44,7 +42,7 @@ describe("add --pin auto", () => {
 			},
 		});
 		project = await mkdtemp(join(tmpdir(), "shelf-autopin-project-"));
-		await Bun.write(
+		await writeText(
 			join(project, "package.json"),
 			JSON.stringify({
 				dependencies: { "@fixture/widget": "^0.69.2", fixturelib: "^3.10.2" },

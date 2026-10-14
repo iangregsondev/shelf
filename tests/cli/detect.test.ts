@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { writeText } from "../helpers/files";
 
 describe("detect command", () => {
 	let tempDir: string;
@@ -35,7 +36,7 @@ describe("detect command", () => {
 	});
 
 	test("detects known repos from package.json", async () => {
-		await Bun.write(
+		await writeText(
 			join(tempDir, "package.json"),
 			JSON.stringify({ dependencies: { react: "^18.2.0", zod: "^3.22.0" } }),
 		);
@@ -47,7 +48,7 @@ describe("detect command", () => {
 	});
 
 	test("detects repos from go.mod", async () => {
-		await Bun.write(
+		await writeText(
 			join(tempDir, "go.mod"),
 			`module example.com/myapp
 
@@ -69,14 +70,14 @@ require (
 	});
 
 	test("handles directory with invalid package.json", async () => {
-		await Bun.write(join(tempDir, "package.json"), "not valid json");
+		await writeText(join(tempDir, "package.json"), "not valid json");
 		const result = await runShelf(["detect", "--dir", tempDir]);
 		expect(result.exitCode).toBe(0);
 		// Should not crash
 	});
 
 	test("looks up packages outside the built-in registry on npm", async () => {
-		await Bun.write(
+		await writeText(
 			join(tempDir, "package.json"),
 			JSON.stringify({
 				dependencies: { "shelf-fixture-pkg": "^4.18.0", "unknown-to-npm": "^1.0.0" },

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRemote, git, type Remote } from "../helpers/git-remote";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { writeText } from "../helpers/files";
 
 let tempDir: string;
 let shelf: ShelfSandbox;
@@ -106,7 +107,7 @@ describe("shelf install", () => {
 	test("a short commit pin in a shelffile is stored as the full hash", async () => {
 		const project = join(tempDir, "project");
 		const short = remote.commits.first.slice(0, 7);
-		await Bun.write(join(project, "shelffile"), `lib ${remote.url} pin:commit:${short} # old\n`);
+		await writeText(join(project, "shelffile"), `lib ${remote.url} pin:commit:${short} # old\n`);
 
 		const result = await shelf.run(["install", "--dir", project]);
 

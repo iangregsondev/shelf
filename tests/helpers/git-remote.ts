@@ -2,14 +2,11 @@
 // tests that pin, sync and resolve refs against a real remote.
 
 import { join } from "node:path";
+import { writeText } from "./files";
+import { run } from "./process";
 
 export const git = async (args: ReadonlyArray<string>, cwd: string): Promise<string> => {
-	const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-	const [exitCode, stdout, stderr] = await Promise.all([
-		proc.exited,
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
-	]);
+	const { exitCode, stdout, stderr } = await run(["git", ...args], { cwd });
 	if (exitCode !== 0) {
 		throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
 	}
@@ -37,7 +34,7 @@ export const createRemote = async (tempDir: string): Promise<Remote> => {
 	await git(["config", "user.email", "test@test.com"], work);
 	await git(["config", "user.name", "Test"], work);
 	const commitFile = async (content: string): Promise<string> => {
-		await Bun.write(join(work, "file.txt"), content);
+		await writeText(join(work, "file.txt"), content);
 		await git(["add", "file.txt"], work);
 		await git(["commit", "-q", "-m", content], work);
 		return git(["rev-parse", "HEAD"], work);

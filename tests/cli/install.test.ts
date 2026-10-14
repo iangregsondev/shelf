@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBareRepo } from "../helpers/temp-repo";
+import { writeText } from "../helpers/files";
 
 const uniqueAlias = (prefix: string): string =>
 	`${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -37,7 +38,7 @@ describe("install command", () => {
 		aliases.push(alias);
 
 		const repo = await createBareRepo({ "lib.ts": "export const a = 1;" });
-		await Bun.write(join(tempDir, "shelffile"), `${alias} ${repo.dir}\n`);
+		await writeText(join(tempDir, "shelffile"), `${alias} ${repo.dir}\n`);
 
 		const result = await runShelf(["install", "--dir", tempDir]);
 		expect(result.exitCode).toBe(0);
@@ -56,7 +57,7 @@ describe("install command", () => {
 		const repo1 = await createBareRepo({ "lib1.ts": "export const a = 1;" });
 		const repo2 = await createBareRepo({ "lib2.ts": "export const b = 2;" });
 
-		await Bun.write(join(tempDir, "shelffile"), `${alias1} ${repo1.dir}\n${alias2} ${repo2.dir}\n`);
+		await writeText(join(tempDir, "shelffile"), `${alias1} ${repo1.dir}\n${alias2} ${repo2.dir}\n`);
 
 		const result = await runShelf(["install", "--dir", tempDir]);
 		expect(result.exitCode).toBe(0);
@@ -72,7 +73,7 @@ describe("install command", () => {
 		aliases.push(alias);
 
 		const repo = await createBareRepo({ "lib.ts": "export {};" });
-		await Bun.write(join(tempDir, "shelffile"), `${alias} ${repo.dir}\n`);
+		await writeText(join(tempDir, "shelffile"), `${alias} ${repo.dir}\n`);
 
 		await runShelf(["install", "--dir", tempDir]);
 		const result = await runShelf(["install", "--dir", tempDir]);
@@ -86,7 +87,7 @@ describe("install command", () => {
 		const good = uniqueAlias("good");
 		const bad = uniqueAlias("bad");
 		const repo = await createBareRepo({ "lib.ts": "export const a = 1;" });
-		await Bun.write(
+		await writeText(
 			join(tempDir, "shelffile"),
 			`${good} ${repo.dir}\n${bad} ${join(tempDir, "no-such-remote.git")}\n`,
 		);
@@ -111,7 +112,7 @@ describe("install command", () => {
 		aliases.push(alias);
 
 		const repo = await createBareRepo({ "lib.ts": "export {};" });
-		await Bun.write(join(tempDir, "shelffile"), `${alias} ${repo.dir}\n`);
+		await writeText(join(tempDir, "shelffile"), `${alias} ${repo.dir}\n`);
 
 		const result = await runShelf(["install", "--dir", tempDir, "--concurrency", "2"]);
 		expect(result.exitCode).toBe(0);

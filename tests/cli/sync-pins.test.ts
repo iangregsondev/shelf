@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRemote as createRemoteIn, git } from "../helpers/git-remote";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { writeText } from "../helpers/files";
 
 let tempDir: string;
 let shelf: ShelfSandbox;
@@ -22,7 +23,7 @@ const isShallow = async (alias: string): Promise<boolean> =>
 
 const install = async (alias: string, url: string, pin = ""): Promise<void> => {
 	const project = join(tempDir, "project");
-	await Bun.write(join(project, "shelffile"), `${alias} ${url} ${pin}\n`);
+	await writeText(join(project, "shelffile"), `${alias} ${url} ${pin}\n`);
 	const result = await shelf.run(["install", "--dir", project]);
 	expect(result.output).toContain(`Added "${alias}"`);
 };

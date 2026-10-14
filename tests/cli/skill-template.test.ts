@@ -1,19 +1,21 @@
 import { describe, test, expect } from "bun:test";
 import { join } from "node:path";
 import { skillTemplate } from "../../src/cli/templates/skill";
+import { parse } from "yaml";
+import { readText } from "../helpers/files";
 
-const skillFilePath = join(import.meta.dir, "../../.claude/skills/shelf/SKILL.md");
+const skillFilePath = join(import.meta.dirname, "../../.claude/skills/shelf/SKILL.md");
 
 describe("shelf skill", () => {
 	test("init template is identical to the repo's skill file", async () => {
-		const skillFile = await Bun.file(skillFilePath).text();
+		const skillFile = await readText(skillFilePath);
 		expect(skillTemplate).toBe(skillFile);
 	});
 
 	test("description fits the 1,024-character skill limit", async () => {
-		const skillFile = await Bun.file(skillFilePath).text();
+		const skillFile = await readText(skillFilePath);
 		const frontmatter = skillFile.split(/^---$/m)[1] ?? "";
-		const { description } = Bun.YAML.parse(frontmatter) as { description: string };
+		const { description } = parse(frontmatter) as { description: string };
 		expect(description.length).toBeGreaterThan(0);
 		expect(description.length).toBeLessThanOrEqual(1024);
 	});

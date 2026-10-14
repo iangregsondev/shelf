@@ -8,14 +8,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { writeText } from "../helpers/files";
+import { run } from "../helpers/process";
 
 const git = async (args: ReadonlyArray<string>, cwd: string): Promise<string> => {
-	const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-	const [exitCode, stdout, stderr] = await Promise.all([
-		proc.exited,
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
-	]);
+	const { exitCode, stdout, stderr } = await run(["git", ...args], { cwd });
 	if (exitCode !== 0) {
 		throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
 	}
@@ -40,7 +37,7 @@ const createRemote = async (name: string): Promise<Remote> => {
 	await git(["config", "user.email", "test@test.com"], work);
 	await git(["config", "user.name", "Test"], work);
 	const commitFile = async (content: string): Promise<string> => {
-		await Bun.write(join(work, "file.txt"), content);
+		await writeText(join(work, "file.txt"), content);
 		await git(["add", "file.txt"], work);
 		await git(["commit", "-q", "-m", content], work);
 		return git(["rev-parse", "HEAD"], work);
@@ -59,7 +56,7 @@ const createRemote = async (name: string): Promise<Remote> => {
 const install = async (repos: Record<string, Remote>): Promise<void> => {
 	const project = join(tempDir, "project");
 	const lines = Object.entries(repos).map(([alias, remote]) => `${alias} ${remote.url}`);
-	await Bun.write(join(project, "shelffile"), `${lines.join("\n")}\n`);
+	await writeText(join(project, "shelffile"), `${lines.join("\n")}\n`);
 	// One at a time: parallel installs can lose each other's config writes (B24).
 	const result = await shelf.run(["install", "--dir", project, "--concurrency", "1"]);
 	for (const alias of Object.keys(repos)) {

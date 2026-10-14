@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createBareRepo } from "../helpers/temp-repo";
+import { writeText } from "../helpers/files";
 
 let shelf: ShelfSandbox;
 let cleanups: Array<() => Promise<void>>;
@@ -51,7 +52,7 @@ describe("shelf status", () => {
 		const url = await bareRepo();
 		const project = await mkdtemp(join(tmpdir(), "shelf-status-project-"));
 		cleanups.push(() => rm(project, { recursive: true, force: true }));
-		await Bun.write(join(project, "shelffile"), `lib ${url}\n`);
+		await writeText(join(project, "shelffile"), `lib ${url}\n`);
 		const install = await shelf.run(["install", "--dir", project]);
 		expect(install.exitCode).toBe(0);
 
@@ -65,9 +66,9 @@ describe("shelf status", () => {
 		const url = await bareRepo();
 		const project = await mkdtemp(join(tmpdir(), "shelf-status-project-"));
 		cleanups.push(() => rm(project, { recursive: true, force: true }));
-		await Bun.write(join(project, "shelffile"), `lib ${url}\n`);
+		await writeText(join(project, "shelffile"), `lib ${url}\n`);
 		await shelf.run(["install", "--dir", project]);
-		await Bun.write(join(project, "shelffile"), "");
+		await writeText(join(project, "shelffile"), "");
 
 		const result = await shelf.run(["status"]);
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { createBareRepo } from "../helpers/temp-repo";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { readJson, readText, writeText } from "../helpers/files";
 
 describe("SHELF_HOME", () => {
 	let shelf: ShelfSandbox;
@@ -20,10 +21,10 @@ describe("SHELF_HOME", () => {
 			const result = await shelf.run(["add", repo.dir, "--alias", "home-test"]);
 			expect(result.exitCode).toBe(0);
 
-			expect(await Bun.file(join(shelf.home, "repos", "home-test", "README.md")).text()).toBe(
+			expect(await readText(join(shelf.home, "repos", "home-test", "README.md"))).toBe(
 				"# home test",
 			);
-			const config = (await Bun.file(join(shelf.home, "config.json")).json()) as {
+			const config = (await readJson(join(shelf.home, "config.json"))) as {
 				repos: Array<{ alias: string }>;
 			};
 			expect(config.repos.map((r) => r.alias)).toEqual(["home-test"]);
@@ -33,7 +34,7 @@ describe("SHELF_HOME", () => {
 	});
 
 	test("list reads the shelf home's config", async () => {
-		await Bun.write(
+		await writeText(
 			join(shelf.home, "config.json"),
 			JSON.stringify({
 				version: 1,

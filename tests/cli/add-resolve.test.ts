@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { join } from "node:path";
 import { createBareRepo } from "../helpers/temp-repo";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { existsSync } from "node:fs";
 
 describe("add command with resolve", () => {
 	let shelf: ShelfSandbox;
@@ -49,9 +50,7 @@ describe("add command with resolve", () => {
 		const result = await runShelf(["add", "shelf-fixture-lib"]);
 		expect(result.exitCode).toBe(0);
 		expect(result.output).toContain("Added");
-		expect(
-			await Bun.file(join(shelf.home, "repos", "shelf-fixture-lib", "found.ts")).exists(),
-		).toBe(true);
+		expect(existsSync(join(shelf.home, "repos", "shelf-fixture-lib", "found.ts"))).toBe(true);
 	});
 
 	test("add with unknown bare name shows clean resolve error", async () => {

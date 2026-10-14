@@ -7,6 +7,9 @@ import { join } from "node:path";
 import { GitService } from "../../../src/domain/git/git-service";
 import { runGit } from "../../../src/domain/git/git-utils";
 import { createTempRepo } from "../../helpers/temp-repo";
+import { writeText } from "../../helpers/files";
+import { run } from "../../helpers/process";
+import { existsSync } from "node:fs";
 
 describe("GitService default clone behavior", () => {
 	let tempDir: string;
@@ -22,20 +25,12 @@ describe("GitService default clone behavior", () => {
 	test("clone defaults to depth 1 (shallow)", async () => {
 		// Need file:// protocol for depth to work with local repos
 		const sourceRepo = await createTempRepo({ "test.txt": "hello" });
-		await Bun.write(join(sourceRepo.dir, "test.txt"), "updated");
-		await Bun.spawn(["git", "add", "."], { cwd: sourceRepo.dir, stdout: "pipe", stderr: "pipe" })
-			.exited;
-		await Bun.spawn(["git", "commit", "-m", "second"], {
-			cwd: sourceRepo.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await writeText(join(sourceRepo.dir, "test.txt"), "updated");
+		await run(["git", "add", "."], { cwd: sourceRepo.dir });
+		await run(["git", "commit", "-m", "second"], { cwd: sourceRepo.dir });
 		const bareDir = await mkdtemp(join(tmpdir(), "shelf-bare-defaults-"));
 		await rm(bareDir, { recursive: true, force: true });
-		await Bun.spawn(["git", "clone", "--bare", sourceRepo.dir, bareDir], {
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await run(["git", "clone", "--bare", sourceRepo.dir, bareDir]);
 
 		const targetDir = join(tempDir, "default-depth");
 		await Effect.runPromise(
@@ -52,8 +47,8 @@ describe("GitService default clone behavior", () => {
 		);
 
 		// Should be a shallow clone
-		expect(await Bun.file(join(targetDir, ".git", "shallow")).exists()).toBe(true);
-		expect(await Bun.file(join(targetDir, "test.txt")).exists()).toBe(true);
+		expect(existsSync(join(targetDir, ".git", "shallow"))).toBe(true);
+		expect(existsSync(join(targetDir, "test.txt"))).toBe(true);
 
 		await sourceRepo.cleanup();
 		await rm(bareDir, { recursive: true, force: true });
@@ -62,31 +57,15 @@ describe("GitService default clone behavior", () => {
 	test("clone with --single-branch only fetches one branch", async () => {
 		const sourceRepo = await createTempRepo({ "test.txt": "main" });
 		// Create a second branch
-		await Bun.spawn(["git", "checkout", "-b", "feature"], {
-			cwd: sourceRepo.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
-		await Bun.write(join(sourceRepo.dir, "test.txt"), "feature");
-		await Bun.spawn(["git", "add", "."], { cwd: sourceRepo.dir, stdout: "pipe", stderr: "pipe" })
-			.exited;
-		await Bun.spawn(["git", "commit", "-m", "feature"], {
-			cwd: sourceRepo.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
-		await Bun.spawn(["git", "checkout", "-"], {
-			cwd: sourceRepo.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await run(["git", "checkout", "-b", "feature"], { cwd: sourceRepo.dir });
+		await writeText(join(sourceRepo.dir, "test.txt"), "feature");
+		await run(["git", "add", "."], { cwd: sourceRepo.dir });
+		await run(["git", "commit", "-m", "feature"], { cwd: sourceRepo.dir });
+		await run(["git", "checkout", "-"], { cwd: sourceRepo.dir });
 
 		const bareDir = await mkdtemp(join(tmpdir(), "shelf-bare-single-"));
 		await rm(bareDir, { recursive: true, force: true });
-		await Bun.spawn(["git", "clone", "--bare", sourceRepo.dir, bareDir], {
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await run(["git", "clone", "--bare", sourceRepo.dir, bareDir]);
 
 		const targetDir = join(tempDir, "single-branch");
 		await Effect.runPromise(
@@ -113,29 +92,16 @@ describe("GitService default clone behavior", () => {
 
 	test("explicit depth overrides the default", async () => {
 		const sourceRepo = await createTempRepo({ "test.txt": "hello" });
-		await Bun.write(join(sourceRepo.dir, "test.txt"), "updated");
-		await Bun.spawn(["git", "add", "."], { cwd: sourceRepo.dir, stdout: "pipe", stderr: "pipe" })
-			.exited;
-		await Bun.spawn(["git", "commit", "-m", "second"], {
-			cwd: sourceRepo.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
-		await Bun.write(join(sourceRepo.dir, "test.txt"), "third");
-		await Bun.spawn(["git", "add", "."], { cwd: sourceRepo.dir, stdout: "pipe", stderr: "pipe" })
-			.exited;
-		await Bun.spawn(["git", "commit", "-m", "third"], {
-			cwd: sourceRepo.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await writeText(join(sourceRepo.dir, "test.txt"), "updated");
+		await run(["git", "add", "."], { cwd: sourceRepo.dir });
+		await run(["git", "commit", "-m", "second"], { cwd: sourceRepo.dir });
+		await writeText(join(sourceRepo.dir, "test.txt"), "third");
+		await run(["git", "add", "."], { cwd: sourceRepo.dir });
+		await run(["git", "commit", "-m", "third"], { cwd: sourceRepo.dir });
 
 		const bareDir = await mkdtemp(join(tmpdir(), "shelf-bare-explicit-"));
 		await rm(bareDir, { recursive: true, force: true });
-		await Bun.spawn(["git", "clone", "--bare", sourceRepo.dir, bareDir], {
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
+		await run(["git", "clone", "--bare", sourceRepo.dir, bareDir]);
 
 		const targetDir = join(tempDir, "explicit-depth");
 		await Effect.runPromise(
@@ -151,8 +117,8 @@ describe("GitService default clone behavior", () => {
 			}).pipe(Effect.provide(GitService.layer)),
 		);
 
-		expect(await Bun.file(join(targetDir, ".git", "shallow")).exists()).toBe(true);
-		expect(await Bun.file(join(targetDir, "test.txt")).exists()).toBe(true);
+		expect(existsSync(join(targetDir, ".git", "shallow"))).toBe(true);
+		expect(existsSync(join(targetDir, "test.txt"))).toBe(true);
 
 		await sourceRepo.cleanup();
 		await rm(bareDir, { recursive: true, force: true });

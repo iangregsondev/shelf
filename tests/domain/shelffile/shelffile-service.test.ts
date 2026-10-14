@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ShelffileService } from "../../../src/domain/shelffile/shelffile-service";
 import { RepoPin } from "../../../src/domain/config/config-schema";
+import { writeText } from "../../helpers/files";
 
 describe("ShelffileService", () => {
 	let tempDir: string;
@@ -35,7 +36,7 @@ describe("ShelffileService", () => {
 	});
 
 	test("read parses valid shelffile", async () => {
-		await Bun.write(
+		await writeText(
 			join(tempDir, "shelffile"),
 			"effect https://github.com/Effect-TS/effect.git pin:branch:main\n",
 		);
@@ -50,7 +51,7 @@ describe("ShelffileService", () => {
 	});
 
 	test("read returns ShelffileParseError on corrupt content", async () => {
-		await Bun.write(join(tempDir, "shelffile"), "only-alias\n");
+		await writeText(join(tempDir, "shelffile"), "only-alias\n");
 		const exit = await runExit(
 			Effect.gen(function* () {
 				const svc = yield* ShelffileService;

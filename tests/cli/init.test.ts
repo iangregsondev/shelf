@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { resolveSkillDir } from "../../src/cli/commands/init";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createBareRepo } from "../helpers/temp-repo";
+import { writeText } from "../helpers/files";
 
 describe("init command", () => {
 	describe("resolveSkillDir", () => {
@@ -47,7 +48,7 @@ describe("init command", () => {
 			cleanups.push(() => rm(remote, { recursive: true, force: true }));
 			const project = await mkdtemp(join(tmpdir(), "shelf-init-project-"));
 			cleanups.push(() => rm(project, { recursive: true, force: true }));
-			await Bun.write(
+			await writeText(
 				join(project, "package.json"),
 				JSON.stringify({ dependencies: { "shelf-init-fixture": "^1.0.0" } }),
 			);

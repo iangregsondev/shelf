@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { startStubServices } from "./helpers/stub-services";
 
 const home = mkdtempSync(join(tmpdir(), "shelf-test-home-"));
-const services = startStubServices();
+const services = await startStubServices();
 
 process.env["SHELF_HOME"] = home;
 process.env["SHELF_NPM_REGISTRY_URL"] = services.npmUrl;

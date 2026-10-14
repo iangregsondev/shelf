@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createRemote, type Remote } from "../helpers/git-remote";
+import { readJson, readText, writeText } from "../helpers/files";
 
 let shelf: ShelfSandbox;
 let tempDir: string;
@@ -21,7 +22,7 @@ afterEach(async () => {
 });
 
 const readRegistry = async (): Promise<{ projects: string[]; manual: string[] }> =>
-	Bun.file(join(shelf.home, "registry.json")).json();
+	(await readJson(join(shelf.home, "registry.json"))) as { projects: string[]; manual: string[] };
 
 const repoExists = async (alias: string): Promise<boolean> =>
 	stat(join(shelf.home, "repos", alias))
@@ -32,7 +33,7 @@ const repoExists = async (alias: string): Promise<boolean> =>
 const makeProject = async (name: string, content: string): Promise<string> => {
 	const dir = join(tempDir, name);
 	await mkdir(dir, { recursive: true });
-	await Bun.write(join(dir, "shelffile"), content);
+	await writeText(join(dir, "shelffile"), content);
 	return dir;
 };
 
@@ -57,15 +58,15 @@ describe("prune", () => {
 		const gone = await makeProject("gone", `lib-gone ${remote.url}\n`);
 		expect((await shelf.run(["install", "--dir", gone])).exitCode).toBe(0);
 		await rm(gone, { recursive: true, force: true });
-		const registryBefore = await Bun.file(join(shelf.home, "registry.json")).text();
-		const configBefore = await Bun.file(join(shelf.home, "config.json")).text();
+		const registryBefore = await readText(join(shelf.home, "registry.json"));
+		const configBefore = await readText(join(shelf.home, "config.json"));
 
 		const result = await shelf.run(["prune", "--dry-run"]);
 
 		expect(result.exitCode).toBe(0);
 		expect(result.output).toContain("lib-gone");
-		expect(await Bun.file(join(shelf.home, "registry.json")).text()).toBe(registryBefore);
-		expect(await Bun.file(join(shelf.home, "config.json")).text()).toBe(configBefore);
+		expect(await readText(join(shelf.home, "registry.json"))).toBe(registryBefore);
+		expect(await readText(join(shelf.home, "config.json"))).toBe(configBefore);
 		expect(await repoExists("lib-gone")).toBe(true);
 	});
 
@@ -74,8 +75,8 @@ describe("prune", () => {
 		const emptied = await makeProject("emptied", `lib-orphan ${remote.url}\n`);
 		expect((await shelf.run(["install", "--dir", broken])).exitCode).toBe(0);
 		expect((await shelf.run(["install", "--dir", emptied])).exitCode).toBe(0);
-		await Bun.write(join(broken, "shelffile"), `lib-broken ${remote.url} pin:not-a-pin\n`);
-		await Bun.write(join(emptied, "shelffile"), "");
+		await writeText(join(broken, "shelffile"), `lib-broken ${remote.url} pin:not-a-pin\n`);
+		await writeText(join(emptied, "shelffile"), "");
 
 		const result = await shelf.run(["prune", "--force"]);
 
@@ -89,7 +90,7 @@ describe("prune", () => {
 	test("keeps a relative project path an older shelf recorded, and deletes nothing, every run", async () => {
 		const project = await makeProject("project", `lib-a ${remote.url}\n`);
 		expect((await shelf.run(["install", "--dir", project])).exitCode).toBe(0);
-		await Bun.write(
+		await writeText(
 			join(shelf.home, "registry.json"),
 			JSON.stringify({ projects: ["project"], manual: [] }),
 		);
@@ -108,7 +109,7 @@ describe("prune", () => {
 	test("re-installing from the project replaces its relative path, and prune works again", async () => {
 		const project = await makeProject("project", `lib-a ${remote.url}\n`);
 		expect((await shelf.run(["install", "--dir", project])).exitCode).toBe(0);
-		await Bun.write(
+		await writeText(
 			join(shelf.home, "registry.json"),
 			JSON.stringify({ projects: ["project"], manual: [] }),
 		);
@@ -127,7 +128,7 @@ describe("prune", () => {
 		const emptied = await makeProject("emptied", `lib-orphan ${remote.url}\n`);
 		expect((await shelf.run(["install", "--dir", locked])).exitCode).toBe(0);
 		expect((await shelf.run(["install", "--dir", emptied])).exitCode).toBe(0);
-		await Bun.write(join(emptied, "shelffile"), "");
+		await writeText(join(emptied, "shelffile"), "");
 		await chmod(join(locked, "shelffile"), 0o000);
 
 		try {
