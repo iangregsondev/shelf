@@ -12,6 +12,8 @@ Shelf started on Bun. Users had to install Bun to install or run the CLI, becaus
 
 Shelf runs on Node.js 24, the runtime almost every developer machine already has. Anyone can install it with npm, pnpm or yarn, and nobody needs Bun. Source I/O goes through Effect's own platform services (`FileSystem`, `ChildProcessSpawner`) with `@effect/platform-node` at the entrypoints, so the code stays idiomatic Effect and testable through layers, and is no longer tied to one runtime's APIs.
 
+Node is pinned in `package.json` `devEngines.runtime` as the range `^24.0.0`, not an exact version as #19 first asked. npm checks `devEngines` but ignores `onFail: "download"`, so with an exact version (say `24.0.0`) npm refuses (EBADDEVENGINES) on every other Node 24 release, such as the 24.18.0 we develop on. The range still requires Node 24, and vite-plus still downloads a matching Node where none is installed.
+
 The toolchain is vite-plus (`vp`): `vp install` (pnpm), `vp check` (format, type-aware lint, typecheck), `vp test` (vitest) and `vp pack` (tsdown). One tool replaces the separately pinned pieces.
 
 ### Build the CLI to `dist`

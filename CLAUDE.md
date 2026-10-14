@@ -6,7 +6,7 @@ Shelf is a standalone CLI that maintains a global, always-up-to-date cache of co
 
 ## Commands
 
-Shelf runs on Node.js 24. The toolchain is vite-plus (`vp`), with pnpm as the package manager; Node and pnpm versions are pinned in `package.json` `devEngines`.
+Shelf runs on Node.js 24. The toolchain is vite-plus (`vp`), with pnpm as the package manager; Node and pnpm versions are pinned in `package.json` `devEngines`: pnpm exactly, Node as the range `^24.0.0` (any Node 24; see `docs/adr/0001-node-and-vite-plus-over-bun.md` for why not an exact version).
 
 - `vp install` — install dependencies (pnpm; `pnpm-lock.yaml` is committed)
 - `vp pack` — build the CLI and the daemon into `dist/` (`index.mjs`, `daemon.mjs`)
@@ -50,8 +50,8 @@ Dependency direction: `command → service → storage boundary`. Reverse import
 - `Effect.catch` replaces v3's `Effect.catchAll`
 - `Effect.catchTag` still works for tagged error handling
 - Import CLI from `effect/cli` (`Command`, `Flag`, `Argument`); constructors are PascalCase: `Flag.String`, `Flag.Boolean`, `Flag.Int`, `Argument.String`
-- Entrypoints run on Node: `runMain` from `@effect/platform-node/NodeRuntime` and `layer` from `@effect/platform-node/NodeServices`. Only the two `src/startup/` entrypoints import `@effect/platform-node`
-- Services read and write files and spawn processes through Effect platform services: `FileSystem` from `effect/FileSystem` and `ChildProcessSpawner` from `effect/process/ChildProcessSpawner`, with `Effect.sleep` for waits. They `yield*` them in `make`, so tests provide them through a layer (`PlatformLayer` in `tests/helpers/platform.ts`). Prefer these for new I/O; a few older paths (the stores, some `stat`/`rename` calls) still call `node:fs` directly
+- Entrypoints run on Node: `runMain` from `@effect/platform-node/NodeRuntime` and `layer` from `@effect/platform-node/NodeServices`. In `src/`, only the two `src/startup/` entrypoints import `@effect/platform-node`; tests get it through `PlatformLayer` in `tests/helpers/platform.ts`
+- Services read and write files and spawn processes through Effect platform services: `FileSystem` from `effect/FileSystem` and `ChildProcessSpawner` from `effect/process/ChildProcessSpawner`, with `Effect.sleep` for waits. They `yield*` them in `make`, so tests provide them through a layer (`PlatformLayer` in `tests/helpers/platform.ts`). Optional files (state files, logs, manifests) are read through `config/file-store.ts`. Only two stores still call `node:fs` directly: `state-file-store.ts` (locks and atomic writes) and `repo-store.ts`
 - Versions are pinned exactly; bump `effect` and `@effect/platform-node` together
 
 ## Testing
@@ -63,6 +63,7 @@ Dependency direction: `command → service → storage boundary`. Reverse import
 - CLI tests run the built `dist/index.mjs` under `node` through `createShelfSandbox()` in `tests/helpers/shelf-cli.ts`: a fresh temp shelf home per test, plus stub npm and GitHub responses (`tests/helpers/stub-services.ts`). Call `cleanup()` in `afterEach`
 - Test helpers use plain `node:` modules (`node:fs/promises`, `node:child_process`, `node:http`)
 - A test that starts a daemon must stop it in `afterEach` with `stopDaemonIn()` from `tests/helpers/daemon.ts`, so it is stopped even when the test fails
+- `DaemonService` run from source (domain tests) can't find `daemon.mjs` next to itself, so the test provides `DaemonEntry` (exported by `daemon-service.ts`) with the built `dist/daemon.mjs`
 - Tests mirror source in `tests/domain/{domain}/`
 - Each domain has `helpers.ts` with mock layers via `Layer.succeed(Service, Service.of(impl))`
 - Use `Effect.runPromise` / `Effect.runPromiseExit` for test assertions
