@@ -24,7 +24,7 @@
 		"fix": "vp fmt src tests && vp lint --fix --tsconfig tsconfig.json src tests"
 	},
 	"dependencies": {
-		"@effect/platform-bun": "4.0.4",
+		"@effect/platform-node": "4.0.4",
 		"effect": "4.0.4"
 	},
 	"devDependencies": {

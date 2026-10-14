@@ -1,8 +1,8 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { runMain } from "@effect/platform-bun/BunRuntime";
-import { layer as BunServicesLayer } from "@effect/platform-bun/BunServices";
+import { runMain } from "@effect/platform-node/NodeRuntime";
+import { layer as NodeServicesLayer } from "@effect/platform-node/NodeServices";
 import { Command } from "effect/cli";
 import { addCommand } from "../cli/commands/add";
 import { removeCommand } from "../cli/commands/remove";
@@ -47,7 +47,7 @@ const shelf = Command.make("shelf").pipe(
 const program = Command.run(shelf, { version: SHELF_VERSION });
 
 program.pipe(
-	Effect.provide(AppLayer.pipe(Layer.provideMerge(BunServicesLayer))),
+	Effect.provide(AppLayer.pipe(Layer.provideMerge(NodeServicesLayer))),
 	Effect.catch((error: unknown) => {
 		const message = formatUserError(error);
 		if (message !== null) {

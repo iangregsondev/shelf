@@ -28,6 +28,7 @@ import { parseSyncInterval } from "../config/config-utils";
 import { isProcessAlive } from "../config/state-file-store";
 import { SHELF_VERSION } from "../../version";
 import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const LOG_MAX_BYTES = 5_242_880; // 5 MB
 /** How long `start` waits for the daemon to report itself running. */
@@ -41,8 +42,17 @@ const stopTimeoutMs = (): number => {
 	return Number.isInteger(override) && override > 0 ? override : 30_000;
 };
 const POLL_MS = 50;
-/** The daemon process's entry point; status and stop recognise it by this file. */
-const DAEMON_ENTRY = new URL("../../startup/daemon.ts", import.meta.url).pathname;
+/**
+ * The daemon process's entry point, the built `daemon.mjs`; status and stop
+ * recognise it by this file. Bundled, this code sits in `dist` next to it. Run
+ * from source (the tests), it uses the one built into the repo's `dist`.
+ */
+const DAEMON_ENTRY = fileURLToPath(
+	new URL(
+		import.meta.url.endsWith(".ts") ? "../../../dist/daemon.mjs" : "./daemon.mjs",
+		import.meta.url,
+	),
+);
 /** The command line of a daemon started with `token`. */
 const daemonCommand = (token: string): string[] => [
 	process.execPath,
