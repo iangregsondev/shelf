@@ -20,6 +20,8 @@ import {
 	isDaemonCommandLine,
 } from "./daemon-utils";
 import { defaultConfig } from "../config/config-schema";
+import { parseSyncInterval } from "../config/config-utils";
+import { isProcessAlive } from "../config/state-file-store";
 import { SHELF_VERSION } from "../../version";
 
 const LOG_MAX_BYTES = 5_242_880; // 5 MB
@@ -28,15 +30,6 @@ const START_TIMEOUT_MS = 10_000;
 /** How long `stop` waits for the daemon to finish its current step before SIGKILL. */
 const STOP_TIMEOUT_MS = 30_000;
 const POLL_MS = 50;
-
-const isPidAlive = (pid: number): boolean => {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch {
-		return false;
-	}
-};
 
 /** The command line of a running process, or undefined if there is no such process. */
 const commandLineOf = (pid: number): string | undefined => {
@@ -54,7 +47,7 @@ const commandLineOf = (pid: number): string | undefined => {
 
 /** Whether `pid` is alive and is the shelf daemon started with `token`. */
 const isShelfDaemon = (pid: number, token: string): boolean => {
-	if (!isPidAlive(pid)) return false;
+	if (!isProcessAlive(pid)) return false;
 	const commandLine = commandLineOf(pid);
 	return commandLine !== undefined && isDaemonCommandLine(commandLine, token);
 };
@@ -195,7 +188,7 @@ export class DaemonService extends Context.Service<DaemonService>()(
 					}
 					// The daemon finishes its current step, removes its state file and exits.
 					const deadline = Date.now() + STOP_TIMEOUT_MS;
-					while (isPidAlive(pid) && Date.now() < deadline) {
+					while (isProcessAlive(pid) && Date.now() < deadline) {
 						yield* Effect.sleep(POLL_MS);
 					}
 					if (isShelfDaemon(pid, token)) {
@@ -299,7 +292,7 @@ const cleanupState = (path: string, token: string): Effect.Effect<void> =>
 
 /** The interval to sleep between syncs; falls back to the default for a bad hand-edited value. */
 const syncInterval = (minutes: number): number =>
-	Number.isInteger(minutes) && minutes >= 1 ? minutes : defaultConfig.syncIntervalMinutes;
+	parseSyncInterval(String(minutes)) ?? defaultConfig.syncIntervalMinutes;
 
 // Runs as the daemon process. The runtime interrupts this program on SIGTERM
 // or SIGINT; each sync step is uninterruptible, so the daemon finishes the

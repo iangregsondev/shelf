@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parseLockPid } from "../../../src/domain/config/state-file-utils";
+import { parseLockPid } from "../../../src/domain/config/state-file-store";
 
 describe("parseLockPid", () => {
 	test("reads the owner PID", () => {

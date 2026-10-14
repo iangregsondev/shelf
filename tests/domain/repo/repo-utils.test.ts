@@ -1,12 +1,7 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import * as Effect from "effect/Effect";
-import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { describe, test, expect } from "bun:test";
 import {
 	aliasProblem,
 	deriveAlias,
-	dirSize,
 	parsePin,
 	pinFromRemoteRefs,
 } from "../../../src/domain/repo/repo-utils";
@@ -167,40 +162,5 @@ describe("deriveAlias edge cases", () => {
 	test("cuts a long name to 100 characters", () => {
 		const alias = deriveAlias(`https://example.com/x/${"a".repeat(150)}`);
 		expect(alias).toBe("a".repeat(100));
-	});
-});
-
-describe("dirSize", () => {
-	let dir: string;
-
-	beforeEach(async () => {
-		dir = await mkdtemp(join(tmpdir(), "shelf-dirsize-"));
-	});
-
-	afterEach(async () => {
-		await rm(dir, { recursive: true, force: true });
-	});
-
-	test("an empty folder is 0 bytes", async () => {
-		expect(await Effect.runPromise(dirSize(dir))).toBe(0);
-	});
-
-	test("adds up the bytes of every file in nested folders", async () => {
-		await Bun.write(join(dir, "a.txt"), "12345");
-		await mkdir(join(dir, "sub", "deeper"), { recursive: true });
-		await Bun.write(join(dir, "sub", "b.txt"), "123");
-		await Bun.write(join(dir, "sub", "deeper", "c.txt"), "1234567890");
-		expect(await Effect.runPromise(dirSize(dir))).toBe(18);
-	});
-
-	test("a missing folder is 0 bytes rather than an error", async () => {
-		expect(await Effect.runPromise(dirSize(join(dir, "missing")))).toBe(0);
-	});
-
-	test("a broken symlink does not zero out the rest of the folder", async () => {
-		await Bun.write(join(dir, "a.txt"), "12345");
-		await symlink(join(dir, "nowhere"), join(dir, "dangling"));
-		const size = await Effect.runPromise(dirSize(dir));
-		expect(size).toBeGreaterThanOrEqual(5);
 	});
 });

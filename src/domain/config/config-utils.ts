@@ -21,3 +21,9 @@ export const parseSyncInterval = (raw: string): number | undefined => {
 	const minutes = Number(trimmed);
 	return Number.isSafeInteger(minutes) && minutes >= 1 ? minutes : undefined;
 };
+
+/** The `code` of a Node file-system error (`ENOENT`, `EEXIST`, ...), if it has one. */
+export const errorCode = (error: unknown): string | undefined =>
+	error !== null && typeof error === "object" && "code" in error
+		? String((error as { code: unknown }).code)
+		: undefined;

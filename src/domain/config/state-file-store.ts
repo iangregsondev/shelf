@@ -14,6 +14,7 @@ import * as Semaphore from "effect/Semaphore";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { errorCode } from "./config-utils";
 
 /** How long to wait for another process's lock before giving up. */
 const LOCK_TIMEOUT_MS = 30_000;
@@ -31,15 +32,11 @@ const semaphoreFor = (path: string): Semaphore.Semaphore => {
 	return semaphore;
 };
 
-const errorCode = (error: unknown): string | undefined =>
-	error !== null && typeof error === "object" && "code" in error
-		? String((error as { code: unknown }).code)
-		: undefined;
-
 const errorMessage = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
-const isProcessAlive = (pid: number): boolean => {
+/** Whether a process with this PID exists (even one owned by another user). */
+export const isProcessAlive = (pid: number): boolean => {
 	try {
 		process.kill(pid, 0);
 		return true;

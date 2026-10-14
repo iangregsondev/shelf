@@ -1,6 +1,4 @@
 import * as Effect from "effect/Effect";
-import { lstatSync, readdirSync } from "node:fs";
-import { join } from "node:path";
 import { RepoPin } from "../config/config-schema";
 import { InvalidAliasError } from "./repo-errors";
 
@@ -115,28 +113,6 @@ export const pinFromRemoteRefs = (name: string, lsRemoteOutput: string): RepoPin
 	if (refs.has(`refs/heads/${name}`)) return new RepoPin({ type: "branch", value: name });
 	return undefined;
 };
-
-export const dirSize = (dirPath: string): Effect.Effect<number> =>
-	Effect.try({
-		try: () => {
-			let total = 0;
-			const stack = [dirPath];
-			while (stack.length > 0) {
-				const current = stack.pop() as string;
-				const entries = readdirSync(current, { withFileTypes: true });
-				for (const entry of entries) {
-					const fullPath = join(current, entry.name);
-					if (entry.isDirectory()) {
-						stack.push(fullPath);
-					} else {
-						total += lstatSync(fullPath).size;
-					}
-				}
-			}
-			return total;
-		},
-		catch: () => 0,
-	}).pipe(Effect.orElseSucceed(() => 0));
 
 /** Succeeds with the alias when it is a single safe folder name, else fails with `InvalidAliasError`. */
 export const checkAlias = (alias: string): Effect.Effect<string, InvalidAliasError> => {

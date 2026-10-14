@@ -7,7 +7,7 @@ import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 import { ShelffileService } from "../../domain/shelffile/shelffile-service";
 import type { RepoEntry } from "../../domain/config/config-schema";
-import { dirSize } from "../../domain/repo/repo-utils";
+import { dirSize } from "../../domain/repo/repo-store";
 
 export const statusCommand = Command.make("status", {}, () =>
 	Effect.gen(function* () {

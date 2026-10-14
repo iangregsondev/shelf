@@ -4,11 +4,12 @@ import * as Context from "effect/Context";
 import { stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { ConfigService } from "../config/config-service";
+import { errorCode } from "../config/config-utils";
 import { ShelffileService } from "../shelffile/shelffile-service";
 import { ShelfRegistry, defaultRegistry, decodeRegistry, encodeRegistry } from "./registry-schema";
 import { RegistryParseError } from "./registry-errors";
 import { possibleShelffileAliases } from "../shelffile/shelffile-utils";
-import { withStateFileLock, writeFileAtomic } from "../config/state-file-utils";
+import { withStateFileLock, writeFileAtomic } from "../config/state-file-store";
 
 const REGISTRY_FILE = "registry.json";
 
@@ -38,7 +39,7 @@ const projectState = async (dir: string): Promise<ProjectState> => {
 		await stat(dir);
 		return "present";
 	} catch (error) {
-		const code = (error as NodeJS.ErrnoException).code;
+		const code = errorCode(error);
 		if (code === "ENOENT" || code === "ENOTDIR") return "missing";
 		return { unknown: error instanceof Error ? error.message : String(error) };
 	}

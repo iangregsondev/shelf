@@ -21,12 +21,13 @@ src/domain/{domain-name}/{name}-service.ts  — business logic
 src/domain/{domain-name}/{name}-schema.ts   — schemas
 src/domain/{domain-name}/{name}-errors.ts   — typed errors
 src/domain/{domain-name}/{name}-utils.ts    — pure functions
+src/domain/{domain-name}/{name}-store.ts    — storage boundary: file-system I/O
 src/cli/commands/{name}.ts                  — CLI entrypoints
 src/startup/index.ts                        — CLI entrypoint
 src/startup/layers/app.ts                   — layer composition
 ```
 
-Domains: `config`, `git`, `sync`, `repo`, `shelffile`, `registry`.
+Domains: `config`, `daemon`, `detect`, `git`, `registry`, `repo`, `resolve`, `shelffile`, `sync`.
 
 Dependency direction: `command → service → storage boundary`. Reverse imports forbidden.
 

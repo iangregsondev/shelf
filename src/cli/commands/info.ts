@@ -8,7 +8,7 @@ import { RegistryService } from "../../domain/registry/registry-service";
 import { ShelffileService } from "../../domain/shelffile/shelffile-service";
 import { RepoNotFoundError } from "../../domain/repo/repo-errors";
 import type { RepoEntry } from "../../domain/config/config-schema";
-import { dirSize } from "../../domain/repo/repo-utils";
+import { dirSize } from "../../domain/repo/repo-store";
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 

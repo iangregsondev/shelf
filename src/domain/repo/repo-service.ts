@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
 import { ConfigParseError } from "../config/config-errors";
 import { ConfigService } from "../config/config-service";
+import { errorCode } from "../config/config-utils";
 import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
 import { SyncService, type SyncAllResult } from "../sync/sync-service";
@@ -18,11 +19,6 @@ import {
 } from "./repo-errors";
 import { checkAlias, deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
-
-const errorCode = (error: unknown): string | undefined =>
-	error !== null && typeof error === "object" && "code" in error
-		? String((error as { code: unknown }).code)
-		: undefined;
 
 export class RepoService extends Context.Service<RepoService>()("shelf/domain/repo/RepoService", {
 	make: Effect.gen(function* () {
@@ -170,10 +166,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				}
 				const repoDir = config.repoPath(repo.alias);
 				yield* Effect.tryPromise({
-					try: async () => {
-						const { rm } = await import("node:fs/promises");
-						await rm(repoDir, { recursive: true, force: true });
-					},
+					try: () => removePath(repoDir, { recursive: true, force: true }),
 					catch: () => undefined,
 				}).pipe(Effect.ignore);
 				yield* config.update(

@@ -7,7 +7,7 @@ import type { ShelfConfig } from "./config-schema";
 import { defaultConfig, decodeConfig, encodeConfig } from "./config-schema";
 import { ConfigParseError } from "./config-errors";
 import { resolveShelfHome } from "./config-utils";
-import { withStateFileLock, writeFileAtomic } from "./state-file-utils";
+import { withStateFileLock, writeFileAtomic } from "./state-file-store";
 
 export class ConfigService extends Context.Service<ConfigService>()(
 	"shelf/domain/config/ConfigService",
