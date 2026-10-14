@@ -1,5 +1,39 @@
 import { describe, expect, test } from "vite-plus/test";
-import { parseSyncInterval, resolveShelfHome } from "../../../src/domain/config/config-utils";
+import * as PlatformError from "effect/PlatformError";
+import {
+  errorCode,
+  osError,
+  parseSyncInterval,
+  resolveShelfHome,
+} from "../../../src/domain/config/config-utils";
+
+describe("osError", () => {
+  test("unwraps the Node error a FileSystem failure carries", () => {
+    const nodeError = Object.assign(new Error("ENOTDIR: not a directory, stat '/a/b'"), {
+      code: "ENOTDIR",
+    });
+    const wrapped = PlatformError.systemError({
+      _tag: "BadResource",
+      module: "FileSystem",
+      method: "stat",
+      pathOrDescriptor: "/a/b",
+      cause: nodeError,
+    });
+    expect(osError(wrapped)).toBe(nodeError);
+    expect(errorCode(osError(wrapped))).toBe("ENOTDIR");
+  });
+
+  test("gives any other error back as is", () => {
+    const plain = new Error("boom");
+    expect(osError(plain)).toBe(plain);
+    const noCause = PlatformError.systemError({
+      _tag: "NotFound",
+      module: "FileSystem",
+      method: "stat",
+    });
+    expect(osError(noCause)).toBe(noCause);
+  });
+});
 
 describe("resolveShelfHome", () => {
   const cases: ReadonlyArray<{

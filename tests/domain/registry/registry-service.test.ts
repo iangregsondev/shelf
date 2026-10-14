@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { mkdtemp, rm, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RegistryService } from "../../../src/domain/registry/registry-service";
@@ -158,5 +158,22 @@ describe("RegistryService", () => {
     expect(result.has("manual-repo")).toBe(true);
     expect(result.size).toBe(1);
     await rm(projectDir, { recursive: true, force: true });
+  });
+
+  test("scanReferences marks gone project folders stale, including a path under a file", async () => {
+    const goneDir = join(tempDir, "gone");
+    const underFile = join(tempDir, "a-file", "project");
+    await writeFile(join(tempDir, "a-file"), "not a folder");
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const svc = yield* RegistryService;
+        yield* svc.registerProject(goneDir);
+        yield* svc.registerProject(underFile);
+        return yield* svc.scanReferences();
+      }).pipe(Effect.provide(buildLayer())),
+    );
+    expect(result.staleProjects).toEqual([goneDir, underFile]);
+    expect(result.anyMightBeReferenced).toBe(false);
+    expect(result.warnings).toEqual([]);
   });
 });

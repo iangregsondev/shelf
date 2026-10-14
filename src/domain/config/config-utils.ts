@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import * as PlatformError from "effect/PlatformError";
 import { join, resolve } from "node:path";
 import { InvalidAliasError } from "./config-errors";
 
@@ -29,6 +30,22 @@ export const errorCode = (error: unknown): string | undefined =>
   error !== null && typeof error === "object" && "code" in error
     ? String((error as { code: unknown }).code)
     : undefined;
+
+/**
+ * The Node error that an Effect `FileSystem` failure wraps, which carries the
+ * errno `code` and Node's own message (`ENOENT: no such file or directory, ...`);
+ * any other error as is.
+ */
+export const osError = (error: unknown): unknown =>
+  PlatformError.isPlatformError(error) && error.reason.cause !== undefined
+    ? error.reason.cause
+    : error;
+
+/** The message of `error`, or of the Node error it wraps (see `osError`). */
+export const osErrorMessage = (error: unknown): string => {
+  const cause = osError(error);
+  return cause instanceof Error ? cause.message : String(cause);
+};
 
 const ALIAS_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export const ALIAS_MAX_LENGTH = 100;

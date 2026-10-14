@@ -3,11 +3,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
 import { FileSystem } from "effect/FileSystem";
-import { mkdir, rename as renamePath, rm as removePath } from "node:fs/promises";
 import { join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
 import { ConfigService } from "../config/config-service";
-import { checkAlias, errorCode } from "../config/config-utils";
+import { checkAlias, errorCode, osError, osErrorMessage } from "../config/config-utils";
 import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
 import { RegistryService } from "../registry/registry-service";
@@ -130,16 +129,15 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
         // Claim the folder before cloning, so a failed add only ever removes
         // a folder it created itself. The clone runs outside the config lock;
         // only the config write takes turns with other adds.
-        yield* Effect.tryPromise({
-          try: () => mkdir(targetDir),
-          catch: (error) =>
-            errorCode(error) === "EEXIST"
-              ? new RepoAlreadyExistsError({ alias: resolvedAlias })
-              : new RepoFolderError({
-                  path: targetDir,
-                  message: error instanceof Error ? error.message : String(error),
-                }),
-        });
+        yield* fs
+          .makeDirectory(targetDir)
+          .pipe(
+            Effect.mapError((error) =>
+              errorCode(osError(error)) === "EEXIST"
+                ? new RepoAlreadyExistsError({ alias: resolvedAlias })
+                : new RepoFolderError({ path: targetDir, message: osErrorMessage(error) }),
+            ),
+          );
         yield* Effect.gen(function* () {
           yield* git.clone(url, targetDir, pin, depth, sparse);
           // A commit pin is stored as its full hash, read from the fresh clone.
@@ -164,9 +162,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
           );
         }).pipe(
           Effect.onError(() =>
-            Effect.tryPromise(() => removePath(targetDir, { recursive: true, force: true })).pipe(
-              Effect.ignore,
-            ),
+            fs.remove(targetDir, { recursive: true, force: true }).pipe(Effect.ignore),
           ),
         );
         return resolvedAlias;
@@ -181,10 +177,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
           return yield* new RepoNotFoundError({ alias: aliasOrUrl });
         }
         const repoDir = yield* config.repoPath(repo.alias);
-        yield* Effect.tryPromise({
-          try: () => removePath(repoDir, { recursive: true, force: true }),
-          catch: () => undefined,
-        }).pipe(Effect.ignore);
+        yield* fs.remove(repoDir, { recursive: true, force: true }).pipe(Effect.ignore);
         yield* config.update(
           (current) =>
             new ShelfConfig({
@@ -219,15 +212,13 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
             message: `a folder already exists at ${newPath}`,
           });
         }
-        yield* Effect.tryPromise({
-          try: () => renamePath(oldPath, newPath),
-          catch: (error) =>
-            new AliasRenameError({
-              from,
-              to,
-              message: error instanceof Error ? error.message : String(error),
-            }),
-        });
+        yield* fs
+          .rename(oldPath, newPath)
+          .pipe(
+            Effect.mapError(
+              (error) => new AliasRenameError({ from, to, message: osErrorMessage(error) }),
+            ),
+          );
         yield* config
           .updateRepo(from, (repo, current) =>
             current.repos.some((r: RepoEntry) => r.alias === to)
@@ -240,9 +231,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
                 ? Effect.fail(new RepoNotFoundError({ alias: from }))
                 : Effect.void,
             ),
-            Effect.onError(() =>
-              Effect.tryPromise(() => renamePath(newPath, oldPath)).pipe(Effect.ignore),
-            ),
+            Effect.onError(() => fs.rename(newPath, oldPath).pipe(Effect.ignore)),
           );
         yield* registry.renameManual(from, to);
       }),

@@ -13,6 +13,9 @@ import { createMockSyncLayer } from "../sync/helpers";
 import { createMockRegistryLayer } from "../registry/helpers";
 import { writeText } from "../../helpers/files";
 import { PlatformLayer } from "../../helpers/platform";
+import { existsSync } from "node:fs";
+import { GitOperationError } from "../../../src/domain/git/git-errors";
+import { ConfigWriteError } from "../../../src/domain/config/config-errors";
 
 // `add` claims the repo folder on disk before cloning, so point repoPath at a
 // fresh temp folder per test.
@@ -101,6 +104,126 @@ describe("RepoService", () => {
       expect(exit._tag).toBe("Failure");
     });
 
+    test("rejects an alias whose folder is already on disk, and leaves the folder alone", async () => {
+      await writeText(join(reposDir, "effect", "keep.txt"), "mine");
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
+        }).pipe(Effect.flip, Effect.provide(buildRepoLayer())),
+      );
+      expect(error._tag).toBe("RepoAlreadyExistsError");
+      expect(existsSync(join(reposDir, "effect", "keep.txt"))).toBe(true);
+    });
+
+    test("fails with RepoFolderError naming the OS error when the folder can't be created", async () => {
+      const targetDir = join(reposDir, "missing-parent", "effect");
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
+        }).pipe(Effect.flip, Effect.provide(buildRepoLayer({ repoPath: () => targetDir }))),
+      );
+      expect(error).toMatchObject({
+        _tag: "RepoFolderError",
+        path: targetDir,
+        message: `ENOENT: no such file or directory, mkdir '${targetDir}'`,
+      });
+    });
+
+    test("removes the folder it claimed when the clone fails", async () => {
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
+        }).pipe(
+          Effect.flip,
+          Effect.provide(
+            buildRepoLayer(
+              {},
+              {
+                clone: () =>
+                  Effect.fail(new GitOperationError({ command: "git clone", message: "boom" })),
+              },
+            ),
+          ),
+        ),
+      );
+      expect(error._tag).toBe("GitOperationError");
+      expect(existsSync(join(reposDir, "effect"))).toBe(false);
+    });
+  });
+
+  describe("rename", () => {
+    const configWith = (alias: string) => ({
+      load: () =>
+        Effect.succeed(
+          new ShelfConfig({
+            version: 1,
+            syncIntervalMinutes: 60,
+            repos: [
+              new RepoEntry({
+                url: "https://github.com/test/repo.git",
+                alias,
+                addedAt: "2026-01-01",
+                pin: Option.none(),
+                depth: Option.none(),
+                sparse: Option.none(),
+                lastSyncedAt: Option.none(),
+              }),
+            ],
+          }),
+        ),
+    });
+
+    test("moves the folder", async () => {
+      await writeText(join(reposDir, "lib", "lib.ts"), "code");
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          yield* repo.rename("lib", "renamed");
+        }).pipe(Effect.provide(buildRepoLayer(configWith("lib")))),
+      );
+      expect(existsSync(join(reposDir, "renamed", "lib.ts"))).toBe(true);
+      expect(existsSync(join(reposDir, "lib"))).toBe(false);
+    });
+
+    test("fails with AliasRenameError naming the OS error when the folder can't move", async () => {
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          yield* repo.rename("lib", "renamed");
+        }).pipe(Effect.flip, Effect.provide(buildRepoLayer(configWith("lib")))),
+      );
+      expect(error).toMatchObject({
+        _tag: "AliasRenameError",
+        message: `ENOENT: no such file or directory, rename '${join(reposDir, "lib")}' -> '${join(reposDir, "renamed")}'`,
+      });
+    });
+
+    test("moves the folder back when the config can't follow", async () => {
+      await writeText(join(reposDir, "lib", "lib.ts"), "code");
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          yield* repo.rename("lib", "renamed");
+        }).pipe(
+          Effect.flip,
+          Effect.provide(
+            buildRepoLayer({
+              ...configWith("lib"),
+              save: () => Effect.fail(new ConfigWriteError({ message: "disk full" })),
+            }),
+          ),
+        ),
+      );
+      expect(error._tag).toBe("ConfigWriteError");
+      expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+      expect(existsSync(join(reposDir, "renamed"))).toBe(false);
+    });
+  });
+
+  describe("add pins", () => {
     test("applies pin on clone", async () => {
       let clonedPin: Option.Option<RepoPin> = Option.none();
       const layer = buildRepoLayer(

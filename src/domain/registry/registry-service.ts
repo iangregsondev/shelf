@@ -3,10 +3,9 @@ import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
 import * as Option from "effect/Option";
 import { FileSystem } from "effect/FileSystem";
-import { stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { ConfigService } from "../config/config-service";
-import { errorCode } from "../config/config-utils";
+import { errorCode, osError, osErrorMessage } from "../config/config-utils";
 import { ShelffileService } from "../shelffile/shelffile-service";
 import { ShelfRegistry, defaultRegistry, decodeRegistry, encodeRegistry } from "./registry-schema";
 import { RegistryParseError, RegistryWriteError } from "./registry-errors";
@@ -36,16 +35,15 @@ export interface ReferenceScan {
 type ProjectState = "present" | "missing" | { readonly unknown: string };
 
 /** "missing" only when the folder is definitely gone. */
-const projectState = async (dir: string): Promise<ProjectState> => {
-  try {
-    await stat(dir);
-    return "present";
-  } catch (error) {
-    const code = errorCode(error);
-    if (code === "ENOENT" || code === "ENOTDIR") return "missing";
-    return { unknown: error instanceof Error ? error.message : String(error) };
-  }
-};
+const projectState = (fs: FileSystem, dir: string): Effect.Effect<ProjectState> =>
+  fs.stat(dir).pipe(
+    Effect.as<ProjectState>("present"),
+    Effect.catch((error) => {
+      const code = errorCode(osError(error));
+      if (code === "ENOENT" || code === "ENOTDIR") return Effect.succeed<ProjectState>("missing");
+      return Effect.succeed<ProjectState>({ unknown: osErrorMessage(error) });
+    }),
+  );
 
 export class RegistryService extends Context.Service<RegistryService>()(
   "shelf/domain/registry/RegistryService",
@@ -185,7 +183,7 @@ export class RegistryService extends Context.Service<RegistryService>()(
               );
               continue;
             }
-            const state = yield* Effect.promise(() => projectState(projectDir));
+            const state = yield* projectState(fs, projectDir);
             if (state === "missing") {
               staleProjects.push(projectDir);
               continue;
