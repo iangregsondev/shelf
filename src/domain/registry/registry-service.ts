@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
+import * as Option from "effect/Option";
 import { FileSystem } from "effect/FileSystem";
 import { stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
@@ -9,6 +10,7 @@ import { errorCode } from "../config/config-utils";
 import { ShelffileService } from "../shelffile/shelffile-service";
 import { ShelfRegistry, defaultRegistry, decodeRegistry, encodeRegistry } from "./registry-schema";
 import { RegistryParseError, RegistryWriteError } from "./registry-errors";
+import { readJsonIfExists } from "../config/file-store";
 import { withStateFileLock, writeFileAtomic } from "../config/state-file-store";
 
 const REGISTRY_FILE = "registry.json";
@@ -56,29 +58,22 @@ export class RegistryService extends Context.Service<RegistryService>()(
       const registryPath = join(config.shelfHome, REGISTRY_FILE);
 
       const load = Effect.fn("RegistryService.load")(function* () {
-        const exists = yield* fs
-          .exists(registryPath)
-          .pipe(
-            Effect.mapError(
-              () => new RegistryParseError({ message: "Failed to check registry file" }),
-            ),
-          );
-        if (!exists) {
+        const raw = yield* readJsonIfExists(fs, registryPath).pipe(
+          Effect.mapError(
+            (error) =>
+              new RegistryParseError({
+                message:
+                  error.stage === "check"
+                    ? "Failed to check registry file"
+                    : "Failed to read registry file",
+              }),
+          ),
+        );
+        if (Option.isNone(raw)) {
           return defaultRegistry;
         }
-        const text = yield* fs
-          .readFileString(registryPath)
-          .pipe(
-            Effect.mapError(
-              () => new RegistryParseError({ message: "Failed to read registry file" }),
-            ),
-          );
-        const raw = yield* Effect.try({
-          try: (): unknown => JSON.parse(text),
-          catch: () => new RegistryParseError({ message: "Failed to read registry file" }),
-        });
         return yield* Effect.try({
-          try: () => decodeRegistry(raw),
+          try: () => decodeRegistry(raw.value),
           catch: () => new RegistryParseError({ message: "Invalid registry schema" }),
         });
       });

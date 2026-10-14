@@ -5,6 +5,7 @@ import * as Context from "effect/Context";
 import { FileSystem } from "effect/FileSystem";
 import { join } from "node:path";
 import { ConfigService } from "../config/config-service";
+import { readFileIfExists } from "../config/file-store";
 import { lookupBuiltin } from "../resolve/resolve-utils";
 import { deriveAlias } from "../repo/repo-utils";
 import { DetectedRepo } from "./detect-schema";
@@ -16,11 +17,9 @@ import {
   npmRegistryBaseUrl,
 } from "./detect-utils";
 
+/** The file's text; None when it is missing or can't be read. */
 const readFileOrNone = (fs: FileSystem, path: string): Effect.Effect<Option.Option<string>> =>
-  Effect.gen(function* () {
-    if (!(yield* fs.exists(path))) return Option.none<string>();
-    return Option.some(yield* fs.readFileString(path));
-  }).pipe(Effect.catch(() => Effect.succeed(Option.none<string>())));
+  readFileIfExists(fs, path).pipe(Effect.orElseSucceed(() => Option.none<string>()));
 
 const resolveNpmPackage = (name: string): Effect.Effect<Option.Option<string>> =>
   Effect.gen(function* () {

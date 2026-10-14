@@ -25,6 +25,7 @@ import {
 } from "./daemon-utils";
 import { defaultConfig } from "../config/config-schema";
 import { parseSyncInterval } from "../config/config-utils";
+import { readFileIfExists, readJsonIfExists } from "../config/file-store";
 import { isProcessAlive } from "../config/state-file-store";
 import { SHELF_VERSION } from "../../version";
 import { dirname } from "node:path";
@@ -112,9 +113,9 @@ const commandLineOf = (
 /** The recorded daemon state, or null when there is none or it can't be read. */
 const readStateFile = (fs: FileSystem, path: string): Effect.Effect<DaemonState | null> =>
   Effect.gen(function* () {
-    if (!(yield* fs.exists(path))) return null;
-    const text = yield* fs.readFileString(path);
-    return yield* Effect.try(() => decodeDaemonState(JSON.parse(text)));
+    const raw = yield* readJsonIfExists(fs, path);
+    if (Option.isNone(raw)) return null;
+    return yield* Effect.try(() => decodeDaemonState(raw.value));
   }).pipe(Effect.catch(() => Effect.succeed(null)));
 
 const formatUptime = (startedAt: string): string => {
@@ -309,10 +310,10 @@ export class DaemonService extends Context.Service<DaemonService>()(
         }),
 
         logs: Effect.fn("DaemonService.logs")(function* (lines: number) {
-          const content = yield* Effect.gen(function* () {
-            if (!(yield* fs.exists(logPath))) return "";
-            return yield* fs.readFileString(logPath);
-          }).pipe(Effect.catch(() => Effect.succeed("")));
+          const content = yield* readFileIfExists(fs, logPath).pipe(
+            Effect.map(Option.getOrElse(() => "")),
+            Effect.orElseSucceed(() => ""),
+          );
 
           if (!content) return "No daemon logs found.";
           const allLines = content.split("\n");
@@ -359,9 +360,9 @@ const writeDaemonState = (
 /** Removes the state file, unless another daemon has since recorded itself there. */
 const cleanupState = (fs: FileSystem, path: string, token: string): Effect.Effect<void> =>
   Effect.gen(function* () {
-    if (yield* fs.exists(path)) {
-      const text = yield* fs.readFileString(path);
-      const recorded = yield* Effect.try(() => decodeDaemonState(JSON.parse(text)));
+    const raw = yield* readJsonIfExists(fs, path);
+    if (Option.isSome(raw)) {
+      const recorded = yield* Effect.try(() => decodeDaemonState(raw.value));
       if (recorded.token !== token) return;
     }
     yield* fs.remove(path, { force: true });

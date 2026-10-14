@@ -9,6 +9,7 @@ import type { RepoEntry } from "./config-schema";
 import { ShelfConfig, defaultConfig, decodeConfig, encodeConfig } from "./config-schema";
 import { ConfigParseError, ConfigWriteError, type InvalidAliasError } from "./config-errors";
 import { checkAlias, resolveShelfHome } from "./config-utils";
+import { readJsonIfExists } from "./file-store";
 import { withStateFileLock, writeFileAtomic } from "./state-file-store";
 
 export class ConfigService extends Context.Service<ConfigService>()(
@@ -21,25 +22,22 @@ export class ConfigService extends Context.Service<ConfigService>()(
       const reposDir = join(shelfHome, "repos");
 
       const load = Effect.fn("ConfigService.load")(function* () {
-        const exists = yield* fs
-          .exists(configFile)
-          .pipe(
-            Effect.mapError(() => new ConfigParseError({ message: "Failed to check config file" })),
-          );
-        if (!exists) {
+        const raw = yield* readJsonIfExists(fs, configFile).pipe(
+          Effect.mapError(
+            (error) =>
+              new ConfigParseError({
+                message:
+                  error.stage === "check"
+                    ? "Failed to check config file"
+                    : "Failed to read config file",
+              }),
+          ),
+        );
+        if (Option.isNone(raw)) {
           return defaultConfig;
         }
-        const text = yield* fs
-          .readFileString(configFile)
-          .pipe(
-            Effect.mapError(() => new ConfigParseError({ message: "Failed to read config file" })),
-          );
-        const raw = yield* Effect.try({
-          try: (): unknown => JSON.parse(text),
-          catch: () => new ConfigParseError({ message: "Failed to read config file" }),
-        });
         return yield* Effect.try({
-          try: () => decodeConfig(raw),
+          try: () => decodeConfig(raw.value),
           catch: () => new ConfigParseError({ message: "Invalid config schema" }),
         });
       });

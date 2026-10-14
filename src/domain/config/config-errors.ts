@@ -29,3 +29,12 @@ export class InvalidAliasError extends Schema.TaggedError<InvalidAliasError>()(
   "InvalidAliasError",
   { alias: Schema.String, message: Schema.String },
 ) {}
+
+/**
+ * Reading a stored file failed at one stage: checking whether it exists,
+ * reading it, or parsing it as JSON. Services map it to their own errors.
+ */
+export class StoredFileReadError extends Schema.TaggedError<StoredFileReadError>()(
+  "StoredFileReadError",
+  { path: Schema.String, stage: Schema.Literals(["check", "read", "parse"]) },
+) {}
