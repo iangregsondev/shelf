@@ -73,6 +73,10 @@ describe("formatUserError: known error tags", () => {
       { _tag: "DaemonStillStoppingError", pid: 42 },
       "The daemon (PID: 42) is still finishing its current step; it stops once that step is done. Run `shelf daemon status` to check.",
     ],
+    [
+      { _tag: "UnknownAgentError", agent: "claud", known: ["claude", "opencode", "gemini"] },
+      'Unknown agent "claud". Expected one of: claude, opencode, gemini',
+    ],
   ])("formats $_tag", (error, expected) => {
     expect(formatUserError(error)).toBe(expected);
   });

@@ -1,9 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { UnknownAgentError } from "../../../src/domain/skill/skill-errors";
 import { SkillService } from "../../../src/domain/skill/skill-service";
 import { skillTemplate } from "../../../src/domain/skill/skill-template";
 import { readText, writeText } from "../../helpers/files";
@@ -44,11 +45,22 @@ describe("SkillService.install", () => {
     expect(await readText(path)).toBe(skillTemplate);
   });
 
-  test("writes to the universal .agents folder for an unknown agent", async () => {
-    const path = await install(projectDir, Option.some("unknown"));
-    expect(path).toBe(join(projectDir, ".agents/skills/shelf/SKILL.md"));
-    expect(await readText(path)).toBe(skillTemplate);
-  });
+  test.each(["codex", "claud", "toString", "constructor", "__proto__"])(
+    "rejects the unknown agent %s and writes nothing",
+    async (agent) => {
+      const error = await Effect.runPromise(
+        SkillService.use((skill) => skill.install(projectDir, Option.some(agent))).pipe(
+          Effect.flip,
+          Effect.provide(SkillService.layer),
+          Effect.provide(PlatformLayer),
+        ),
+      );
+      if (!(error instanceof UnknownAgentError)) throw new Error(`expected UnknownAgentError`);
+      expect(error.agent).toBe(agent);
+      expect(error.known).toEqual(["claude", "opencode", "gemini"]);
+      expect(await readdir(projectDir)).toEqual([]);
+    },
+  );
 
   test("fails when the skill folder cannot be created", async () => {
     // A file stands where the project folder should be.

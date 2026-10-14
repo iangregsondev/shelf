@@ -11,7 +11,9 @@ import { SkillService } from "../../domain/skill/skill-service";
 
 const agent = Flag.String("agent").pipe(
   Flag.optional,
-  Flag.withDescription("Target agent: claude, opencode, or gemini (default: universal .agents/)"),
+  Flag.withDescription(
+    "Target agent: claude, opencode, or gemini; any other name is rejected (default: universal .agents/)",
+  ),
 );
 const noDetect = Flag.Boolean("no-detect").pipe(
   Flag.withDefault(false),
@@ -24,9 +26,14 @@ export const initCommand = Command.make("init", { agent, noDetect }, (config) =>
 
     // Step 1: Write skill file (always)
     const skill = yield* SkillService;
-    const skillPath = yield* skill
-      .install(cwd, config.agent)
-      .pipe(Effect.mapError((error) => new Error(`Failed to write skill file: ${String(error)}`)));
+    const skillPath = yield* skill.install(cwd, config.agent).pipe(
+      // An unknown agent keeps its typed error, so the error handler can list the known agents.
+      Effect.mapError((error) =>
+        error._tag === "UnknownAgentError"
+          ? error
+          : new Error(`Failed to write skill file: ${String(error)}`),
+      ),
+    );
     yield* Console.log(`Created ${skillPath}`);
 
     // Step 2: Detect and add repos (unless --no-detect)

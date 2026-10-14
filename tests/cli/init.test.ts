@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { existsSync } from "node:fs";
-import { mkdtemp, realpath, rename, rm } from "node:fs/promises";
+import { mkdtemp, readdir, realpath, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
@@ -85,20 +85,23 @@ describe("shelf init skill file", () => {
     expect(existsSync(join(project, ".agents"))).toBe(false);
   });
 
-  test("an unknown --agent falls back to the universal skill folder", async () => {
-    const result = await shelf.run(["init", "--agent", "codex", "--no-detect"], { cwd: project });
-    expect(result.exitCode).toBe(0);
-    await expectSkillAt(result.stdout, ".agents/skills/shelf");
-    expect(existsSync(join(project, ".codex"))).toBe(false);
-  });
-
-  test("an --agent named after an Object.prototype member falls back to the universal skill folder", async () => {
-    const result = await shelf.run(["init", "--agent", "toString", "--no-detect"], {
-      cwd: project,
-    });
-    expect(result.exitCode).toBe(0);
-    await expectSkillAt(result.stdout, ".agents/skills/shelf");
-  });
+  test.each(["codex", "claud", "toString"])(
+    "an unknown --agent %s fails before writing or detecting anything",
+    async (agent) => {
+      await writeText(
+        join(project, "package.json"),
+        JSON.stringify({ dependencies: { "shelf-init-fixture": "^1.0.0" } }),
+      );
+      const result = await shelf.run(["init", "--agent", agent], { cwd: project });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain(
+        `Unknown agent "${agent}". Expected one of: claude, opencode, gemini`,
+      );
+      expect(result.stdout).not.toContain("Created");
+      expect(result.stdout).not.toContain("Detected");
+      expect(await readdir(project)).toEqual(["package.json"]);
+    },
+  );
 
   test("--no-detect writes the skill and skips detection", async () => {
     await writeText(
