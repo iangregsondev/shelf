@@ -3,7 +3,7 @@ import * as Console from "effect/Console";
 import * as Option from "effect/Option";
 import { Argument, Command } from "effect/cli";
 import { ConfigService } from "../../domain/config/config-service";
-import { ShelfConfig } from "../../domain/config/config-schema";
+import { ShelfConfig, encodeConfig } from "../../domain/config/config-schema";
 import { InvalidConfigValueError, UnknownConfigKeyError } from "../../domain/config/config-errors";
 import { parseSyncInterval } from "../../domain/config/config-utils";
 
@@ -16,7 +16,8 @@ export const configCommand = Command.make("config", { key, value }, (args) =>
     const cfg = yield* configService.load();
 
     if (Option.isNone(args.key)) {
-      yield* Console.log(JSON.stringify(cfg, null, "\t"));
+      // Encode first: decoded optional fields are Options, which print as internals.
+      yield* Console.log(JSON.stringify(encodeConfig(cfg), null, "\t"));
       return;
     }
 

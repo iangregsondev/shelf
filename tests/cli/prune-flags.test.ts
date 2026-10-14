@@ -1,0 +1,93 @@
+// `shelf prune` with no flags, `--dry-run` and `--force`, against a repo that
+// a project installed and then dropped from its shelffile, next to a repo
+// added by hand (always referenced).
+
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { createRemote, type Remote } from "../helpers/git-remote";
+import { readJson, readText, writeText } from "../helpers/files";
+
+let shelf: ShelfSandbox;
+let tempDir: string;
+let remote: Remote;
+let project: string;
+
+beforeEach(async () => {
+  shelf = await createShelfSandbox();
+  tempDir = await mkdtemp(join(tmpdir(), "shelf-prune-flags-test-"));
+  remote = await createRemote(tempDir);
+  project = join(tempDir, "project");
+  await writeText(join(project, "shelffile"), `dropped ${remote.url}\n`);
+  expect((await shelf.run(["install", "--dir", project])).exitCode).toBe(0);
+  expect((await shelf.run(["add", remote.url, "--alias", "manual"])).exitCode).toBe(0);
+});
+
+afterEach(async () => {
+  await shelf.cleanup();
+  await rm(tempDir, { recursive: true, force: true });
+});
+
+const repoExists = (alias: string): boolean => existsSync(join(shelf.home, "repos", alias));
+
+const storedAliases = async (): Promise<string[]> =>
+  ((await readJson(join(shelf.home, "config.json"))) as { repos: { alias: string }[] }).repos.map(
+    (r) => r.alias,
+  );
+
+/** Empties the project's shelffile, so `dropped` is referenced by nothing. */
+const dropFromShelffile = (): Promise<void> => writeText(join(project, "shelffile"), "");
+
+describe("shelf prune flags", () => {
+  test("with nothing unreferenced says so and removes nothing", async () => {
+    const result = await shelf.run(["prune", "--force"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("No unreferenced repos found.");
+    expect(await storedAliases()).toEqual(["dropped", "manual"]);
+  });
+
+  test("with no flags lists unreferenced repos, asks for --force and removes nothing", async () => {
+    await dropFromShelffile();
+    const configBefore = await readText(join(shelf.home, "config.json"));
+
+    const result = await shelf.run(["prune"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(`Found 1 unreferenced repo(s):\n  dropped — ${remote.url}\n`);
+    expect(result.stdout).toContain("Use --force to remove these repos.");
+    expect(result.stdout).not.toContain("manual —");
+    expect(repoExists("dropped")).toBe(true);
+    expect(await readText(join(shelf.home, "config.json"))).toBe(configBefore);
+  });
+
+  test("--dry-run lists unreferenced repos without asking for --force, and removes nothing", async () => {
+    await dropFromShelffile();
+    const configBefore = await readText(join(shelf.home, "config.json"));
+
+    const result = await shelf.run(["prune", "--dry-run"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(`Found 1 unreferenced repo(s):\n  dropped — ${remote.url}\n`);
+    expect(result.stdout).not.toContain("--force");
+    expect(result.stdout).not.toContain("Removed");
+    expect(repoExists("dropped")).toBe(true);
+    expect(await readText(join(shelf.home, "config.json"))).toBe(configBefore);
+  });
+
+  test("--force removes only the unreferenced repos", async () => {
+    await dropFromShelffile();
+
+    const result = await shelf.run(["prune", "--force"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('Removed "dropped"');
+    expect(result.stdout).toContain("Pruned 1 repo(s).");
+    expect(repoExists("dropped")).toBe(false);
+    expect(repoExists("manual")).toBe(true);
+    expect(await storedAliases()).toEqual(["manual"]);
+  });
+});
