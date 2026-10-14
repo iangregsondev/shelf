@@ -81,21 +81,21 @@ When the user asks about code in a reference repository:
 
 You can add repos by name — no full URL required:
 
-\\\`\\\`\\\`
+\`\`\`
 shelf add react              # resolves from built-in registry
 shelf add Effect-TS/effect   # resolves owner/repo to GitHub
 shelf add https://github.com/org/repo.git  # full URL
-\\\`\\\`\\\`
+\`\`\`
 
 ## Shelffile
 
 A \`shelffile\` is a per-project manifest declaring which reference repos the project needs:
 
-\\\`\\\`\\\`
+\`\`\`
 # one repo per line: alias url [pin:type:value]
 effect https://github.com/Effect-TS/effect.git pin:branch:main
 react https://github.com/facebook/react.git pin:tag:v19.0.0
-\\\`\\\`\\\`
+\`\`\`
 
 Run \`shelf install\` in a project directory to clone all repos from its shelffile. Run \`shelf share\` to generate a shelffile from your current repos. Run \`shelf detect --format shelffile\` to auto-generate from project dependencies.
 
