@@ -47,7 +47,7 @@ const shelf = Command.make("shelf").pipe(
 const program = Command.run(shelf, { version: SHELF_VERSION });
 
 program.pipe(
-	Effect.provide(Layer.mergeAll(AppLayer, BunServicesLayer)),
+	Effect.provide(AppLayer.pipe(Layer.provideMerge(BunServicesLayer))),
 	Effect.catch((error: unknown) => {
 		const message = formatUserError(error);
 		if (message !== null) {

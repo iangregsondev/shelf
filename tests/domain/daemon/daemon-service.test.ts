@@ -11,6 +11,7 @@ import { DaemonState, encodeDaemonState } from "../../../src/domain/daemon/daemo
 import { ConfigService } from "../../../src/domain/config/config-service";
 import { defaultConfig } from "../../../src/domain/config/config-schema";
 import { stopDaemonIn } from "../../helpers/daemon";
+import { PlatformLayer } from "../../helpers/platform";
 import { SHELF_VERSION } from "../../../src/version";
 import { readJson } from "../../helpers/files";
 import { existsSync } from "node:fs";
@@ -36,7 +37,7 @@ describe("DaemonService", () => {
 				configPath: join(tempDir, "config.json"),
 			}),
 		);
-		return DaemonService.layer.pipe(Layer.provide(configLayer));
+		return DaemonService.layer.pipe(Layer.provide(configLayer), Layer.provide(PlatformLayer));
 	};
 
 	/** Starts a real daemon in this test's shelf home and records its PID for cleanup. */

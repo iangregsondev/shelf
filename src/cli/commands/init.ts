@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
+import { FileSystem } from "effect/FileSystem";
 import { Command, Flag } from "effect/cli";
 import { join } from "node:path";
 import { skillTemplate } from "../templates/skill";
@@ -40,14 +41,11 @@ export const initCommand = Command.make("init", { agent, noDetect }, (config) =>
 		// Step 1: Write skill file (always)
 		const skillDir = join(cwd, resolveSkillDir(config.agent));
 		const skillPath = join(skillDir, "SKILL.md");
-		yield* Effect.tryPromise({
-			try: async () => {
-				const { mkdir } = await import("node:fs/promises");
-				await mkdir(skillDir, { recursive: true });
-				await Bun.write(skillPath, skillTemplate);
-			},
-			catch: (error) => new Error(`Failed to write skill file: ${error}`),
-		});
+		const fs = yield* FileSystem;
+		yield* fs.makeDirectory(skillDir, { recursive: true }).pipe(
+			Effect.andThen(fs.writeFileString(skillPath, skillTemplate)),
+			Effect.mapError((error) => new Error(`Failed to write skill file: ${error}`)),
+		);
 		yield* Console.log(`Created ${skillPath}`);
 
 		// Step 2: Detect and add repos (unless --no-detect)

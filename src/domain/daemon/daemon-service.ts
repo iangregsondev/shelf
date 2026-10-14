@@ -3,7 +3,10 @@ import * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
-import { closeSync, openSync } from "node:fs";
+import * as Stream from "effect/Stream";
+import { FileSystem } from "effect/FileSystem";
+import * as ChildProcess from "effect/process/ChildProcess";
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
 import { ConfigService } from "../config/config-service";
 import { SyncService } from "../sync/sync-service";
 import { DaemonState, encodeDaemonState, decodeDaemonState } from "./daemon-schema";
@@ -24,6 +27,7 @@ import { defaultConfig } from "../config/config-schema";
 import { parseSyncInterval } from "../config/config-utils";
 import { isProcessAlive } from "../config/state-file-store";
 import { SHELF_VERSION } from "../../version";
+import { dirname } from "node:path";
 
 const LOG_MAX_BYTES = 5_242_880; // 5 MB
 /** How long `start` waits for the daemon to report itself running. */
@@ -47,26 +51,56 @@ const daemonCommand = (token: string): string[] => [
 	token,
 ];
 
-/** The command line of a running process, or undefined if there is no such process. */
-const commandLineOf = (pid: number): string | undefined => {
-	try {
-		const result = Bun.spawnSync(["ps", "-ww", "-o", "command=", "-p", String(pid)], {
-			stdout: "pipe",
+/**
+ * The background daemon's launch command: `sh` points the daemon's stdout and
+ * stderr at the log, appending so the log survives restarts until rotated,
+ * then `exec`s the daemon so it keeps the same pid and command line.
+ */
+const backgroundDaemonCommand = (token: string, logPath: string): ChildProcess.Command =>
+	ChildProcess.make(
+		"/bin/sh",
+		["-c", 'log="$1"; shift; exec "$@" >>"$log" 2>&1', "sh", logPath, ...daemonCommand(token)],
+		{
+			stdin: "ignore",
+			stdout: "ignore",
 			stderr: "ignore",
-		});
-		if (result.exitCode !== 0) return undefined;
-		return result.stdout.toString().trim();
-	} catch {
-		return undefined;
-	}
-};
+			detached: true,
+			env: { SHELF_DAEMON: "1" },
+			extendEnv: true,
+		},
+	);
 
-/** Whether `pid` is alive and is the shelf daemon started with `token`. */
-const isShelfDaemon = (pid: number, token: string): boolean => {
-	if (!isProcessAlive(pid)) return false;
-	const commandLine = commandLineOf(pid);
-	return commandLine !== undefined && isDaemonCommandLine(commandLine, token);
-};
+/** The command line of a running process, or undefined if there is no such process. */
+const commandLineOf = (
+	spawner: ChildProcessSpawner["Service"],
+	pid: number,
+): Effect.Effect<string | undefined> =>
+	Effect.gen(function* () {
+		const proc = yield* spawner.spawn(
+			ChildProcess.make("ps", ["-ww", "-o", "command=", "-p", String(pid)], {
+				stdin: "ignore",
+				stdout: "pipe",
+				stderr: "ignore",
+				detached: false,
+			}),
+		);
+		const [stdout, exitCode] = yield* Effect.all(
+			[Stream.mkString(Stream.decodeText(proc.stdout)), proc.exitCode],
+			{ concurrency: "unbounded" },
+		);
+		return exitCode === 0 ? stdout.trim() : undefined;
+	}).pipe(
+		Effect.scoped,
+		Effect.catch(() => Effect.succeed(undefined)),
+	);
+
+/** The recorded daemon state, or null when there is none or it can't be read. */
+const readStateFile = (fs: FileSystem, path: string): Effect.Effect<DaemonState | null> =>
+	Effect.gen(function* () {
+		if (!(yield* fs.exists(path))) return null;
+		const text = yield* fs.readFileString(path);
+		return yield* Effect.try(() => decodeDaemonState(JSON.parse(text)));
+	}).pipe(Effect.catch(() => Effect.succeed(null)));
 
 const formatUptime = (startedAt: string): string => {
 	const ms = Date.now() - new Date(startedAt).getTime();
@@ -85,43 +119,39 @@ export class DaemonService extends Context.Service<DaemonService>()(
 	"shelf/domain/daemon/DaemonService",
 	{
 		make: Effect.gen(function* () {
+			const fs = yield* FileSystem;
+			const spawner = yield* ChildProcessSpawner;
 			const config = yield* ConfigService;
 			const statePath = daemonStatePath(config.shelfHome);
 			const logPath = daemonLogPath(config.shelfHome);
 
-			const readState = (): Effect.Effect<DaemonState | null> =>
-				Effect.tryPromise({
-					try: async () => {
-						const file = Bun.file(statePath);
-						if (!(await file.exists())) return null;
-						const raw = await file.json();
-						return decodeDaemonState(raw);
-					},
-					catch: () => null,
-				}).pipe(Effect.catch(() => Effect.succeed(null)));
+			const readState = (): Effect.Effect<DaemonState | null> => readStateFile(fs, statePath);
 
 			const removeState = (): Effect.Effect<void> =>
-				Effect.tryPromise({
-					try: async () => {
-						const { rm } = await import("node:fs/promises");
-						await rm(statePath, { force: true });
-					},
-					catch: () => undefined,
-				}).pipe(Effect.catch(() => Effect.void));
+				fs.remove(statePath, { force: true }).pipe(Effect.catch(() => Effect.void));
+
+			/** Whether `pid` is alive and is the shelf daemon started with `token`. */
+			const isShelfDaemon = (pid: number, token: string): Effect.Effect<boolean> =>
+				Effect.gen(function* () {
+					if (!isProcessAlive(pid)) return false;
+					const commandLine = yield* commandLineOf(spawner, pid);
+					return commandLine !== undefined && isDaemonCommandLine(commandLine, token);
+				});
 
 			const verifyDaemon = (
 				state: DaemonState | null,
-			): { alive: true; state: DaemonState } | { alive: false } => {
-				if (!state) return { alive: false };
-				if (!isShelfDaemon(state.pid, state.token)) return { alive: false };
-				return { alive: true, state };
-			};
+			): Effect.Effect<{ alive: true; state: DaemonState } | { alive: false }> =>
+				Effect.gen(function* () {
+					if (!state) return { alive: false } as const;
+					if (!(yield* isShelfDaemon(state.pid, state.token))) return { alive: false } as const;
+					return { alive: true, state } as const;
+				});
 
 			return {
 				start: Effect.fn("DaemonService.start")(function* () {
 					yield* config.ensureDirectories();
 					const existing = yield* readState();
-					const check = verifyDaemon(existing);
+					const check = yield* verifyDaemon(existing);
 					if (check.alive) {
 						return yield* Effect.fail(new DaemonAlreadyRunningError({ pid: check.state.pid }));
 					}
@@ -130,62 +160,51 @@ export class DaemonService extends Context.Service<DaemonService>()(
 					}
 
 					// Rotate log if too large
-					yield* Effect.tryPromise({
-						try: async () => {
-							const logFile = Bun.file(logPath);
-							if ((await logFile.exists()) && logFile.size > LOG_MAX_BYTES) {
-								const { rename } = await import("node:fs/promises");
-								await rename(logPath, `${logPath}.1`);
-							}
-						},
-						catch: () => undefined,
+					yield* Effect.gen(function* () {
+						const info = yield* fs.stat(logPath);
+						if (Number(info.size) > LOG_MAX_BYTES) {
+							yield* fs.rename(logPath, `${logPath}.1`);
+						}
 					}).pipe(Effect.catch(() => Effect.void));
 
 					const token = generateToken();
-					const child = yield* Effect.try({
-						try: () => {
-							// Append, never truncate: the log survives restarts until rotated.
-							const logFd = openSync(logPath, "a");
-							try {
-								const proc = Bun.spawn(daemonCommand(token), {
-									stdio: ["ignore", logFd, logFd],
-									detached: true,
-									env: { ...process.env, SHELF_DAEMON: "1" },
-								});
-								proc.unref();
-								return proc;
-							} finally {
-								closeSync(logFd);
-							}
-						},
-						catch: (err) =>
-							new DaemonStartError({ message: `Failed to spawn daemon process: ${err}` }),
-					});
+					const spawnError = (err: unknown): DaemonStartError =>
+						new DaemonStartError({ message: `Failed to spawn daemon process: ${err}` });
+					return yield* Effect.scoped(
+						Effect.gen(function* () {
+							const child = yield* spawner
+								.spawn(backgroundDaemonCommand(token, logPath))
+								.pipe(Effect.mapError(spawnError));
+							// Unreferenced, the daemon outlives this process and the scope.
+							yield* child.unref.pipe(Effect.mapError(spawnError));
 
-					// Return only once the daemon has recorded itself as running.
-					const deadline = Date.now() + START_TIMEOUT_MS;
-					while (true) {
-						const state = yield* readState();
-						if (state && state.token === token && isShelfDaemon(state.pid, token)) {
-							return state.pid;
-						}
-						if (child.exitCode !== null || child.signalCode !== null) {
-							return yield* Effect.fail(
-								new DaemonStartError({
-									message: `daemon exited during startup; see \`shelf daemon logs\``,
-								}),
-							);
-						}
-						if (Date.now() > deadline) {
-							child.kill("SIGKILL");
-							return yield* Effect.fail(
-								new DaemonStartError({
-									message: `daemon did not report running within ${START_TIMEOUT_MS / 1000}s; see \`shelf daemon logs\``,
-								}),
-							);
-						}
-						yield* Effect.sleep(POLL_MS);
-					}
+							// Return only once the daemon has recorded itself as running.
+							const deadline = Date.now() + START_TIMEOUT_MS;
+							while (true) {
+								const state = yield* readState();
+								if (state && state.token === token && (yield* isShelfDaemon(state.pid, token))) {
+									return state.pid;
+								}
+								const running = yield* child.isRunning.pipe(Effect.orElseSucceed(() => false));
+								if (!running) {
+									return yield* Effect.fail(
+										new DaemonStartError({
+											message: `daemon exited during startup; see \`shelf daemon logs\``,
+										}),
+									);
+								}
+								if (Date.now() > deadline) {
+									yield* child.kill({ killSignal: "SIGKILL" }).pipe(Effect.ignore);
+									return yield* Effect.fail(
+										new DaemonStartError({
+											message: `daemon did not report running within ${START_TIMEOUT_MS / 1000}s; see \`shelf daemon logs\``,
+										}),
+									);
+								}
+								yield* Effect.sleep(POLL_MS);
+							}
+						}),
+					);
 				}),
 
 				/**
@@ -197,7 +216,7 @@ export class DaemonService extends Context.Service<DaemonService>()(
 				runForeground: Effect.fn("DaemonService.runForeground")(function* () {
 					yield* config.ensureDirectories();
 					const existing = yield* readState();
-					const check = verifyDaemon(existing);
+					const check = yield* verifyDaemon(existing);
 					if (check.alive) {
 						return yield* new DaemonAlreadyRunningError({ pid: check.state.pid });
 					}
@@ -205,32 +224,38 @@ export class DaemonService extends Context.Service<DaemonService>()(
 						yield* removeState();
 					}
 					const token = generateToken();
-					const child = yield* Effect.try({
-						try: () =>
-							Bun.spawn(daemonCommand(token), {
-								stdio: ["inherit", "inherit", "inherit"],
-								env: { ...process.env, SHELF_DAEMON: "1" },
-							}),
-						catch: (err) =>
-							new DaemonStartError({ message: `Failed to spawn daemon process: ${err}` }),
-					});
-					yield* Effect.promise(() => child.exited).pipe(
-						Effect.onInterrupt(() =>
-							Effect.promise(async () => {
-								try {
-									child.kill("SIGTERM");
-								} catch {
-									// already gone
-								}
-								await child.exited;
-							}),
-						),
+					const [command, ...args] = daemonCommand(token);
+					yield* Effect.scoped(
+						Effect.gen(function* () {
+							const child = yield* spawner
+								.spawn(
+									ChildProcess.make(command ?? process.execPath, args, {
+										stdin: "inherit",
+										stdout: "inherit",
+										stderr: "inherit",
+										detached: false,
+										env: { SHELF_DAEMON: "1" },
+										extendEnv: true,
+									}),
+								)
+								.pipe(
+									Effect.mapError(
+										(err) =>
+											new DaemonStartError({ message: `Failed to spawn daemon process: ${err}` }),
+									),
+								);
+							// On interrupt, SIGTERM the daemon and wait for it to finish its step.
+							yield* child.exitCode.pipe(
+								Effect.onInterrupt(() => child.kill({ killSignal: "SIGTERM" }).pipe(Effect.ignore)),
+								Effect.ignore,
+							);
+						}),
 					);
 				}),
 
 				stop: Effect.fn("DaemonService.stop")(function* () {
 					const existing = yield* readState();
-					const check = verifyDaemon(existing);
+					const check = yield* verifyDaemon(existing);
 					if (!check.alive) {
 						if (existing) yield* removeState();
 						return yield* Effect.fail(new DaemonNotRunningError());
@@ -248,7 +273,7 @@ export class DaemonService extends Context.Service<DaemonService>()(
 					while (isProcessAlive(pid) && Date.now() < deadline) {
 						yield* Effect.sleep(POLL_MS);
 					}
-					if (isShelfDaemon(pid, token)) {
+					if (yield* isShelfDaemon(pid, token)) {
 						return yield* new DaemonStillStoppingError({ pid });
 					}
 					const current = yield* readState();
@@ -260,7 +285,7 @@ export class DaemonService extends Context.Service<DaemonService>()(
 					if (!existing) {
 						return { running: false as const };
 					}
-					const check = verifyDaemon(existing);
+					const check = yield* verifyDaemon(existing);
 					if (!check.alive) {
 						yield* removeState();
 						return { running: false as const, wasStale: true };
@@ -276,13 +301,9 @@ export class DaemonService extends Context.Service<DaemonService>()(
 				}),
 
 				logs: Effect.fn("DaemonService.logs")(function* (lines: number) {
-					const content = yield* Effect.tryPromise({
-						try: async () => {
-							const file = Bun.file(logPath);
-							if (!(await file.exists())) return "";
-							return await file.text();
-						},
-						catch: () => "",
+					const content = yield* Effect.gen(function* () {
+						if (!(yield* fs.exists(logPath))) return "";
+						return yield* fs.readFileString(logPath);
 					}).pipe(Effect.catch(() => Effect.succeed("")));
 
 					if (!content) return "No daemon logs found.";
@@ -305,42 +326,37 @@ const appendLog = (message: string): void => {
 };
 
 const writeDaemonState = (
+	fs: FileSystem,
 	path: string,
 	token: string,
 	startedAt: string,
 	lastTickAt: Option.Option<string>,
 ): Effect.Effect<void> =>
-	Effect.tryPromise({
-		try: async () => {
-			const state = new DaemonState({
-				pid: process.pid,
-				token,
-				startedAt,
-				lastTickAt,
-				version: SHELF_VERSION,
-			});
-			const encoded = encodeDaemonState(state);
-			const tmpPath = `${path}.tmp`;
-			await Bun.write(tmpPath, JSON.stringify(encoded, null, "\t"));
-			const { rename } = await import("node:fs/promises");
-			await rename(tmpPath, path);
-		},
-		catch: () => undefined,
+	Effect.gen(function* () {
+		const state = new DaemonState({
+			pid: process.pid,
+			token,
+			startedAt,
+			lastTickAt,
+			version: SHELF_VERSION,
+		});
+		const encoded = encodeDaemonState(state);
+		const tmpPath = `${path}.tmp`;
+		// Create the folder if it is missing, as writes always have.
+		yield* fs.makeDirectory(dirname(tmpPath), { recursive: true });
+		yield* fs.writeFileString(tmpPath, JSON.stringify(encoded, null, "\t"));
+		yield* fs.rename(tmpPath, path);
 	}).pipe(Effect.catch(() => Effect.void));
 
 /** Removes the state file, unless another daemon has since recorded itself there. */
-const cleanupState = (path: string, token: string): Effect.Effect<void> =>
-	Effect.tryPromise({
-		try: async () => {
-			const file = Bun.file(path);
-			if (await file.exists()) {
-				const recorded = decodeDaemonState(await file.json());
-				if (recorded.token !== token) return;
-			}
-			const { rm } = await import("node:fs/promises");
-			await rm(path, { force: true });
-		},
-		catch: () => undefined,
+const cleanupState = (fs: FileSystem, path: string, token: string): Effect.Effect<void> =>
+	Effect.gen(function* () {
+		if (yield* fs.exists(path)) {
+			const text = yield* fs.readFileString(path);
+			const recorded = yield* Effect.try(() => decodeDaemonState(JSON.parse(text)));
+			if (recorded.token !== token) return;
+		}
+		yield* fs.remove(path, { force: true });
 	}).pipe(Effect.catch(() => Effect.void));
 
 /** The interval to sleep between syncs; falls back to the default for a bad hand-edited value. */
@@ -351,6 +367,7 @@ const syncInterval = (minutes: number): number =>
 // or SIGINT; each sync step is uninterruptible, so the daemon finishes the
 // step it is on, then removes its state file and exits.
 export const daemonProgram = Effect.gen(function* () {
+	const fs = yield* FileSystem;
 	const cfg = yield* ConfigService;
 	const sync = yield* SyncService;
 	const path = daemonStatePath(cfg.shelfHome);
@@ -358,7 +375,7 @@ export const daemonProgram = Effect.gen(function* () {
 
 	const startedAt = new Date().toISOString();
 	appendLog("Daemon started");
-	yield* writeDaemonState(path, token, startedAt, Option.none());
+	yield* writeDaemonState(fs, path, token, startedAt, Option.none());
 
 	const step = Effect.gen(function* () {
 		const config = yield* cfg.load().pipe(Effect.catch(() => Effect.succeed(null)));
@@ -385,7 +402,7 @@ export const daemonProgram = Effect.gen(function* () {
 		);
 
 		appendLog("Sync cycle complete");
-		yield* writeDaemonState(path, token, startedAt, Option.some(new Date().toISOString()));
+		yield* writeDaemonState(fs, path, token, startedAt, Option.some(new Date().toISOString()));
 		return intervalMinutes;
 	});
 
@@ -399,7 +416,7 @@ export const daemonProgram = Effect.gen(function* () {
 			Effect.sync(() => appendLog("Received stop signal, shutting down...")),
 		),
 		Effect.ensuring(
-			cleanupState(path, token).pipe(
+			cleanupState(fs, path, token).pipe(
 				Effect.andThen(Effect.sync(() => appendLog("Daemon stopped"))),
 			),
 		),

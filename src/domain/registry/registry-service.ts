@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
+import { FileSystem } from "effect/FileSystem";
 import { stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { ConfigService } from "../config/config-service";
@@ -48,22 +49,32 @@ export class RegistryService extends Context.Service<RegistryService>()(
 	"shelf/domain/registry/RegistryService",
 	{
 		make: Effect.gen(function* () {
+			const fs = yield* FileSystem;
 			const config = yield* ConfigService;
 			const shelffile = yield* ShelffileService;
 
 			const registryPath = join(config.shelfHome, REGISTRY_FILE);
 
 			const load = Effect.fn("RegistryService.load")(function* () {
-				const file = Bun.file(registryPath);
-				const exists = yield* Effect.tryPromise({
-					try: () => file.exists(),
-					catch: () => new RegistryParseError({ message: "Failed to check registry file" }),
-				});
+				const exists = yield* fs
+					.exists(registryPath)
+					.pipe(
+						Effect.mapError(
+							() => new RegistryParseError({ message: "Failed to check registry file" }),
+						),
+					);
 				if (!exists) {
 					return defaultRegistry;
 				}
-				const raw = yield* Effect.tryPromise({
-					try: () => file.json(),
+				const text = yield* fs
+					.readFileString(registryPath)
+					.pipe(
+						Effect.mapError(
+							() => new RegistryParseError({ message: "Failed to read registry file" }),
+						),
+					);
+				const raw = yield* Effect.try({
+					try: (): unknown => JSON.parse(text),
 					catch: () => new RegistryParseError({ message: "Failed to read registry file" }),
 				});
 				return yield* Effect.try({

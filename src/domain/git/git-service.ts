@@ -4,12 +4,20 @@ import * as Option from "effect/Option";
 import * as Context from "effect/Context";
 import type { RepoPin } from "../config/config-schema";
 import { GitOperationError } from "./git-errors";
-import { parseSymrefHead, runGit } from "./git-utils";
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
+import { parseSymrefHead, runGit as spawnGit } from "./git-utils";
 
 // Every git call puts `--` before URLs, refspecs and paths, so input that
 // starts with `-` is never read as an option.
 export class GitService extends Context.Service<GitService>()("shelf/domain/git/GitService", {
 	make: Effect.gen(function* () {
+		const spawner = yield* ChildProcessSpawner;
+		const runGit = (
+			args: ReadonlyArray<string>,
+			cwd?: string | undefined,
+		): Effect.Effect<string, GitOperationError> =>
+			spawnGit(args, cwd).pipe(Effect.provideService(ChildProcessSpawner, spawner));
+
 		/**
 		 * Fetches one refspec from `origin`. With a depth the fetch is shallow;
 		 * without one it never makes the clone shallower.

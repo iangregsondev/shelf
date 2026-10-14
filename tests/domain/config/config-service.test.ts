@@ -14,6 +14,7 @@ import {
 import * as Option from "effect/Option";
 import { ConfigService } from "../../../src/domain/config/config-service";
 import { readText, writeText } from "../../helpers/files";
+import { PlatformLayer } from "../../helpers/platform";
 
 describe("ConfigService", () => {
 	let tempDir: string;
@@ -169,7 +170,7 @@ describe("ConfigService", () => {
 				Effect.gen(function* () {
 					const svc = yield* ConfigService;
 					return yield* svc.load();
-				}).pipe(Effect.provide(ConfigService.layer)),
+				}).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
 			);
 			expect(result.version).toBe(1);
 			expect(result.repos.length).toBeGreaterThanOrEqual(0);
@@ -180,7 +181,7 @@ describe("ConfigService", () => {
 				Effect.gen(function* () {
 					const svc = yield* ConfigService;
 					yield* svc.ensureDirectories();
-				}).pipe(Effect.provide(ConfigService.layer)),
+				}).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
 			);
 			const home = process.env["SHELF_HOME"]!;
 			expect((await stat(join(home, "repos"))).isDirectory()).toBe(true);
@@ -190,7 +191,7 @@ describe("ConfigService", () => {
 			const svc = await Effect.runPromise(
 				Effect.gen(function* () {
 					return yield* ConfigService;
-				}).pipe(Effect.provide(ConfigService.layer)),
+				}).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
 			);
 			// tests/setup.ts points SHELF_HOME at a temp shelf home
 			expect(await Effect.runPromise(svc.repoPath("my-repo"))).toBe(
@@ -202,7 +203,7 @@ describe("ConfigService", () => {
 			const svc = await Effect.runPromise(
 				Effect.gen(function* () {
 					return yield* ConfigService;
-				}).pipe(Effect.provide(ConfigService.layer)),
+				}).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
 			);
 			for (const alias of ["../outside", "a/b", ".", ""]) {
 				const exit = await Effect.runPromiseExit(svc.repoPath(alias));

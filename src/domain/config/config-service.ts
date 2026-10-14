@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
 import * as Option from "effect/Option";
+import { FileSystem } from "effect/FileSystem";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { RepoEntry } from "./config-schema";
@@ -14,21 +15,27 @@ export class ConfigService extends Context.Service<ConfigService>()(
 	"shelf/domain/config/ConfigService",
 	{
 		make: Effect.gen(function* () {
+			const fs = yield* FileSystem;
 			const shelfHome = resolveShelfHome(process.env, homedir(), process.cwd());
 			const configFile = join(shelfHome, "config.json");
 			const reposDir = join(shelfHome, "repos");
 
 			const load = Effect.fn("ConfigService.load")(function* () {
-				const file = Bun.file(configFile);
-				const exists = yield* Effect.tryPromise({
-					try: () => file.exists(),
-					catch: () => new ConfigParseError({ message: "Failed to check config file" }),
-				});
+				const exists = yield* fs
+					.exists(configFile)
+					.pipe(
+						Effect.mapError(() => new ConfigParseError({ message: "Failed to check config file" })),
+					);
 				if (!exists) {
 					return defaultConfig;
 				}
-				const raw = yield* Effect.tryPromise({
-					try: () => file.json(),
+				const text = yield* fs
+					.readFileString(configFile)
+					.pipe(
+						Effect.mapError(() => new ConfigParseError({ message: "Failed to read config file" })),
+					);
+				const raw = yield* Effect.try({
+					try: (): unknown => JSON.parse(text),
 					catch: () => new ConfigParseError({ message: "Failed to read config file" }),
 				});
 				return yield* Effect.try({
@@ -91,14 +98,12 @@ export class ConfigService extends Context.Service<ConfigService>()(
 				updateRepo,
 
 				ensureDirectories: Effect.fn("ConfigService.ensureDirectories")(function* () {
-					yield* Effect.tryPromise({
-						try: async () => {
-							const { mkdir } = await import("node:fs/promises");
-							await mkdir(shelfHome, { recursive: true });
-							await mkdir(reposDir, { recursive: true });
-						},
-						catch: () => new ConfigWriteError({ message: "Failed to create shelf directories" }),
-					});
+					yield* fs.makeDirectory(shelfHome, { recursive: true }).pipe(
+						Effect.andThen(fs.makeDirectory(reposDir, { recursive: true })),
+						Effect.mapError(
+							() => new ConfigWriteError({ message: "Failed to create shelf directories" }),
+						),
+					);
 				}),
 
 				/**

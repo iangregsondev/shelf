@@ -10,13 +10,14 @@ import type { ConfigService } from "../../../src/domain/config/config-service";
 import { defaultConfig, RepoEntry, ShelfConfig } from "../../../src/domain/config/config-schema";
 import { createMockConfigLayer } from "../../domain/config/helpers";
 import { writeText } from "../../helpers/files";
+import { PlatformLayer } from "../../helpers/platform";
 
 const runWithLayers = <A, E>(
 	effect: Effect.Effect<A, E, DetectService>,
 	configLayer?: Layer.Layer<ConfigService>,
 ) => {
 	const cfg = configLayer ?? createMockConfigLayer();
-	const detectLayer = DetectService.layer.pipe(Layer.provide(cfg));
+	const detectLayer = DetectService.layer.pipe(Layer.provide(cfg), Layer.provide(PlatformLayer));
 	return Effect.runPromise(Effect.provide(effect, detectLayer));
 };
 

@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
+import { FileSystem } from "effect/FileSystem";
 import { mkdir, rename as renamePath, rm as removePath } from "node:fs/promises";
 import { join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
@@ -45,6 +46,7 @@ export interface AddRepoOptions {
 
 export class RepoService extends Context.Service<RepoService>()("shelf/domain/repo/RepoService", {
 	make: Effect.gen(function* () {
+		const fs = yield* FileSystem;
 		const config = yield* ConfigService;
 		const git = yield* GitService;
 		const sync = yield* SyncService;
@@ -267,15 +269,16 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				url: string,
 				packageName: string,
 			) {
-				const pkgJson = yield* Effect.tryPromise({
-					try: async () => {
-						const file = Bun.file(join(process.cwd(), "package.json"));
-						return (await file.json()) as Record<string, unknown>;
-					},
-					catch: () =>
-						new AutoPinResolutionError({
-							message: "No package.json found in current directory",
-						}),
+				const noPackageJson = (): AutoPinResolutionError =>
+					new AutoPinResolutionError({
+						message: "No package.json found in current directory",
+					});
+				const pkgText = yield* fs
+					.readFileString(join(process.cwd(), "package.json"))
+					.pipe(Effect.mapError(noPackageJson));
+				const pkgJson = yield* Effect.try({
+					try: () => JSON.parse(pkgText) as Record<string, unknown>,
+					catch: noPackageJson,
 				});
 				const deps = (pkgJson["dependencies"] ?? {}) as Record<string, string>;
 				const devDeps = (pkgJson["devDependencies"] ?? {}) as Record<string, string>;

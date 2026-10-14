@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
+import { FileSystem } from "effect/FileSystem";
 import { join } from "node:path";
 import { ConfigService } from "../config/config-service";
 import { lookupBuiltin } from "../resolve/resolve-utils";
@@ -15,15 +16,10 @@ import {
 	npmRegistryBaseUrl,
 } from "./detect-utils";
 
-const readFileOrNone = (path: string): Effect.Effect<Option.Option<string>> =>
-	Effect.tryPromise({
-		try: async () => {
-			const file = Bun.file(path);
-			if (!(await file.exists())) return Option.none<string>();
-			const text = await file.text();
-			return Option.some(text);
-		},
-		catch: () => Option.none<string>(),
+const readFileOrNone = (fs: FileSystem, path: string): Effect.Effect<Option.Option<string>> =>
+	Effect.gen(function* () {
+		if (!(yield* fs.exists(path))) return Option.none<string>();
+		return Option.some(yield* fs.readFileString(path));
 	}).pipe(Effect.catch(() => Effect.succeed(Option.none<string>())));
 
 const resolveNpmPackage = (name: string): Effect.Effect<Option.Option<string>> =>
@@ -58,6 +54,7 @@ export class DetectService extends Context.Service<DetectService>()(
 	"shelf/domain/detect/DetectService",
 	{
 		make: Effect.gen(function* () {
+			const fs = yield* FileSystem;
 			const config = yield* ConfigService;
 
 			return {
@@ -70,7 +67,7 @@ export class DetectService extends Context.Service<DetectService>()(
 
 					// Try package.json
 					const pkgJsonPath = join(dir, "package.json");
-					const pkgContent = yield* readFileOrNone(pkgJsonPath);
+					const pkgContent = yield* readFileOrNone(fs, pkgJsonPath);
 					if (Option.isSome(pkgContent)) {
 						const deps = parsePackageJson(pkgContent.value);
 						for (const dep of deps) {
@@ -104,7 +101,7 @@ export class DetectService extends Context.Service<DetectService>()(
 
 					// Try go.mod
 					const goModPath = join(dir, "go.mod");
-					const goContent = yield* readFileOrNone(goModPath);
+					const goContent = yield* readFileOrNone(fs, goModPath);
 					if (Option.isSome(goContent)) {
 						const deps = parseGoMod(goContent.value);
 						for (const dep of deps) {

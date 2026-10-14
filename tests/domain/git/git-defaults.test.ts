@@ -5,7 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitService } from "../../../src/domain/git/git-service";
-import { runGit } from "../../../src/domain/git/git-utils";
+import { PlatformLayer, runGit } from "../../helpers/platform";
 import { createTempRepo } from "../../helpers/temp-repo";
 import { writeText } from "../../helpers/files";
 import { run } from "../../helpers/process";
@@ -43,7 +43,7 @@ describe("GitService default clone behavior", () => {
 					Option.none(), // no explicit depth — should default to 1
 					Option.none(), // no sparse
 				);
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 
 		// Should be a shallow clone
@@ -78,7 +78,7 @@ describe("GitService default clone behavior", () => {
 					Option.none(),
 					Option.none(),
 				);
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 
 		// With --single-branch, remote tracking branches should be limited
@@ -114,7 +114,7 @@ describe("GitService default clone behavior", () => {
 					Option.some(2), // explicit depth 2
 					Option.none(),
 				);
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 
 		expect(existsSync(join(targetDir, ".git", "shallow"))).toBe(true);

@@ -4,7 +4,7 @@ import * as Option from "effect/Option";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runGit } from "../../../src/domain/git/git-utils";
+import { PlatformLayer, runGit } from "../../helpers/platform";
 import { RepoPin } from "../../../src/domain/config/config-schema";
 import { GitService } from "../../../src/domain/git/git-service";
 import { createBareRepo, createTempRepo } from "../../helpers/temp-repo";
@@ -123,7 +123,7 @@ describe("GitService", () => {
 			Effect.gen(function* () {
 				const git = yield* GitService;
 				yield* git.clone(source.dir, targetDir, Option.none(), Option.none(), Option.none());
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 		expect(existsSync(join(targetDir, "test.txt"))).toBe(true);
 		await source.cleanup();
@@ -145,7 +145,7 @@ describe("GitService", () => {
 					Option.none(),
 					Option.none(),
 				);
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 		expect(existsSync(join(targetDir, "test.txt"))).toBe(true);
 		await source.cleanup();
@@ -168,7 +168,7 @@ describe("GitService", () => {
 					Option.none(),
 					Option.none(),
 				);
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 		expect(existsSync(join(targetDir, "test.txt"))).toBe(true);
 		await source.cleanup();
@@ -195,7 +195,7 @@ describe("GitService", () => {
 					Option.some(1),
 					Option.none(),
 				);
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 		expect(existsSync(join(targetDir, "test.txt"))).toBe(true);
 		expect(existsSync(join(targetDir, ".git", "shallow"))).toBe(true);
@@ -214,7 +214,7 @@ describe("GitService", () => {
 			Effect.gen(function* () {
 				const git = yield* GitService;
 				yield* git.clone(source.dir, targetDir, Option.none(), Option.none(), Option.some(["src"]));
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 		expect(existsSync(join(targetDir, "src", "index.ts"))).toBe(true);
 		expect(existsSync(join(targetDir, "docs", "readme.md"))).toBe(false);
@@ -229,7 +229,7 @@ describe("GitService", () => {
 			Effect.gen(function* () {
 				const git = yield* GitService;
 				yield* git.fetch(targetDir, "+refs/heads/*:refs/remotes/origin/*", Option.none());
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 		await source.cleanup();
 	});
@@ -249,7 +249,7 @@ describe("GitService", () => {
 			Effect.gen(function* () {
 				const git = yield* GitService;
 				yield* git.fetch(targetDir, "+refs/heads/*:refs/remotes/origin/*", Option.some(1));
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 		expect(existsSync(join(targetDir, ".git", "shallow"))).toBe(true);
 		await sourceRepo.cleanup();
@@ -264,7 +264,7 @@ describe("GitService", () => {
 			Effect.gen(function* () {
 				const git = yield* GitService;
 				return yield* git.getDefaultBranch(targetDir);
-			}).pipe(Effect.provide(GitService.layer)),
+			}).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer)),
 		);
 		expect(typeof branch).toBe("string");
 		expect(branch.length).toBeGreaterThan(0);

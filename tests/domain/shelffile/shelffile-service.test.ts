@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { ShelffileService } from "../../../src/domain/shelffile/shelffile-service";
 import { RepoPin } from "../../../src/domain/config/config-schema";
 import { writeText } from "../../helpers/files";
+import { PlatformLayer } from "../../helpers/platform";
 
 describe("ShelffileService", () => {
 	let tempDir: string;
@@ -20,10 +21,14 @@ describe("ShelffileService", () => {
 	});
 
 	const run = <A, E>(effect: Effect.Effect<A, E, ShelffileService>) =>
-		Effect.runPromise(effect.pipe(Effect.provide(ShelffileService.layer)));
+		Effect.runPromise(
+			effect.pipe(Effect.provide(ShelffileService.layer), Effect.provide(PlatformLayer)),
+		);
 
 	const runExit = <A, E>(effect: Effect.Effect<A, E, ShelffileService>) =>
-		Effect.runPromiseExit(effect.pipe(Effect.provide(ShelffileService.layer)));
+		Effect.runPromiseExit(
+			effect.pipe(Effect.provide(ShelffileService.layer), Effect.provide(PlatformLayer)),
+		);
 
 	test("read returns ShelffileNotFoundError when file missing", async () => {
 		const exit = await runExit(

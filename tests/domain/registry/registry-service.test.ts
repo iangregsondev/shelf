@@ -12,6 +12,7 @@ import { createMockShelffileLayer } from "../shelffile/helpers";
 import { ShelffileNotFoundError } from "../../../src/domain/shelffile/shelffile-errors";
 import type { Shelffile } from "../../../src/domain/shelffile/shelffile-schema";
 import type { ShelffileOverrides } from "../shelffile/helpers";
+import { PlatformLayer } from "../../helpers/platform";
 
 describe("RegistryService", () => {
 	let tempDir: string;
@@ -43,7 +44,11 @@ describe("RegistryService", () => {
 			}),
 		);
 		const shelffileLayer = createMockShelffileLayer(shelffileOverrides);
-		return RegistryService.layer.pipe(Layer.provide(configLayer), Layer.provide(shelffileLayer));
+		return RegistryService.layer.pipe(
+			Layer.provide(configLayer),
+			Layer.provide(shelffileLayer),
+			Layer.provide(PlatformLayer),
+		);
 	};
 
 	test("load returns default when no file", async () => {
