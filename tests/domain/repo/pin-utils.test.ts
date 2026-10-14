@@ -46,6 +46,11 @@ describe("pin-utils", () => {
       expect(parseRemoteTags("").size).toBe(0);
     });
 
+    test("skips blank lines and lines with no ref column", () => {
+      const output = "\n  \nabc123\nnot-a-ref-line\ndef456\trefs/tags/v1.0.0\n";
+      expect([...parseRemoteTags(output)]).toEqual(["v1.0.0"]);
+    });
+
     test("ignores non-tag refs", () => {
       const output = "abc123\trefs/heads/main\ndef456\trefs/tags/v1.0.0";
       const tags = parseRemoteTags(output);

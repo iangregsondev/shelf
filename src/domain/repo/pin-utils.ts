@@ -4,6 +4,7 @@ export const stripSemverRange = (version: string): string => version.replace(/^[
 // (`@scope/name@1.2.3` or `name@1.2.3`), so those beat a repo-wide `v1.2.3`.
 const candidateTags = (packageName: string, version: string): string[] => {
   const bare = stripSemverRange(version);
+  /* v8 ignore next -- split() always gives at least one element, so pop() is never undefined */
   const shortName = packageName.split("/").pop() ?? packageName;
   const named =
     shortName === packageName
@@ -19,6 +20,7 @@ export const parseRemoteTags = (lsRemoteOutput: string): Set<string> => {
     if (!trimmed) continue;
     const parts = trimmed.split("\t");
     if (parts.length < 2) continue;
+    /* v8 ignore next -- parts.length >= 2 here, so parts[1] is always set */
     let ref = parts[1] ?? "";
     if (!ref.startsWith("refs/tags/")) continue;
     ref = ref.replace("refs/tags/", "");

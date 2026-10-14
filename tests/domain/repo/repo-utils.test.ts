@@ -142,6 +142,7 @@ describe("deriveAlias edge cases", () => {
     ["https://example.com/a/my%20repo", "my-20repo"],
     ["/tmp/some dir/repo.git", "repo"],
     ["v5", "v5"],
+    ["git@host/user/lib.git", "lib"],
     ["", "repo"],
   ])("%j gives %j", (input, expected) => {
     expect(deriveAlias(input)).toBe(expected);
