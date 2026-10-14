@@ -9,6 +9,8 @@ import { ShelffileService } from "../../domain/shelffile/shelffile-service";
 import { RepoNotFoundError } from "../../domain/repo/repo-errors";
 import type { RepoEntry } from "../../domain/config/config-schema";
 import { dirSize } from "../../domain/repo/repo-utils";
+import { existsSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 
 const alias = Argument.String("alias");
 
@@ -32,7 +34,8 @@ export const infoCommand = Command.make("info", { alias }, (config) =>
 			onNone: () => "never",
 			onSome: (s: string) => s,
 		});
-		const size = yield* dirSize(repoDir).pipe(Effect.catch(() => Effect.succeed(0)));
+		const folderExists = existsSync(repoDir);
+		const size = folderExists ? yield* dirSize(repoDir) : 0;
 		const sizeMb = (size / (1024 * 1024)).toFixed(1);
 		yield* Console.log(`Alias:       ${entry.alias}`);
 		yield* Console.log(`URL:         ${entry.url}`);
@@ -41,6 +44,11 @@ export const infoCommand = Command.make("info", { alias }, (config) =>
 		yield* Console.log(`Last synced: ${syncStr}`);
 		yield* Console.log(`Disk size:   ${sizeMb} MB`);
 		yield* Console.log(`Path:        ${repoDir}`);
+		if (!folderExists) {
+			yield* Console.log(
+				`Folder missing: nothing is at ${repoDir}. Run \`shelf remove ${entry.alias}\` and add it again.`,
+			);
+		}
 		// Show references
 		const reg = yield* registry.load();
 		const refs: string[] = [];
@@ -58,13 +66,11 @@ export const infoCommand = Command.make("info", { alias }, (config) =>
 			? Console.log(`Referenced:  ${refs.join(", ")}`)
 			: Console.log(`Referenced:  none (candidate for \`shelf prune\`)`);
 		// Top-level directory listing
-		const items = yield* Effect.tryPromise({
-			try: async () => {
-				const { readdir } = await import("node:fs/promises");
-				return await readdir(repoDir);
-			},
-			catch: () => [] as string[],
-		});
+		const items = folderExists
+			? yield* Effect.tryPromise(() => readdir(repoDir)).pipe(
+					Effect.orElseSucceed((): string[] => []),
+				)
+			: [];
 		if (items.length > 0) {
 			yield* Console.log(`\nContents:`);
 			for (const item of items.filter((i) => !i.startsWith("."))) {

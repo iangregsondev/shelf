@@ -325,6 +325,13 @@ export const daemonProgram = Effect.gen(function* () {
 		appendLog(`Starting sync cycle (interval: ${intervalMinutes}m)`);
 
 		yield* sync.syncAll().pipe(
+			Effect.tap(({ failures }) =>
+				Effect.sync(() => {
+					for (const failure of failures) {
+						appendLog(`Sync failed for "${failure.alias}": ${String(failure.error)}`);
+					}
+				}),
+			),
 			Effect.catch((error: unknown) => {
 				appendLog(`Sync cycle failed: ${error}`);
 				return Effect.void;

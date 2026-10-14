@@ -79,6 +79,54 @@ export class GitService extends Context.Service<GitService>()("shelf/domain/git/
 				);
 			}),
 
+			/**
+			 * Fetches the full history of every branch on `origin`, unshallowing
+			 * the clone, so any commit reachable from a branch is then local.
+			 */
+			fetchHistory: Effect.fn("GitService.fetchHistory")(function* (repoDir: string) {
+				const shallow = yield* runGit(["rev-parse", "--is-shallow-repository"], repoDir);
+				const args = ["fetch", "--no-tags"];
+				if (shallow === "true") {
+					args.push("--unshallow");
+				}
+				args.push("--", "origin", "+refs/heads/*:refs/remotes/origin/*");
+				yield* runGit(args, repoDir);
+			}),
+
+			/**
+			 * Expands a commit hash, full or short, to the full 40-character hash
+			 * of a commit in the local clone. Fails when no such commit is local,
+			 * when a short hash is ambiguous, or when `hash` names a ref instead.
+			 */
+			resolveCommit: Effect.fn("GitService.resolveCommit")(function* (
+				repoDir: string,
+				hash: string,
+			) {
+				const command = `git rev-parse --verify ${hash}^{commit}`;
+				const full = yield* runGit(
+					["rev-parse", "--verify", "--quiet", "--end-of-options", `${hash}^{commit}`],
+					repoDir,
+				).pipe(
+					Effect.catchTag("GitOperationError", () =>
+						Effect.fail(
+							new GitOperationError({ command, message: `no single commit "${hash}" in the repo` }),
+						),
+					),
+				);
+				if (!full.toLowerCase().startsWith(hash.toLowerCase())) {
+					return yield* new GitOperationError({
+						command,
+						message: `"${hash}" names a ref, not a commit`,
+					});
+				}
+				return full;
+			}),
+
+			/** Every branch and tag `url` has, as `git ls-remote --refs` output. */
+			lsRemoteRefs: Effect.fn("GitService.lsRemoteRefs")(function* (url: string) {
+				return yield* runGit(["ls-remote", "--refs", "--", url]);
+			}),
+
 			/** Checks out `ref` as a detached HEAD. */
 			checkout: Effect.fn("GitService.checkout")(function* (repoDir: string, ref: string) {
 				yield* runGit(["checkout", "--detach", ref, "--"], repoDir);

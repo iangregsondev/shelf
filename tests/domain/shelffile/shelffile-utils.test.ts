@@ -164,6 +164,55 @@ describe("shelffile-utils", () => {
 		});
 	});
 
+	describe("inline comments", () => {
+		test("a # comment after an entry is ignored", () => {
+			const shelffile = parseShelffile(
+				[
+					"effect https://github.com/Effect-TS/effect.git # the effect monorepo",
+					"react https://github.com/facebook/react.git pin:tag:v19.0.0 # pinned for the docs",
+					"lib https://github.com/test/lib.git#readme",
+				].join("\n"),
+			);
+			expect(shelffile.entries.map((e) => [e.alias, e.url])).toEqual([
+				["effect", "https://github.com/Effect-TS/effect.git"],
+				["react", "https://github.com/facebook/react.git"],
+				["lib", "https://github.com/test/lib.git#readme"],
+			]);
+			expect(Option.isNone(shelffile.entries[0]!.pin)).toBe(true);
+			expect(Option.getOrThrow(shelffile.entries[1]!.pin).value).toBe("v19.0.0");
+		});
+	});
+
+	describe("every stored pin form round-trips", () => {
+		const hash = "0123456789abcdef0123456789abcdef01234567";
+		test.each([
+			["branch", "main"],
+			["branch", "cafe123"],
+			["tag", "v1.2.3"],
+			["commit", hash],
+			// Configs written before full hashes were enforced may hold a short one.
+			["commit", "abc1234"],
+		] as const)("%s pin %s", (type, value) => {
+			const entry = {
+				alias: "lib",
+				url: "https://x/lib.git",
+				pin: Option.some(new RepoPin({ type, value })),
+			};
+			const reparsed = parseShelffile(serializeShelffile({ entries: [entry] })).entries[0]!;
+			const pin = Option.getOrThrow(reparsed.pin);
+			expect({ type: pin.type, value: pin.value }).toEqual({ type, value });
+		});
+
+		test("pin:commit:<hash> parses as a commit pin", () => {
+			const pin = parseShelffilePin(`pin:commit:${hash}`);
+			expect({ type: pin.type, value: pin.value }).toEqual({ type: "commit", value: hash });
+		});
+
+		test("a short bare hash is still rejected", () => {
+			expect(() => parseShelffilePin("pin:abc1234")).toThrow(ShelffileParseError);
+		});
+	});
+
 	describe("round-trip", () => {
 		test("parse → serialize → parse produces same result", () => {
 			const content = [
@@ -193,5 +242,22 @@ describe("shelffile-utils", () => {
 				}
 			}
 		});
+	});
+});
+
+describe("shelffile alias validation", () => {
+	test.each([["../evil"], [".."], ["."], ["a/b"], ["-x"], ["a".repeat(101)]])(
+		"rejects the alias %p with its line number",
+		(alias) => {
+			expect(() => parseShelffileLine(`${alias} https://github.com/a/b.git`, 3)).toThrow(
+				`Line 3: invalid alias "${alias}"`,
+			);
+		},
+	);
+
+	test("a bad alias anywhere fails the whole shelffile", () => {
+		expect(() =>
+			parseShelffile("good https://github.com/a/good.git\n../bad https://github.com/a/bad.git\n"),
+		).toThrow(ShelffileParseError);
 	});
 });

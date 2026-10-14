@@ -7,63 +7,13 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createRemote as createRemoteIn, git } from "../helpers/git-remote";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
-
-const git = async (args: ReadonlyArray<string>, cwd: string): Promise<string> => {
-	const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-	const [exitCode, stdout, stderr] = await Promise.all([
-		proc.exited,
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
-	]);
-	if (exitCode !== 0) {
-		throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
-	}
-	return stdout.trim();
-};
-
-/**
- * A remote with history on `main` (three commits, tag `v1` on the second),
- * and a `feature` branch off the first commit. `work` is a clone that pushes
- * new commits to the bare remote.
- */
-interface Remote {
-	readonly url: string;
-	readonly commits: { readonly first: string; readonly second: string; readonly third: string };
-	readonly commit: (branch: string, content: string) => Promise<string>;
-}
 
 let tempDir: string;
 let shelf: ShelfSandbox;
 
-const createRemote = async (): Promise<Remote> => {
-	const work = join(tempDir, "work");
-	const bare = join(tempDir, "remote.git");
-	await git(["init", "-q", "-b", "main", work], tempDir);
-	await git(["config", "user.email", "test@test.com"], work);
-	await git(["config", "user.name", "Test"], work);
-	const commitFile = async (content: string): Promise<string> => {
-		await Bun.write(join(work, "file.txt"), content);
-		await git(["add", "file.txt"], work);
-		await git(["commit", "-q", "-m", content], work);
-		return git(["rev-parse", "HEAD"], work);
-	};
-	const first = await commitFile("first");
-	const second = await commitFile("second");
-	await git(["tag", "-a", "v1", "-m", "v1"], work);
-	const third = await commitFile("third");
-	await git(["branch", "feature", first], work);
-	await git(["clone", "-q", "--bare", work, bare], tempDir);
-	await git(["remote", "add", "origin", bare], work);
-
-	const commit = async (branch: string, content: string): Promise<string> => {
-		await git(["checkout", "-q", branch], work);
-		const sha = await commitFile(content);
-		await git(["push", "-q", "origin", branch], work);
-		return sha;
-	};
-	return { url: `file://${bare}`, commits: { first, second, third }, commit };
-};
+const createRemote = () => createRemoteIn(tempDir);
 
 const repoDir = (alias: string): string => join(shelf.home, "repos", alias);
 const head = (alias: string): Promise<string> => git(["rev-parse", "HEAD"], repoDir(alias));
