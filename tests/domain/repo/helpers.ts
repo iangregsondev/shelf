@@ -10,6 +10,7 @@ import type {
 	RepoNotFoundError,
 } from "../../../src/domain/repo/repo-errors";
 import { RepoService } from "../../../src/domain/repo/repo-service";
+import type { SyncAllResult } from "../../../src/domain/sync/sync-service";
 
 export type RepoOverrides = {
 	readonly add?: (
@@ -25,7 +26,7 @@ export type RepoOverrides = {
 	readonly list?: () => Effect.Effect<ReadonlyArray<RepoEntry>, ConfigParseError>;
 	readonly update?: (
 		alias: Option.Option<string>,
-	) => Effect.Effect<undefined, ConfigParseError | GitOperationError | RepoNotFoundError>;
+	) => Effect.Effect<SyncAllResult, ConfigParseError | GitOperationError | RepoNotFoundError>;
 	readonly resolveAutoPin?: (
 		url: string,
 		packageName: string,
@@ -36,7 +37,7 @@ const defaultRepoImpl = {
 	add: () => Effect.succeed("test-repo" as string),
 	remove: () => Effect.succeed("test-repo" as string),
 	list: () => Effect.succeed([] as ReadonlyArray<RepoEntry>),
-	update: () => Effect.succeed(undefined),
+	update: () => Effect.succeed<SyncAllResult>({ total: 0, failures: [] }),
 	resolveAutoPin: () => Effect.succeed(undefined as unknown as Option.Option<RepoPin>),
 };
 

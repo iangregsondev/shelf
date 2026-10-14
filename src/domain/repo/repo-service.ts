@@ -8,7 +8,7 @@ import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
 import { ConfigParseError } from "../config/config-errors";
 import { ConfigService } from "../config/config-service";
 import { GitService } from "../git/git-service";
-import { SyncService } from "../sync/sync-service";
+import { SyncService, type SyncAllResult } from "../sync/sync-service";
 import { AutoPinResolutionError, RepoAlreadyExistsError, RepoNotFoundError } from "./repo-errors";
 import { checkAlias, deriveAlias } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
@@ -141,6 +141,8 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				return Option.some(new RepoPin({ type: "tag", value: matchedTag }));
 			}),
 
+			// With an alias, a failed sync fails the update. Without one, every
+			// reference repo is synced and the failures come back in the result.
 			update: Effect.fn("RepoService.update")(function* (alias: Option.Option<string>) {
 				if (Option.isSome(alias)) {
 					const cfg = yield* config.load();
@@ -149,9 +151,10 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 						return yield* new RepoNotFoundError({ alias: alias.value });
 					}
 					yield* sync.syncRepo(repo);
-				} else {
-					yield* sync.syncAll();
+					const result: SyncAllResult = { total: 1, failures: [] };
+					return result;
 				}
+				return yield* sync.syncAll();
 			}),
 		};
 	}),

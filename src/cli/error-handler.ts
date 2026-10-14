@@ -6,6 +6,8 @@ const errorMessages: Record<string, (error: Record<string, unknown>) => string> 
 	AliasRenameError: (e) =>
 		`Could not rename "${String(e["from"])}" to "${String(e["to"])}": ${String(e["message"])}. Nothing was changed.`,
 	GitOperationError: (e) => `Git error: ${String(e["message"])}`,
+	UpdateFailedError: (e) =>
+		`Update failed: ${String(e["failed"])} of ${String(e["total"])} repos could not be synced.`,
 	AutoPinResolutionError: (e) => `Auto-pin failed: ${String(e["message"])}`,
 	ConfigParseError: (e) => `Config error: ${String(e["message"])}`,
 	ConfigNotFoundError: (e) => `Config not found: ${String(e["path"])}`,
