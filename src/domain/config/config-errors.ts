@@ -18,3 +18,8 @@ export class InvalidConfigValueError extends Schema.TaggedError<InvalidConfigVal
 	"InvalidConfigValueError",
 	{ message: Schema.String },
 ) {}
+
+export class UnknownConfigKeyError extends Schema.TaggedError<UnknownConfigKeyError>()(
+	"UnknownConfigKeyError",
+	{ key: Schema.String },
+) {}

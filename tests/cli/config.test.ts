@@ -27,3 +27,14 @@ describe("shelf config syncIntervalMinutes", () => {
 		expect(get.stdout.trim()).toBe("60");
 	});
 });
+
+describe("shelf config <unknown key>", () => {
+	test.each([[["config", "nope"]], [["config", "nope", "5"]]])(
+		"%p fails with exit 1 and names the key",
+		async (args) => {
+			const result = await shelf.run(args);
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toContain('Unknown config key "nope"');
+		},
+	);
+});

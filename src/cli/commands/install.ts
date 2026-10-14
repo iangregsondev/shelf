@@ -7,6 +7,7 @@ import { RepoService } from "../../domain/repo/repo-service";
 import { ShelffileService } from "../../domain/shelffile/shelffile-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 import type { ShelffileEntry } from "../../domain/shelffile/shelffile-schema";
+import { InstallFailedError } from "../../domain/shelffile/shelffile-errors";
 
 const dir = Flag.String("dir").pipe(
 	Flag.optional,
@@ -72,5 +73,8 @@ export const installCommand = Command.make("install", { dir, concurrency }, (con
 		yield* Console.log(
 			`\nInstall complete: ${added} added, ${existing} already present${failed > 0 ? `, ${failed} failed` : ""}`,
 		);
+		if (failed > 0) {
+			return yield* new InstallFailedError({ failed, total: entries.length });
+		}
 	}),
 ).pipe(Command.withDescription("Install repos from a shelffile"));

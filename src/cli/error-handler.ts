@@ -15,6 +15,10 @@ const errorMessages: Record<string, (error: Record<string, unknown>) => string> 
 	RepoFolderError: (e) =>
 		`Could not create the repo folder ${String(e["path"])}: ${String(e["message"])}`,
 	InvalidConfigValueError: (e) => String(e["message"]),
+	UnknownConfigKeyError: (e) =>
+		`Unknown config key "${String(e["key"])}". Known keys: syncIntervalMinutes, version.`,
+	InstallFailedError: (e) =>
+		`Install failed: ${String(e["failed"])} of ${String(e["total"])} repos could not be added.`,
 	ConfigNotFoundError: (e) => `Config not found: ${String(e["path"])}`,
 	ShelffileNotFoundError: (e) =>
 		`No shelffile found at ${String(e["path"])}. Create one or use \`shelf share\` to generate one.`,

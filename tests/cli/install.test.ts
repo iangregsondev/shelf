@@ -82,6 +82,25 @@ describe("install command", () => {
 		await repo.cleanup();
 	});
 
+	test("exits 1 and names the failure when an entry can't be installed", async () => {
+		const good = uniqueAlias("good");
+		const bad = uniqueAlias("bad");
+		const repo = await createBareRepo({ "lib.ts": "export const a = 1;" });
+		await Bun.write(
+			join(tempDir, "shelffile"),
+			`${good} ${repo.dir}\n${bad} ${join(tempDir, "no-such-remote.git")}\n`,
+		);
+
+		const result = await runShelf(["install", "--dir", tempDir]);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain(`failed to add "${bad}"`);
+		expect(result.output).toContain("1 added");
+		expect(result.output).toContain("1 failed");
+		expect(result.stderr).toContain("Install failed: 1 of 2 repos could not be added.");
+
+		await repo.cleanup();
+	});
+
 	test("reports error for missing shelffile", async () => {
 		const result = await runShelf(["install", "--dir", tempDir]);
 		expect(result.output).toContain("No shelffile found");
