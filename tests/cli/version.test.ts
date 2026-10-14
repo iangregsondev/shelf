@@ -36,3 +36,12 @@ describe("version", () => {
     expect(state.version).toBe(await manifestVersion());
   }, 20_000);
 });
+
+describe("entrypoint", () => {
+  test("an unknown command fails with exit 1 and names it", async () => {
+    const result = await shelf.run(["frobnicate"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('Unknown subcommand "frobnicate" for "shelf"');
+    expect(result.output).not.toContain("at <anonymous>");
+  });
+});
