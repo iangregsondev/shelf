@@ -24,6 +24,7 @@ export type GitOverrides = {
 	readonly lsRemoteTags?: (url: string) => Effect.Effect<string, GitOperationError>;
 	readonly lsRemoteRefs?: (url: string) => Effect.Effect<string, GitOperationError>;
 	readonly fetchHistory?: (repoDir: string) => Effect.Effect<void, GitOperationError>;
+	readonly ensureCommit?: (repoDir: string, hash: string) => Effect.Effect<void, GitOperationError>;
 	readonly resolveCommit?: (
 		repoDir: string,
 		hash: string,
@@ -39,6 +40,7 @@ const defaultGitImpl = {
 	lsRemoteTags: (): Effect.Effect<string, GitOperationError> => Effect.succeed(""),
 	lsRemoteRefs: (): Effect.Effect<string, GitOperationError> => Effect.succeed(""),
 	fetchHistory: (): Effect.Effect<void, GitOperationError> => Effect.void,
+	ensureCommit: (): Effect.Effect<void, GitOperationError> => Effect.void,
 	resolveCommit: (_repoDir: string, hash: string): Effect.Effect<string, GitOperationError> =>
 		Effect.succeed(hash),
 };

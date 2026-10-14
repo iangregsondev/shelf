@@ -98,15 +98,8 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				const repoDir = config.repoPath(alias);
 				let resolved = yield* resolvePin(repo.url, raw);
 				if (resolved.type === "commit") {
-					const hash = resolved.value;
-					if (!(yield* git.hasCommit(repoDir, hash))) {
-						// A full hash can be fetched by itself; a short one only by
-						// fetching the history it sits in.
-						yield* hash.length === 40
-							? git.fetch(repoDir, hash, Option.none())
-							: git.fetchHistory(repoDir);
-					}
-					resolved = yield* fullCommitPin(repoDir, hash);
+					yield* git.ensureCommit(repoDir, resolved.value);
+					resolved = yield* fullCommitPin(repoDir, resolved.value);
 				}
 				yield* sync.syncRepo(new RepoEntry({ ...repo, pin: Option.some(resolved) }));
 				const saved = yield* config.updateRepo(

@@ -10,7 +10,66 @@ import { parseSymrefHead, runGit } from "./git-utils";
 // starts with `-` is never read as an option.
 export class GitService extends Context.Service<GitService>()("shelf/domain/git/GitService", {
 	make: Effect.gen(function* () {
+		/**
+		 * Fetches one refspec from `origin`. With a depth the fetch is shallow;
+		 * without one it never makes the clone shallower.
+		 */
+		const fetch = Effect.fn("GitService.fetch")(function* (
+			repoDir: string,
+			refspec: string,
+			depth: Option.Option<number>,
+		) {
+			const args = ["fetch", "--no-tags"];
+			if (Option.isSome(depth)) {
+				args.push("--depth", String(depth.value));
+			}
+			args.push("--", "origin", refspec);
+			yield* runGit(args, repoDir);
+		});
+
+		/** Whether `rev` names a commit already in the local clone. */
+		const hasCommit = Effect.fn("GitService.hasCommit")(function* (repoDir: string, rev: string) {
+			return yield* runGit(
+				["rev-parse", "--verify", "--quiet", "--end-of-options", `${rev}^{commit}`],
+				repoDir,
+			).pipe(
+				Effect.as(true),
+				Effect.catchTag("GitOperationError", () => Effect.succeed(false)),
+			);
+		});
+
+		/**
+		 * Fetches the full history of every branch on `origin`, unshallowing
+		 * the clone, so any commit reachable from a branch is then local.
+		 */
+		const fetchHistory = Effect.fn("GitService.fetchHistory")(function* (repoDir: string) {
+			const shallow = yield* runGit(["rev-parse", "--is-shallow-repository"], repoDir);
+			const args = ["fetch", "--no-tags"];
+			if (shallow === "true") {
+				args.push("--unshallow");
+			}
+			args.push("--", "origin", "+refs/heads/*:refs/remotes/origin/*");
+			yield* runGit(args, repoDir);
+		});
+
+		/**
+		 * Makes sure commit `hash` is in the local clone, fetching it when missing:
+		 * a full hash can be fetched by itself; a short one only by fetching the
+		 * history it sits in. Never makes the clone shallower.
+		 */
+		const ensureCommit = Effect.fn("GitService.ensureCommit")(function* (
+			repoDir: string,
+			hash: string,
+		) {
+			if (yield* hasCommit(repoDir, hash)) return;
+			yield* hash.length === 40 ? fetch(repoDir, hash, Option.none()) : fetchHistory(repoDir);
+		});
+
 		return {
+			fetch,
+			hasCommit,
+			fetchHistory,
+			ensureCommit,
 			clone: Effect.fn("GitService.clone")(function* (
 				url: string,
 				targetDir: string,
@@ -47,50 +106,10 @@ export class GitService extends Context.Service<GitService>()("shelf/domain/git/
 					yield* runGit(["checkout"], targetDir);
 				}
 				if (Option.isSome(pin) && pin.value.type === "commit") {
+					// A shallow clone (--depth) may not reach the pinned commit.
+					yield* ensureCommit(targetDir, pin.value.value);
 					yield* runGit(["checkout", "--detach", pin.value.value, "--"], targetDir);
 				}
-			}),
-
-			/**
-			 * Fetches one refspec from `origin`. With a depth the fetch is shallow;
-			 * without one it never makes the clone shallower.
-			 */
-			fetch: Effect.fn("GitService.fetch")(function* (
-				repoDir: string,
-				refspec: string,
-				depth: Option.Option<number>,
-			) {
-				const args = ["fetch", "--no-tags"];
-				if (Option.isSome(depth)) {
-					args.push("--depth", String(depth.value));
-				}
-				args.push("--", "origin", refspec);
-				yield* runGit(args, repoDir);
-			}),
-
-			/** Whether `rev` names a commit already in the local clone. */
-			hasCommit: Effect.fn("GitService.hasCommit")(function* (repoDir: string, rev: string) {
-				return yield* runGit(
-					["rev-parse", "--verify", "--quiet", "--end-of-options", `${rev}^{commit}`],
-					repoDir,
-				).pipe(
-					Effect.as(true),
-					Effect.catchTag("GitOperationError", () => Effect.succeed(false)),
-				);
-			}),
-
-			/**
-			 * Fetches the full history of every branch on `origin`, unshallowing
-			 * the clone, so any commit reachable from a branch is then local.
-			 */
-			fetchHistory: Effect.fn("GitService.fetchHistory")(function* (repoDir: string) {
-				const shallow = yield* runGit(["rev-parse", "--is-shallow-repository"], repoDir);
-				const args = ["fetch", "--no-tags"];
-				if (shallow === "true") {
-					args.push("--unshallow");
-				}
-				args.push("--", "origin", "+refs/heads/*:refs/remotes/origin/*");
-				yield* runGit(args, repoDir);
 			}),
 
 			/**

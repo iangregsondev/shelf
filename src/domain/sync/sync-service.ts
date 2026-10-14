@@ -54,9 +54,7 @@ export class SyncService extends Context.Service<SyncService>()("shelf/domain/sy
 					yield* git.checkout(repoDir, tagRef);
 				} else {
 					const commit = repo.pin.value.value;
-					if (!(yield* git.hasCommit(repoDir, commit))) {
-						yield* git.fetch(repoDir, commit, Option.none());
-					}
+					yield* git.ensureCommit(repoDir, commit);
 					yield* git.checkout(repoDir, commit);
 				}
 			});

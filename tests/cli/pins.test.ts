@@ -81,6 +81,25 @@ describe("shelf add --pin", () => {
 		expect(await storedLine("lib")).toBe(`lib ${remote.url} pin:${remote.commits.first}`);
 		expect(await head("lib")).toBe(remote.commits.first);
 	});
+
+	test.each([
+		["full", (sha: string) => sha],
+		["short", (sha: string) => sha.slice(0, 7)],
+	])("with --depth 1, a %s commit hash outside the shallow clone is fetched", async (_, form) => {
+		const result = await shelf.run([
+			"add",
+			remote.url,
+			"--alias",
+			"lib",
+			"--depth",
+			"1",
+			"--pin",
+			`commit:${form(remote.commits.first)}`,
+		]);
+		expect(result.exitCode).toBe(0);
+		expect(await storedLine("lib")).toBe(`lib ${remote.url} pin:${remote.commits.first}`);
+		expect(await head("lib")).toBe(remote.commits.first);
+	});
 });
 
 describe("shelf install", () => {
