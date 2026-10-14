@@ -80,20 +80,21 @@ export class SyncService extends Context.Service<SyncService>()("shelf/domain/sy
         yield* doSync(repo);
       }),
 
-      // Syncs every reference repo, carrying on past failures, and reports
-      // which ones failed so the caller can show them.
+      // Syncs every reference repo, up to four at a time, carrying on past
+      // failures, and reports which ones failed (in config order) so the
+      // caller can show them.
       syncAll: Effect.fn("SyncService.syncAll")(function* () {
         const cfg = yield* config.load();
-        const failures: Array<SyncFailure> = [];
-        for (const repo of cfg.repos) {
-          yield* doSync(repo).pipe(
-            Effect.catch((error) =>
-              Effect.sync(() => {
-                failures.push({ alias: repo.alias, error });
-              }),
+        const outcomes = yield* Effect.forEach(
+          cfg.repos,
+          (repo) =>
+            doSync(repo).pipe(
+              Effect.as(Option.none<SyncFailure>()),
+              Effect.catch((error) => Effect.succeed(Option.some({ alias: repo.alias, error }))),
             ),
-          );
-        }
+          { concurrency: 4 },
+        );
+        const failures = outcomes.flatMap((outcome) => Option.toArray(outcome));
         const result: SyncAllResult = { total: cfg.repos.length, failures };
         return result;
       }),
