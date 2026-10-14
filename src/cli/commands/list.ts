@@ -25,7 +25,10 @@ export const listCommand = Command.make("list", {}, () =>
 				onSome: (s: string) => s,
 			});
 			yield* Console.log(`  ${r.alias} — ${r.url} [${pinStr}] (synced: ${syncStr})`);
-			yield* Console.log(`    → ${config.repoPath(r.alias)}`);
+			const path = yield* config
+				.repoPath(r.alias)
+				.pipe(Effect.orElseSucceed(() => "(invalid alias: rename it in config.json)"));
+			yield* Console.log(`    → ${path}`);
 		}
 	}),
 ).pipe(Command.withDescription("List all configured repositories"));

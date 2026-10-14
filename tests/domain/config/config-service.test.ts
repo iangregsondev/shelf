@@ -192,7 +192,21 @@ describe("ConfigService", () => {
 				}).pipe(Effect.provide(ConfigService.layer)),
 			);
 			// tests/setup.ts points SHELF_HOME at a temp shelf home
-			expect(svc.repoPath("my-repo")).toBe(join(process.env["SHELF_HOME"]!, "repos", "my-repo"));
+			expect(await Effect.runPromise(svc.repoPath("my-repo"))).toBe(
+				join(process.env["SHELF_HOME"]!, "repos", "my-repo"),
+			);
+		});
+
+		test("repoPath refuses an alias that is not a single safe folder name", async () => {
+			const svc = await Effect.runPromise(
+				Effect.gen(function* () {
+					return yield* ConfigService;
+				}).pipe(Effect.provide(ConfigService.layer)),
+			);
+			for (const alias of ["../outside", "a/b", ".", ""]) {
+				const exit = await Effect.runPromiseExit(svc.repoPath(alias));
+				expect(exit._tag).toBe("Failure");
+			}
 		});
 	});
 

@@ -1,10 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import {
-	aliasProblem,
-	deriveAlias,
-	parsePin,
-	pinFromRemoteRefs,
-} from "../../../src/domain/repo/repo-utils";
+import { aliasProblem } from "../../../src/domain/config/config-utils";
+import { deriveAlias, parsePin, pinFromRemoteRefs } from "../../../src/domain/repo/repo-utils";
 
 describe("deriveAlias", () => {
 	test("derives from HTTPS URL", () => {

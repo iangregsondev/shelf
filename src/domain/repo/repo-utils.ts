@@ -1,24 +1,5 @@
-import * as Effect from "effect/Effect";
 import { RepoPin } from "../config/config-schema";
-import { InvalidAliasError } from "./repo-errors";
-
-const ALIAS_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const ALIAS_MAX_LENGTH = 100;
-
-/**
- * Why an alias is not a single safe folder name, or `undefined` when it is.
- * The rule: letters, digits, `.`, `_` and `-`, starting with a letter or digit,
- * at most 100 characters (so never `.` or `..`).
- */
-export const aliasProblem = (alias: string): string | undefined => {
-	if (alias.length > ALIAS_MAX_LENGTH) {
-		return `must be at most ${ALIAS_MAX_LENGTH} characters`;
-	}
-	if (!ALIAS_PATTERN.test(alias)) {
-		return "must start with a letter or digit and use only letters, digits, '.', '_' and '-'";
-	}
-	return undefined;
-};
+import { ALIAS_MAX_LENGTH, aliasProblem } from "../config/config-utils";
 
 const FALLBACK_ALIAS = "repo";
 const SCOPED_PACKAGE_PATTERN = /^@([^/]+)\/([^/]+)$/;
@@ -115,12 +96,4 @@ export const pinFromRemoteRefs = (name: string, lsRemoteOutput: string): RepoPin
 	if (refs.has(`refs/tags/${name}`)) return new RepoPin({ type: "tag", value: name });
 	if (refs.has(`refs/heads/${name}`)) return new RepoPin({ type: "branch", value: name });
 	return undefined;
-};
-
-/** Succeeds with the alias when it is a single safe folder name, else fails with `InvalidAliasError`. */
-export const checkAlias = (alias: string): Effect.Effect<string, InvalidAliasError> => {
-	const problem = aliasProblem(alias);
-	return problem === undefined
-		? Effect.succeed(alias)
-		: Effect.fail(new InvalidAliasError({ alias, message: problem }));
 };

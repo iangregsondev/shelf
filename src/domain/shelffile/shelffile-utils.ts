@@ -2,7 +2,8 @@ import * as Option from "effect/Option";
 import type { RepoPin } from "../config/config-schema";
 import type { Shelffile, ShelffileEntry } from "./shelffile-schema";
 import { ShelffileParseError } from "./shelffile-errors";
-import { aliasProblem, isFullCommitHash, parsePin } from "../repo/repo-utils";
+import { aliasProblem } from "../config/config-utils";
+import { isFullCommitHash, parsePin } from "../repo/repo-utils";
 
 export const parseShelffilePin = (raw: string): RepoPin => {
 	if (!raw.startsWith("pin:")) {

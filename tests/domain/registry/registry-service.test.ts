@@ -36,7 +36,7 @@ describe("RegistryService", () => {
 				},
 				updateRepo: () => Effect.succeed(Option.none()),
 				ensureDirectories: () => Effect.void,
-				repoPath: (alias: string) => join(tempDir, "repos", alias),
+				repoPath: (alias: string) => Effect.succeed(join(tempDir, "repos", alias)),
 				shelfHome: tempDir,
 				reposDir: join(tempDir, "repos"),
 				configPath: join(tempDir, "config.json"),

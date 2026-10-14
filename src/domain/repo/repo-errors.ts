@@ -20,11 +20,6 @@ export class PinResolutionError extends Schema.TaggedError<PinResolutionError>()
 	{ message: Schema.String },
 ) {}
 
-export class InvalidAliasError extends Schema.TaggedError<InvalidAliasError>()(
-	"InvalidAliasError",
-	{ alias: Schema.String, message: Schema.String },
-) {}
-
 /** A reference repo's folder could not be created. */
 export class RepoFolderError extends Schema.TaggedError<RepoFolderError>()("RepoFolderError", {
 	path: Schema.String,

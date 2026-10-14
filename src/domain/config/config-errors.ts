@@ -23,3 +23,9 @@ export class UnknownConfigKeyError extends Schema.TaggedError<UnknownConfigKeyEr
 	"UnknownConfigKeyError",
 	{ key: Schema.String },
 ) {}
+
+/** An alias that is not a single safe folder name. */
+export class InvalidAliasError extends Schema.TaggedError<InvalidAliasError>()(
+	"InvalidAliasError",
+	{ alias: Schema.String, message: Schema.String },
+) {}

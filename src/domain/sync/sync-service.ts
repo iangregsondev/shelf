@@ -3,13 +3,17 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
 import { RepoEntry } from "../config/config-schema";
-import type { ConfigParseError, ConfigWriteError } from "../config/config-errors";
+import type {
+	ConfigParseError,
+	ConfigWriteError,
+	InvalidAliasError,
+} from "../config/config-errors";
 import { ConfigService } from "../config/config-service";
 import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
 
 /** Why syncing one reference repo failed. */
-export type SyncError = GitOperationError | ConfigParseError | ConfigWriteError;
+export type SyncError = GitOperationError | ConfigParseError | ConfigWriteError | InvalidAliasError;
 
 /** A reference repo that failed to sync, and the error it failed with. */
 export interface SyncFailure {
@@ -61,7 +65,7 @@ export class SyncService extends Context.Service<SyncService>()("shelf/domain/sy
 
 		const doSync = (repo: RepoEntry): Effect.Effect<void, SyncError> =>
 			Effect.gen(function* () {
-				const repoDir = config.repoPath(repo.alias);
+				const repoDir = yield* config.repoPath(repo.alias);
 				yield* syncCheckout(repoDir, repo);
 				const now = new Date().toISOString();
 				// A repo removed while it synced stays removed: None saves nothing.

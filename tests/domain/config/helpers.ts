@@ -31,7 +31,7 @@ const defaultConfigImpl = {
 export const createMockConfigLayer = (
 	overrides: ConfigOverrides = {},
 ): Layer.Layer<ConfigService> => {
-	const { save, ...impl } = { ...defaultConfigImpl, ...overrides };
+	const { save, repoPath, ...impl } = { ...defaultConfigImpl, ...overrides };
 	const update = <E = never>(
 		fn: (current: ShelfConfig) => ShelfConfig | Effect.Effect<ShelfConfig, E>,
 	): Effect.Effect<ShelfConfig, ConfigParseError | ConfigWriteError | E> =>
@@ -59,5 +59,13 @@ export const createMockConfigLayer = (
 			);
 			return Option.some(next);
 		});
-	return Layer.succeed(ConfigService, ConfigService.of({ ...impl, update, updateRepo }));
+	return Layer.succeed(
+		ConfigService,
+		ConfigService.of({
+			...impl,
+			repoPath: (alias: string) => Effect.succeed(repoPath(alias)),
+			update,
+			updateRepo,
+		}),
+	);
 };

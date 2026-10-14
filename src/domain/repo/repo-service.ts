@@ -6,7 +6,7 @@ import { mkdir, rename as renamePath, rm as removePath } from "node:fs/promises"
 import { join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
 import { ConfigService } from "../config/config-service";
-import { errorCode } from "../config/config-utils";
+import { checkAlias, errorCode } from "../config/config-utils";
 import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
 import { RegistryService } from "../registry/registry-service";
@@ -19,7 +19,7 @@ import {
 	RepoFolderError,
 	RepoNotFoundError,
 } from "./repo-errors";
-import { checkAlias, deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
+import { deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
 import { dirSize, listFolder, pathExists } from "./repo-store";
 
@@ -95,7 +95,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				if (!repo) {
 					return yield* new RepoNotFoundError({ alias });
 				}
-				const repoDir = config.repoPath(alias);
+				const repoDir = yield* config.repoPath(alias);
 				let resolved = yield* resolvePin(repo.url, raw);
 				if (resolved.type === "commit") {
 					yield* git.ensureCommit(repoDir, resolved.value);
@@ -124,7 +124,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				if (cfg.repos.some((r: RepoEntry) => r.alias === resolvedAlias)) {
 					return yield* new RepoAlreadyExistsError({ alias: resolvedAlias });
 				}
-				const targetDir = config.repoPath(resolvedAlias);
+				const targetDir = yield* config.repoPath(resolvedAlias);
 				// Claim the folder before cloning, so a failed add only ever removes
 				// a folder it created itself. The clone runs outside the config lock;
 				// only the config write takes turns with other adds.
@@ -178,7 +178,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				if (!repo) {
 					return yield* new RepoNotFoundError({ alias: aliasOrUrl });
 				}
-				const repoDir = config.repoPath(repo.alias);
+				const repoDir = yield* config.repoPath(repo.alias);
 				yield* Effect.tryPromise({
 					try: () => removePath(repoDir, { recursive: true, force: true }),
 					catch: () => undefined,
@@ -207,8 +207,8 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				if (cfg.repos.some((r: RepoEntry) => r.alias === to)) {
 					return yield* new RepoAlreadyExistsError({ alias: to });
 				}
-				const oldPath = config.repoPath(from);
-				const newPath = config.repoPath(to);
+				const oldPath = yield* config.repoPath(from);
+				const newPath = yield* config.repoPath(to);
 				// rename() silently replaces an empty folder, so refuse any folder already there.
 				if (yield* pathExists(newPath)) {
 					return yield* new AliasRenameError({
@@ -247,7 +247,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 
 			/** What is on disk for the reference repo `alias`. */
 			folder: Effect.fn("RepoService.folder")(function* (alias: string) {
-				const path = config.repoPath(alias);
+				const path = yield* config.repoPath(alias);
 				const exists = yield* pathExists(path);
 				const result: RepoFolder = {
 					path,

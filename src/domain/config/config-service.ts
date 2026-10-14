@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { RepoEntry } from "./config-schema";
 import { ShelfConfig, defaultConfig, decodeConfig, encodeConfig } from "./config-schema";
-import { ConfigParseError, ConfigWriteError } from "./config-errors";
-import { resolveShelfHome } from "./config-utils";
+import { ConfigParseError, ConfigWriteError, type InvalidAliasError } from "./config-errors";
+import { checkAlias, resolveShelfHome } from "./config-utils";
 import { withStateFileLock, writeFileAtomic } from "./state-file-store";
 
 export class ConfigService extends Context.Service<ConfigService>()(
@@ -101,7 +101,13 @@ export class ConfigService extends Context.Service<ConfigService>()(
 					});
 				}),
 
-				repoPath: (alias: string): string => join(reposDir, alias),
+				/**
+				 * The folder of the reference repo `alias`. Fails, naming no path,
+				 * when the alias is not a single safe folder name (say, a hand-edited
+				 * `../x` in config.json), so nothing ever acts outside the repos folder.
+				 */
+				repoPath: (alias: string): Effect.Effect<string, InvalidAliasError> =>
+					checkAlias(alias).pipe(Effect.map((safe) => join(reposDir, safe))),
 
 				shelfHome,
 				reposDir,
