@@ -44,12 +44,12 @@ describe("GitService running git", () => {
       await source.cleanup();
     });
 
-    test("fails with a GitOperationError on invalid URL", async () => {
+    test("fails with a GitOperationError on a URL with no repo", async () => {
       const targetDir = join(tempDir, "bad-clone");
       const result = await Effect.runPromise(
         withGit((service) =>
           service.clone(
-            "https://invalid.example.com/nonexistent.git",
+            `file://${join(tempDir, "nonexistent.git")}`,
             targetDir,
             Option.none(),
             Option.none(),

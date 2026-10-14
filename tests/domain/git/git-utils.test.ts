@@ -35,4 +35,9 @@ describe("gitErrorLine", () => {
     expect(gitErrorLine("first\nsecond\n\n")).toBe("second");
     expect(gitErrorLine("only")).toBe("only");
   });
+
+  test("returns an empty string when stderr holds only whitespace", () => {
+    expect(gitErrorLine("")).toBe("");
+    expect(gitErrorLine("  \n\t\n")).toBe("");
+  });
 });
