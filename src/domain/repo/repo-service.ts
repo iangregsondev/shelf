@@ -266,12 +266,19 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
           .readFileString(join(process.cwd(), "package.json"))
           .pipe(Effect.mapError(noPackageJson));
         const pkgJson = yield* Effect.try({
-          try: () => JSON.parse(pkgText) as Record<string, unknown>,
+          try: () => JSON.parse(pkgText) as Record<string, unknown> | null,
           catch: noPackageJson,
         });
-        const deps = (pkgJson["dependencies"] ?? {}) as Record<string, string>;
-        const devDeps = (pkgJson["devDependencies"] ?? {}) as Record<string, string>;
-        const version = deps[packageName] ?? devDeps[packageName];
+        // Only a version string the manifest itself declares counts: not a
+        // number, and not an inherited name like `constructor`.
+        const declared = (field: string): unknown => {
+          const deps: unknown = pkgJson?.[field];
+          return typeof deps === "object" && deps !== null && Object.hasOwn(deps, packageName)
+            ? (deps as Record<string, unknown>)[packageName]
+            : undefined;
+        };
+        const dep = declared("dependencies") ?? declared("devDependencies");
+        const version = typeof dep === "string" ? dep : undefined;
         if (!version) {
           return yield* new AutoPinResolutionError({
             message: `Package "${packageName}" not found in dependencies or devDependencies`,
