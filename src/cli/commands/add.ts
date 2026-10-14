@@ -5,8 +5,9 @@ import { Argument, Command, Flag } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 import { ResolveService } from "../../domain/resolve/resolve-service";
-import { deriveAlias, parsePin } from "../../domain/repo/repo-utils";
+import { deriveAlias } from "../../domain/repo/repo-utils";
 import type { ResolvedRepo } from "../../domain/resolve/resolve-schema";
+import type { RepoPin } from "../../domain/config/config-schema";
 
 // A bare name (`@effect/platform`, `next`) is the package the user means, so
 // auto-pin matches tags for it. A URL or owner/repo names no package, so fall
@@ -21,7 +22,7 @@ const alias = Flag.String("alias").pipe(Flag.optional, Flag.withDescription("Ali
 const pin = Flag.String("pin").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"Pin to branch:<name>, tag:<name>, a commit hash, or 'auto' to resolve from package.json",
+		"Pin to branch:<name>, tag:<name>, commit:<hash>, a bare tag or branch name, or 'auto' to resolve from package.json",
 	),
 );
 const depth = Flag.Int("depth").pipe(
@@ -46,10 +47,15 @@ export const addCommand = Command.make("add", { repo, alias, pin, depth, sparse 
 		const effectiveAlias = Option.isSome(config.alias)
 			? config.alias
 			: Option.some(resolved.suggestedAlias);
-		const resolvedPin =
-			Option.isSome(config.pin) && config.pin.value === "auto"
-				? yield* repoService.resolveAutoPin(url, autoPinPackageName(config.repo, resolved))
-				: config.pin.pipe(Option.map((raw) => parsePin(raw)));
+		let resolvedPin: Option.Option<RepoPin> = Option.none();
+		if (Option.isSome(config.pin) && config.pin.value === "auto") {
+			resolvedPin = yield* repoService.resolveAutoPin(
+				url,
+				autoPinPackageName(config.repo, resolved),
+			);
+		} else if (Option.isSome(config.pin)) {
+			resolvedPin = Option.some(yield* repoService.resolvePin(url, config.pin.value));
+		}
 		const resolvedSparse = config.sparse.pipe(
 			Option.map((raw) => raw.split(",").map((s) => s.trim())),
 		);

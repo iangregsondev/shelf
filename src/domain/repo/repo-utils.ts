@@ -23,17 +23,53 @@ export const deriveAlias = (url: string): string => {
 	return last ?? "unknown";
 };
 
-export const parsePin = (raw: string): RepoPin => {
-	if (raw.startsWith("branch:")) {
-		return new RepoPin({ type: "branch", value: raw.slice(7) });
+/** What the user typed as a pin: a pin taken as stated, a bare name for the remote to decide, or a mistake. */
+export type PinInput =
+	| { readonly _tag: "Explicit"; readonly pin: RepoPin }
+	| { readonly _tag: "Bare"; readonly value: string }
+	| { readonly _tag: "Invalid"; readonly message: string };
+
+const FULL_HASH = /^[0-9a-f]{40}$/i;
+const COMMIT_HASH = /^[0-9a-f]{4,40}$/i;
+
+/**
+ * Reads a pin the user typed. `branch:`, `tag:` and `commit:` forms, and a
+ * full 40-character hash, are taken as stated. Anything else is a bare name
+ * the remote decides (see `pinFromRemoteRefs`), so a hex-looking name like
+ * `cafe123` is never guessed to be a commit.
+ */
+export const parsePin = (raw: string): PinInput => {
+	const explicit = (type: RepoPin["type"], value: string): PinInput =>
+		value === ""
+			? { _tag: "Invalid", message: `Pin "${raw}" names no ${type}` }
+			: { _tag: "Explicit", pin: new RepoPin({ type, value }) };
+	if (raw.startsWith("branch:")) return explicit("branch", raw.slice(7));
+	if (raw.startsWith("tag:")) return explicit("tag", raw.slice(4));
+	if (raw.startsWith("commit:")) {
+		const hash = raw.slice(7);
+		return COMMIT_HASH.test(hash)
+			? explicit("commit", hash)
+			: { _tag: "Invalid", message: `Pin "${raw}" is not a commit hash (4 to 40 hex characters)` };
 	}
-	if (raw.startsWith("tag:")) {
-		return new RepoPin({ type: "tag", value: raw.slice(4) });
-	}
-	if (/^[0-9a-f]{7,40}$/i.test(raw)) {
-		return new RepoPin({ type: "commit", value: raw });
-	}
-	return new RepoPin({ type: "branch", value: raw });
+	if (FULL_HASH.test(raw)) return explicit("commit", raw);
+	if (raw === "") return { _tag: "Invalid", message: "Pin is empty" };
+	return { _tag: "Bare", value: raw };
+};
+
+/**
+ * Decides a bare pin from `git ls-remote --heads --tags` output: a tag of
+ * that name wins, then a branch; `undefined` when the remote has neither.
+ */
+export const pinFromRemoteRefs = (name: string, lsRemoteOutput: string): RepoPin | undefined => {
+	const refs = new Set(
+		lsRemoteOutput
+			.split("\n")
+			.map((line) => line.trim().split("\t")[1])
+			.filter((ref): ref is string => ref !== undefined),
+	);
+	if (refs.has(`refs/tags/${name}`)) return new RepoPin({ type: "tag", value: name });
+	if (refs.has(`refs/heads/${name}`)) return new RepoPin({ type: "branch", value: name });
+	return undefined;
 };
 
 export const dirSize = (dirPath: string): Effect.Effect<number> =>

@@ -14,3 +14,8 @@ export class AutoPinResolutionError extends Schema.TaggedError<AutoPinResolution
 	"AutoPinResolutionError",
 	{ message: Schema.String },
 ) {}
+
+export class PinResolutionError extends Schema.TaggedError<PinResolutionError>()(
+	"PinResolutionError",
+	{ message: Schema.String },
+) {}

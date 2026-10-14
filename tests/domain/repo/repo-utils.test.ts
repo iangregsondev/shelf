@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { deriveAlias } from "../../../src/domain/repo/repo-utils";
+import { deriveAlias, parsePin, pinFromRemoteRefs } from "../../../src/domain/repo/repo-utils";
 
 describe("deriveAlias", () => {
 	test("derives from HTTPS URL", () => {
@@ -28,5 +28,74 @@ describe("deriveAlias", () => {
 
 	test("handles simple path-like URL", () => {
 		expect(deriveAlias("https://gitlab.com/group/subgroup/project")).toBe("project");
+	});
+});
+
+describe("parsePin", () => {
+	const explicit = (raw: string) => {
+		const parsed = parsePin(raw);
+		if (parsed._tag !== "Explicit") throw new Error(`expected an explicit pin, got ${parsed._tag}`);
+		return { type: parsed.pin.type, value: parsed.pin.value };
+	};
+
+	test.each([
+		["branch:main", "branch", "main"],
+		["branch:cafe123", "branch", "cafe123"],
+		["tag:v1.2.3", "tag", "v1.2.3"],
+		["commit:abc1234", "commit", "abc1234"],
+		["commit:ABC1234", "commit", "ABC1234"],
+		[
+			"0123456789abcdef0123456789abcdef01234567",
+			"commit",
+			"0123456789abcdef0123456789abcdef01234567",
+		],
+	] as const)("%s is taken as stated", (raw, type, value) => {
+		expect(explicit(raw)).toEqual({ type, value });
+	});
+
+	test.each(["v1.2.3", "main", "cafe123", "feature/x", "0123456789abcdef0123456789abcdef0123456"])(
+		"bare %s is left for the remote to decide",
+		(raw) => {
+			expect(parsePin(raw)).toEqual({ _tag: "Bare", value: raw });
+		},
+	);
+
+	test.each(["branch:", "tag:", "commit:", "commit:xyz1234", "commit:abc", ""])(
+		"%s is rejected",
+		(raw) => {
+			expect(parsePin(raw)._tag).toBe("Invalid");
+		},
+	);
+});
+
+describe("pinFromRemoteRefs", () => {
+	const lsRemote = [
+		"1111111111111111111111111111111111111111\trefs/heads/main",
+		"2222222222222222222222222222222222222222\trefs/heads/release",
+		"3333333333333333333333333333333333333333\trefs/tags/v1.2.3",
+		"4444444444444444444444444444444444444444\trefs/tags/v1.2.3^{}",
+		"5555555555555555555555555555555555555555\trefs/tags/release",
+		"6666666666666666666666666666666666666666\trefs/heads/feature/x",
+	].join("\n");
+
+	test("a tag on the remote gives a tag pin", () => {
+		expect(pinFromRemoteRefs("v1.2.3", lsRemote)).toEqual({ type: "tag", value: "v1.2.3" });
+	});
+
+	test("a branch on the remote gives a branch pin", () => {
+		expect(pinFromRemoteRefs("main", lsRemote)).toEqual({ type: "branch", value: "main" });
+		expect(pinFromRemoteRefs("feature/x", lsRemote)).toEqual({
+			type: "branch",
+			value: "feature/x",
+		});
+	});
+
+	test("a tag wins over a branch of the same name", () => {
+		expect(pinFromRemoteRefs("release", lsRemote)).toEqual({ type: "tag", value: "release" });
+	});
+
+	test("a name the remote doesn't have gives nothing", () => {
+		expect(pinFromRemoteRefs("v9.9.9", lsRemote)).toBeUndefined();
+		expect(pinFromRemoteRefs("feature", lsRemote)).toBeUndefined();
 	});
 });

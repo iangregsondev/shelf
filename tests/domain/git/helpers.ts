@@ -22,6 +22,12 @@ export type GitOverrides = {
 	readonly checkout?: (repoDir: string, ref: string) => Effect.Effect<void, GitOperationError>;
 	readonly getDefaultBranch?: (repoDir: string) => Effect.Effect<string, GitOperationError>;
 	readonly lsRemoteTags?: (url: string) => Effect.Effect<string, GitOperationError>;
+	readonly lsRemoteRefs?: (url: string) => Effect.Effect<string, GitOperationError>;
+	readonly fetchHistory?: (repoDir: string) => Effect.Effect<void, GitOperationError>;
+	readonly resolveCommit?: (
+		repoDir: string,
+		hash: string,
+	) => Effect.Effect<string, GitOperationError>;
 };
 
 const defaultGitImpl = {
@@ -31,6 +37,10 @@ const defaultGitImpl = {
 	hasCommit: (): Effect.Effect<boolean> => Effect.succeed(false),
 	getDefaultBranch: (): Effect.Effect<string, GitOperationError> => Effect.succeed("main"),
 	lsRemoteTags: (): Effect.Effect<string, GitOperationError> => Effect.succeed(""),
+	lsRemoteRefs: (): Effect.Effect<string, GitOperationError> => Effect.succeed(""),
+	fetchHistory: (): Effect.Effect<void, GitOperationError> => Effect.void,
+	resolveCommit: (_repoDir: string, hash: string): Effect.Effect<string, GitOperationError> =>
+		Effect.succeed(hash),
 };
 
 export const createMockGitLayer = (overrides: GitOverrides = {}): Layer.Layer<GitService> => {

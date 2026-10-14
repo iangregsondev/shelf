@@ -7,10 +7,16 @@ import { join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
 import { ConfigParseError } from "../config/config-errors";
 import { ConfigService } from "../config/config-service";
+import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
 import { SyncService } from "../sync/sync-service";
-import { AutoPinResolutionError, RepoAlreadyExistsError, RepoNotFoundError } from "./repo-errors";
-import { deriveAlias } from "./repo-utils";
+import {
+	AutoPinResolutionError,
+	PinResolutionError,
+	RepoAlreadyExistsError,
+	RepoNotFoundError,
+} from "./repo-errors";
+import { deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
 
 const errorCode = (error: unknown): string | undefined =>
@@ -24,7 +30,80 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 		const git = yield* GitService;
 		const sync = yield* SyncService;
 
+		/**
+		 * Turns a pin the user typed into a pin. Explicit forms are taken as
+		 * stated; a bare value is a tag pin if `url` has that tag, else a branch
+		 * pin if it has that branch. A commit pin may still be a short hash.
+		 */
+		const resolvePin = Effect.fn("RepoService.resolvePin")(function* (url: string, raw: string) {
+			const input = parsePin(raw);
+			if (input._tag === "Invalid") {
+				return yield* new PinResolutionError({ message: input.message });
+			}
+			if (input._tag === "Explicit") {
+				return input.pin;
+			}
+			const pin = pinFromRemoteRefs(input.value, yield* git.lsRemoteRefs(url));
+			if (pin === undefined) {
+				return yield* new PinResolutionError({
+					message: `"${input.value}" is neither a tag nor a branch on ${url}. Use commit:<hash> for a commit.`,
+				});
+			}
+			return pin;
+		});
+
+		/** A commit pin as its full hash, read from the local clone at `repoDir`. */
+		const fullCommitPin = (
+			repoDir: string,
+			hash: string,
+		): Effect.Effect<RepoPin, GitOperationError> =>
+			git
+				.resolveCommit(repoDir, hash)
+				.pipe(Effect.map((full) => new RepoPin({ type: "commit", value: full })));
+
 		return {
+			resolvePin,
+
+			/**
+			 * Pins a reference repo, saving the pin only once a sync to it has
+			 * worked, so a pin that can't be checked out is never stored. A commit
+			 * the clone lacks is fetched first, so a short hash can be expanded.
+			 */
+			pin: Effect.fn("RepoService.pin")(function* (alias: string, raw: string) {
+				const cfg = yield* config.load();
+				const repo = cfg.repos.find((r: RepoEntry) => r.alias === alias);
+				if (!repo) {
+					return yield* new RepoNotFoundError({ alias });
+				}
+				const repoDir = config.repoPath(alias);
+				let resolved = yield* resolvePin(repo.url, raw);
+				if (resolved.type === "commit") {
+					const hash = resolved.value;
+					if (!(yield* git.hasCommit(repoDir, hash))) {
+						// A full hash can be fetched by itself; a short one only by
+						// fetching the history it sits in.
+						yield* hash.length === 40
+							? git.fetch(repoDir, hash, Option.none())
+							: git.fetchHistory(repoDir);
+					}
+					resolved = yield* fullCommitPin(repoDir, hash);
+				}
+				yield* sync.syncRepo(new RepoEntry({ ...repo, pin: Option.some(resolved) }));
+				yield* config.update((current) =>
+					current.repos.some((r: RepoEntry) => r.alias === alias)
+						? Effect.succeed(
+								new ShelfConfig({
+									...current,
+									repos: current.repos.map((r: RepoEntry) =>
+										r.alias === alias ? new RepoEntry({ ...r, pin: Option.some(resolved) }) : r,
+									),
+								}),
+							)
+						: Effect.fail(new RepoNotFoundError({ alias })),
+				);
+				return resolved;
+			}),
+
 			add: Effect.fn("RepoService.add")(function* (
 				url: string,
 				alias: Option.Option<string>,
@@ -51,11 +130,16 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				});
 				yield* Effect.gen(function* () {
 					yield* git.clone(url, targetDir, pin, depth, sparse);
+					// A commit pin is stored as its full hash, read from the fresh clone.
+					const storedPin =
+						Option.isSome(pin) && pin.value.type === "commit"
+							? Option.some(yield* fullCommitPin(targetDir, pin.value.value))
+							: pin;
 					const now = new Date().toISOString();
 					const newRepo = new RepoEntry({
 						url,
 						alias: resolvedAlias,
-						pin,
+						pin: storedPin,
 						depth,
 						sparse,
 						addedAt: now,
