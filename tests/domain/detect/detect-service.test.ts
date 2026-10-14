@@ -315,7 +315,8 @@ const shelvedConfig = (url: string, alias: string) =>
     load: () =>
       Effect.succeed(
         new ShelfConfig({
-          ...defaultConfig,
+          version: defaultConfig.version,
+          syncIntervalMinutes: defaultConfig.syncIntervalMinutes,
           repos: [
             new RepoEntry({
               url,
