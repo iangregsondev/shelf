@@ -11,9 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: npx oxfmt --check src tests
-      - run: npx oxlint --tsconfig tsconfig.json src tests
-      - run: bunx --bun tsc --noEmit
-      - run: bun run test
+      # Node comes from package.json devEngines.runtime, vite-plus from the pnpm catalog.
+      - uses: voidzero-dev/setup-vp@v1.21.2
+        with:
+          run-install: false
+          cache: true
+      - run: vp install --frozen-lockfile
+      - run: vp check
+      - run: vp test
+      - run: vp pack

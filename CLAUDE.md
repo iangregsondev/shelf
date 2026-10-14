@@ -6,11 +6,18 @@ Shelf is a standalone CLI that maintains a global, always-up-to-date cache of co
 
 ## Commands
 
-- `bun run src/startup/index.ts` — run shelf CLI
-- `bun run test` — run all tests. They run offline, in temp shelf homes, and never touch `~/.agents/shelf`
-- `bun run test --coverage` — run with coverage
-- `bun run check` — format check, lint and typecheck
-- `bunx --bun tsc --noEmit` — typecheck only
+Shelf runs on Node.js 24. The toolchain is vite-plus (`vp`), with pnpm as the package manager; Node and pnpm versions are pinned in `package.json` `devEngines`.
+
+- `vp install` — install dependencies (pnpm; `pnpm-lock.yaml` is committed)
+- `vp pack` — build the CLI and the daemon into `dist/` (`index.mjs`, `daemon.mjs`)
+- `node dist/index.mjs` — run the built shelf CLI (`vp pack` first)
+- `vp test` — run all tests (vitest). It builds `dist/` first. Tests run offline, in temp shelf homes, and never touch `~/.agents/shelf`
+- `vp test tests/cli/add-resolve.test.ts` — run one test file
+- `vp check` — format check, type-aware lint and typecheck
+- `vp check --no-fmt --no-lint` — typecheck only
+- `vp check --fix` — apply format and lint fixes
+
+Never use `npm publish` or `npm pack`: `devEngines` pins pnpm, so npm refuses (EBADDEVENGINES). Use `vp pm pack` and `vp pm publish`.
 
 ## Architecture
 
@@ -23,7 +30,8 @@ src/domain/{domain-name}/{name}-errors.ts   — typed errors
 src/domain/{domain-name}/{name}-utils.ts    — pure functions
 src/domain/{domain-name}/{name}-store.ts    — storage boundary: file-system I/O
 src/cli/commands/{name}.ts                  — CLI entrypoints
-src/startup/index.ts                        — CLI entrypoint
+src/startup/index.ts                        — CLI entrypoint (built to dist/index.mjs)
+src/startup/daemon.ts                       — daemon process entrypoint (built to dist/daemon.mjs)
 src/startup/layers/app.ts                   — layer composition
 ```
 
@@ -42,13 +50,18 @@ Dependency direction: `command → service → storage boundary`. Reverse import
 - `Effect.catch` replaces v3's `Effect.catchAll`
 - `Effect.catchTag` still works for tagged error handling
 - Import CLI from `effect/cli` (`Command`, `Flag`, `Argument`); constructors are PascalCase: `Flag.String`, `Flag.Boolean`, `Flag.Int`, `Argument.String`
-- Import BunRuntime from `@effect/platform-bun/BunRuntime`
-- Versions are pinned exactly and `bun.lock` is committed; bump `effect` and `@effect/platform-bun` together
+- Entrypoints run on Node: `runMain` from `@effect/platform-node/NodeRuntime` and `layer` from `@effect/platform-node/NodeServices`. Only the two `src/startup/` entrypoints import `@effect/platform-node`
+- Services read and write files and spawn processes through Effect platform services: `FileSystem` from `effect/FileSystem` and `ChildProcessSpawner` from `effect/process/ChildProcessSpawner`, with `Effect.sleep` for waits. They `yield*` them in `make`, so tests provide them through a layer (`PlatformLayer` in `tests/helpers/platform.ts`). Prefer these for new I/O; a few older paths (the stores, some `stat`/`rename` calls) still call `node:fs` directly
+- Versions are pinned exactly; bump `effect` and `@effect/platform-node` together
 
 ## Testing
 
-- `tests/setup.ts` (preloaded for every run) sets `SHELF_HOME` to a temp dir and points `SHELF_NPM_REGISTRY_URL` and `SHELF_GITHUB_API_URL` at an empty local stub, so no test reaches the real shelf home or the network
-- CLI tests run the real `shelf` binary through `createShelfSandbox()` in `tests/helpers/shelf-cli.ts`: a fresh temp shelf home per test, plus stub npm and GitHub responses (`tests/helpers/stub-services.ts`). Call `cleanup()` in `afterEach`
+- Tests run on vitest through `vp test`; config is the `test` block in `vite.config.ts`
+- Import test helpers explicitly from `vite-plus/test` (`import { describe, test, expect, afterEach } from "vite-plus/test"`); there are no globals
+- `tests/global-setup.ts` (vitest `globalSetup`) runs `vp pack` once per run, so CLI tests exercise the built `dist/` that ships
+- `tests/setup.ts` (vitest `setupFiles`, runs before every test file) sets `SHELF_HOME` to a temp dir and points `SHELF_NPM_REGISTRY_URL` and `SHELF_GITHUB_API_URL` at an empty local stub, so no test reaches the real shelf home or the network
+- CLI tests run the built `dist/index.mjs` under `node` through `createShelfSandbox()` in `tests/helpers/shelf-cli.ts`: a fresh temp shelf home per test, plus stub npm and GitHub responses (`tests/helpers/stub-services.ts`). Call `cleanup()` in `afterEach`
+- Test helpers use plain `node:` modules (`node:fs/promises`, `node:child_process`, `node:http`)
 - A test that starts a daemon must stop it in `afterEach` with `stopDaemonIn()` from `tests/helpers/daemon.ts`, so it is stopped even when the test fails
 - Tests mirror source in `tests/domain/{domain}/`
 - Each domain has `helpers.ts` with mock layers via `Layer.succeed(Service, Service.of(impl))`
