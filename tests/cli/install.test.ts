@@ -102,9 +102,25 @@ describe("install command", () => {
     await repo.cleanup();
   });
 
-  test("reports error for missing shelffile", async () => {
+  test("fails with exit 1 when the shelffile is missing", async () => {
     const result = await runShelf(["install", "--dir", tempDir]);
-    expect(result.output).toContain("No shelffile found");
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("No shelffile found");
+  });
+
+  test("with no flags installs from the shelffile in the current directory", async () => {
+    const alias = uniqueAlias("cwd");
+    const repo = await createBareRepo({ "lib.ts": "export {};" });
+    await writeText(join(tempDir, "shelffile"), `${alias} ${repo.dir}\n`);
+
+    const result = await runShelf(["install"], tempDir);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("concurrency: 4");
+    expect(result.output).toContain(`Added "${alias}"`);
+    const list = await runShelf(["list"]);
+    expect(list.stdout).toContain(alias);
+
+    await repo.cleanup();
   });
 
   test("accepts --concurrency flag", async () => {
