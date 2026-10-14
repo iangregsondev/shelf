@@ -11,12 +11,16 @@ const errorMessages: Record<string, (error: Record<string, unknown>) => string> 
 	AutoPinResolutionError: (e) => `Auto-pin failed: ${String(e["message"])}`,
 	PinResolutionError: (e) => `Pin failed: ${String(e["message"])}`,
 	ConfigParseError: (e) => `Config error: ${String(e["message"])}`,
+	ConfigWriteError: (e) => `Could not save shelf state: ${String(e["message"])}`,
+	RepoFolderError: (e) =>
+		`Could not create the repo folder ${String(e["path"])}: ${String(e["message"])}`,
 	InvalidConfigValueError: (e) => String(e["message"]),
 	ConfigNotFoundError: (e) => `Config not found: ${String(e["path"])}`,
 	ShelffileNotFoundError: (e) =>
 		`No shelffile found at ${String(e["path"])}. Create one or use \`shelf share\` to generate one.`,
 	ShelffileParseError: (e) => `Shelffile error: ${String(e["message"])}`,
 	RegistryParseError: (e) => `Registry error: ${String(e["message"])}`,
+	RegistryWriteError: (e) => `Could not save the registry: ${String(e["message"])}`,
 	ResolveError: (e) => `Could not resolve "${String(e["input"])}": ${String(e["message"])}`,
 	DetectError: (e) => `Detection failed: ${String(e["message"])}`,
 	DaemonAlreadyRunningError: (e) => `Daemon is already running (PID: ${String(e["pid"])}).`,

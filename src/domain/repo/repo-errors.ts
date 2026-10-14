@@ -25,6 +25,12 @@ export class InvalidAliasError extends Schema.TaggedError<InvalidAliasError>()(
 	{ alias: Schema.String, message: Schema.String },
 ) {}
 
+/** A reference repo's folder could not be created. */
+export class RepoFolderError extends Schema.TaggedError<RepoFolderError>()("RepoFolderError", {
+	path: Schema.String,
+	message: Schema.String,
+}) {}
+
 export class AliasRenameError extends Schema.TaggedError<AliasRenameError>()("AliasRenameError", {
 	from: Schema.String,
 	to: Schema.String,

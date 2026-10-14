@@ -5,7 +5,6 @@ import * as Context from "effect/Context";
 import { mkdir, rm as removePath } from "node:fs/promises";
 import { join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
-import { ConfigParseError } from "../config/config-errors";
 import { ConfigService } from "../config/config-service";
 import { errorCode } from "../config/config-utils";
 import type { GitOperationError } from "../git/git-errors";
@@ -15,6 +14,7 @@ import {
 	AutoPinResolutionError,
 	PinResolutionError,
 	RepoAlreadyExistsError,
+	RepoFolderError,
 	RepoNotFoundError,
 } from "./repo-errors";
 import { checkAlias, deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
@@ -122,7 +122,10 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 					catch: (error) =>
 						errorCode(error) === "EEXIST"
 							? new RepoAlreadyExistsError({ alias: resolvedAlias })
-							: new ConfigParseError({ message: `Failed to create ${targetDir}` }),
+							: new RepoFolderError({
+									path: targetDir,
+									message: error instanceof Error ? error.message : String(error),
+								}),
 				});
 				yield* Effect.gen(function* () {
 					yield* git.clone(url, targetDir, pin, depth, sparse);

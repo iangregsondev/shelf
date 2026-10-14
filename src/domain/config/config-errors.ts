@@ -9,6 +9,11 @@ export class ConfigParseError extends Schema.TaggedError<ConfigParseError>()("Co
 	message: Schema.String,
 }) {}
 
+/** Writing, locking or creating shelf state on disk failed. */
+export class ConfigWriteError extends Schema.TaggedError<ConfigWriteError>()("ConfigWriteError", {
+	message: Schema.String,
+}) {}
+
 export class InvalidConfigValueError extends Schema.TaggedError<InvalidConfigValueError>()(
 	"InvalidConfigValueError",
 	{ message: Schema.String },

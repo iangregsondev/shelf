@@ -2,21 +2,21 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { ShelfConfig } from "../../../src/domain/config/config-schema";
 import { defaultConfig } from "../../../src/domain/config/config-schema";
-import type { ConfigParseError } from "../../../src/domain/config/config-errors";
+import type { ConfigParseError, ConfigWriteError } from "../../../src/domain/config/config-errors";
 import { ConfigService } from "../../../src/domain/config/config-service";
 
 export type ConfigOverrides = {
 	readonly load?: () => Effect.Effect<typeof ShelfConfig.Type, ConfigParseError>;
-	readonly save?: (config: typeof ShelfConfig.Type) => Effect.Effect<void, ConfigParseError>;
-	readonly ensureDirectories?: () => Effect.Effect<void, ConfigParseError>;
+	readonly save?: (config: typeof ShelfConfig.Type) => Effect.Effect<void, ConfigWriteError>;
+	readonly ensureDirectories?: () => Effect.Effect<void, ConfigWriteError>;
 	readonly repoPath?: (alias: string) => string;
 };
 
 const defaultConfigImpl = {
 	load: (): Effect.Effect<typeof ShelfConfig.Type, ConfigParseError> =>
 		Effect.succeed(defaultConfig),
-	save: (): Effect.Effect<void, ConfigParseError> => Effect.void,
-	ensureDirectories: (): Effect.Effect<void, ConfigParseError> => Effect.void,
+	save: (): Effect.Effect<void, ConfigWriteError> => Effect.void,
+	ensureDirectories: (): Effect.Effect<void, ConfigWriteError> => Effect.void,
 	repoPath: (alias: string): string => `/tmp/shelf-test/repos/${alias}`,
 	shelfHome: "/tmp/shelf-test",
 	reposDir: "/tmp/shelf-test/repos",
@@ -33,7 +33,7 @@ export const createMockConfigLayer = (
 	const { save, ...impl } = { ...defaultConfigImpl, ...overrides };
 	const update = <E = never>(
 		fn: (current: ShelfConfig) => ShelfConfig | Effect.Effect<ShelfConfig, E>,
-	): Effect.Effect<ShelfConfig, ConfigParseError | E> =>
+	): Effect.Effect<ShelfConfig, ConfigParseError | ConfigWriteError | E> =>
 		Effect.gen(function* () {
 			const result = fn(yield* impl.load());
 			const next = Effect.isEffect(result) ? yield* result : result;

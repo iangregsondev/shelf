@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ShelfConfig } from "./config-schema";
 import { defaultConfig, decodeConfig, encodeConfig } from "./config-schema";
-import { ConfigParseError } from "./config-errors";
+import { ConfigParseError, ConfigWriteError } from "./config-errors";
 import { resolveShelfHome } from "./config-utils";
 import { withStateFileLock, writeFileAtomic } from "./state-file-store";
 
@@ -36,10 +36,10 @@ export class ConfigService extends Context.Service<ConfigService>()(
 				});
 			});
 
-			const save = (config: ShelfConfig): Effect.Effect<void, ConfigParseError> =>
+			const save = (config: ShelfConfig): Effect.Effect<void, ConfigWriteError> =>
 				Effect.tryPromise({
 					try: () => writeFileAtomic(configFile, JSON.stringify(encodeConfig(config), null, "\t")),
-					catch: () => new ConfigParseError({ message: "Failed to write config file" }),
+					catch: () => new ConfigWriteError({ message: "Failed to write config file" }),
 				});
 
 			/**
@@ -49,7 +49,7 @@ export class ConfigService extends Context.Service<ConfigService>()(
 			 */
 			const update = <E = never>(
 				fn: (current: ShelfConfig) => ShelfConfig | Effect.Effect<ShelfConfig, E>,
-			): Effect.Effect<ShelfConfig, ConfigParseError | E> =>
+			): Effect.Effect<ShelfConfig, ConfigParseError | ConfigWriteError | E> =>
 				Effect.gen(function* () {
 					const current = yield* load();
 					const result = fn(current);
@@ -57,7 +57,7 @@ export class ConfigService extends Context.Service<ConfigService>()(
 					yield* save(next);
 					return next;
 				}).pipe(
-					withStateFileLock(configFile, (message) => new ConfigParseError({ message })),
+					withStateFileLock(configFile, (message) => new ConfigWriteError({ message })),
 					Effect.withSpan("ConfigService.update"),
 				);
 
@@ -72,7 +72,7 @@ export class ConfigService extends Context.Service<ConfigService>()(
 							await mkdir(shelfHome, { recursive: true });
 							await mkdir(reposDir, { recursive: true });
 						},
-						catch: () => new ConfigParseError({ message: "Failed to create shelf directories" }),
+						catch: () => new ConfigWriteError({ message: "Failed to create shelf directories" }),
 					});
 				}),
 

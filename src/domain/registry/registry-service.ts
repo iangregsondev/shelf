@@ -7,7 +7,7 @@ import { ConfigService } from "../config/config-service";
 import { errorCode } from "../config/config-utils";
 import { ShelffileService } from "../shelffile/shelffile-service";
 import { ShelfRegistry, defaultRegistry, decodeRegistry, encodeRegistry } from "./registry-schema";
-import { RegistryParseError } from "./registry-errors";
+import { RegistryParseError, RegistryWriteError } from "./registry-errors";
 import { possibleShelffileAliases } from "../shelffile/shelffile-utils";
 import { withStateFileLock, writeFileAtomic } from "../config/state-file-store";
 
@@ -73,11 +73,11 @@ export class RegistryService extends Context.Service<RegistryService>()(
 				});
 			});
 
-			const save = (registry: ShelfRegistry): Effect.Effect<void, RegistryParseError> =>
+			const save = (registry: ShelfRegistry): Effect.Effect<void, RegistryWriteError> =>
 				Effect.tryPromise({
 					try: () =>
 						writeFileAtomic(registryPath, JSON.stringify(encodeRegistry(registry), null, "\t")),
-					catch: () => new RegistryParseError({ message: "Failed to write registry file" }),
+					catch: () => new RegistryWriteError({ message: "Failed to write registry file" }),
 				});
 
 			/**
@@ -87,13 +87,13 @@ export class RegistryService extends Context.Service<RegistryService>()(
 			 */
 			const update = (
 				fn: (current: ShelfRegistry) => ShelfRegistry,
-			): Effect.Effect<ShelfRegistry, RegistryParseError> =>
+			): Effect.Effect<ShelfRegistry, RegistryParseError | RegistryWriteError> =>
 				Effect.gen(function* () {
 					const next = fn(yield* load());
 					yield* save(next);
 					return next;
 				}).pipe(
-					withStateFileLock(registryPath, (message) => new RegistryParseError({ message })),
+					withStateFileLock(registryPath, (message) => new RegistryWriteError({ message })),
 					Effect.withSpan("RegistryService.update"),
 				);
 
