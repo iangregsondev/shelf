@@ -35,12 +35,12 @@ describe("add resolves the URL forms users paste", () => {
 		expect(await Bun.file(join(shelf.home, "repos", "toString", "found.ts")).exists()).toBe(true);
 	});
 
-	test("an unparsable URL gives a clear error, not a stack trace", async () => {
+	test("an unparsable URL gives a clear error and exits 1", async () => {
 		const result = await shelf.run(["add", "https://"]);
+		expect(result.exitCode).toBe(1);
 		expect(result.output).toContain('Could not resolve "https://": "https://" is not a valid URL');
 		expect(result.output).not.toContain("at <anonymous>");
 		expect(result.output).not.toContain("TypeError");
-		// Exit code 1 for handled errors arrives with #7.
 		expect(existsSync(join(shelf.home, "repos", "https:"))).toBe(false);
 	});
 });
