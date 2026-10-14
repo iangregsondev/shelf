@@ -203,8 +203,10 @@ describe("state file store on disk", () => {
     test("gives up after 30 seconds while another live process holds the lock", async () => {
       await writeFile(lockPath, "1");
       vi.useFakeTimers({ toFake: ["Date"] });
-      setTimeout(() => vi.setSystemTime(Date.now() + 31_000), 100);
-      const exit = await runExit(Effect.succeed("ran"));
+      // Date stands still, so jump it past 30s again and again: whenever the
+      // store sets its deadline, the next jump passes it, however slow the run.
+      const jumps = setInterval(() => vi.setSystemTime(Date.now() + 31_000), 20);
+      const exit = await runExit(Effect.succeed("ran")).finally(() => clearInterval(jumps));
       expect(exit._tag).toBe("Failure");
       expect(JSON.stringify(exit)).toContain(
         `Failed to lock ${lockPath}: timed out waiting for another shelf process`,

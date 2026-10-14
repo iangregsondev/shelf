@@ -3,7 +3,9 @@
 // The sync interval runs on a TestClock; the log is what the program prints.
 
 import { describe, expect, test, beforeEach, afterEach, vi } from "vite-plus/test";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -12,7 +14,6 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import { daemonProgram } from "../../../src/domain/daemon/daemon-service";
 import { createMockConfigLayer } from "../config/helpers";
 import { ConfigParseError } from "../../../src/domain/config/config-errors";
@@ -32,11 +33,14 @@ const configWith = (syncIntervalMinutes: number): ShelfConfig =>
 describe("daemonProgram", () => {
   let home: string;
   let logLines: string[];
+  /** The test-clock time each sleep the daemon has started will end at, in start order. */
+  let wakeups: number[];
   let savedArgv: string[];
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "shelf-daemon-program-"));
     logLines = [];
+    wakeups = [];
     vi.spyOn(console, "log").mockImplementation((line: unknown) => {
       logLines.push(String(line));
     });
@@ -63,8 +67,24 @@ describe("daemonProgram", () => {
   const waitUntil = (check: () => boolean | Promise<boolean>): Effect.Effect<void> =>
     Effect.promise(() => pollUntil(check));
 
-  /** Lets the daemon fiber reach its sleep before the test clock moves. */
-  const settle = Effect.promise(() => sleep(30));
+  /** Waits until the daemon has started its first sleep, so moving the test clock wakes it. */
+  const asleep = waitUntil(() => wakeups.length > 0);
+
+  /** A TestClock that records in `wakeups` when each sleep started on it will end. */
+  const recordingTestClock = Layer.effect(
+    Clock.Clock,
+    Effect.gen(function* () {
+      const clock = yield* TestClock.make();
+      return {
+        ...clock,
+        sleep: (duration: Duration.Duration) =>
+          Effect.suspend(() => {
+            wakeups.push(clock.currentTimeMillisUnsafe() + Duration.toMillis(duration));
+            return clock.sleep(duration);
+          }),
+      };
+    }),
+  );
 
   const hasLog = (text: string) => logLines.some((line) => line.includes(text));
 
@@ -88,7 +108,7 @@ describe("daemonProgram", () => {
         }),
       ),
       PlatformLayer,
-      TestClock.layer(),
+      recordingTestClock,
     );
 
   /** Runs `body` with the daemon program forked in the background, then interrupts it. */
@@ -163,9 +183,9 @@ describe("daemonProgram", () => {
             yield* waitUntil(async () => (await readState())?.lastTickAt !== undefined);
             expect(hasLog("Starting sync cycle (interval: 30m)")).toBe(true);
             expect(hasLog("Sync cycle complete")).toBe(true);
-            yield* settle;
+            yield* asleep;
+            expect(wakeups).toEqual([Duration.toMillis("30 minutes")]);
             yield* TestClock.adjust("29 minutes");
-            yield* settle;
             expect(ticks).toBe(1);
             yield* TestClock.adjust("1 minute");
             yield* waitUntil(() => ticks === 2);
@@ -195,7 +215,7 @@ describe("daemonProgram", () => {
           Effect.gen(function* () {
             yield* waitUntil(async () => (await readState())?.lastTickAt !== undefined);
             expect(hasLog('Sync failed for "react"')).toBe(true);
-            yield* settle;
+            yield* asleep;
             yield* TestClock.adjust("30 minutes");
             yield* waitUntil(() => ticks === 2);
           }),
@@ -217,7 +237,7 @@ describe("daemonProgram", () => {
             yield* waitUntil(async () => (await readState())?.lastTickAt !== undefined);
             expect(hasLog("Sync cycle failed:")).toBe(true);
             expect(hasLog("Sync cycle complete")).toBe(true);
-            yield* settle;
+            yield* asleep;
             yield* TestClock.adjust("30 minutes");
             yield* waitUntil(() => ticks === 2);
           }),
@@ -246,7 +266,8 @@ describe("daemonProgram", () => {
           Effect.gen(function* () {
             yield* waitUntil(() => hasLog("Failed to load config, retrying in 60s"));
             expect(ticks).toBe(0);
-            yield* settle;
+            yield* asleep;
+            expect(wakeups).toEqual([Duration.toMillis("1 minute")]);
             yield* TestClock.adjust("1 minute");
             yield* waitUntil(() => ticks === 1);
           }),
