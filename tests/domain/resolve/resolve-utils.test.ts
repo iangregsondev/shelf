@@ -27,6 +27,14 @@ describe("expandPrefixed", () => {
     expect(result.host).toBe("gitlab.com");
   });
 
+  test("an unknown prefix falls back to GitHub", () => {
+    expect(expandPrefixed("sourcehut:org/repo")).toEqual({
+      host: "github.com",
+      ownerRepo: "org/repo",
+      url: "https://github.com/org/repo.git",
+    });
+  });
+
   test("expands bitbucket prefix", () => {
     const result = expandPrefixed("bitbucket:org/repo");
     expect(result.url).toBe("https://bitbucket.org/org/repo.git");

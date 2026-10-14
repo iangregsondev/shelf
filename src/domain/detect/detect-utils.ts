@@ -75,6 +75,7 @@ export const normalizeGitUrl = (url: string): string => {
 
   const shorthand = normalized.match(/^(github|gitlab|bitbucket):(.*)$/);
   if (shorthand) {
+    /* v8 ignore next -- both groups always match when the regex does; `??` only satisfies the index type */
     normalized = `https://${SHORTHAND_HOSTS[shorthand[1] ?? "github"]}/${shorthand[2] ?? ""}`;
   } else if (/^[\w.-]+\/[\w.-]+\/?$/.test(normalized)) {
     normalized = `https://github.com/${normalized}`;
