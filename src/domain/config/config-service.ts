@@ -126,7 +126,7 @@ export class ConfigService extends Context.Service<ConfigService>()(
           checkAlias(alias).pipe(Effect.map((safe) => join(reposDir, safe))),
 
         shelfHome,
-        /** The user's home folder, for showing paths inside it as `~/…`. */
+        /** The user's home folder (`os.homedir()`). */
         userHome,
         reposDir,
         configPath: configFile,

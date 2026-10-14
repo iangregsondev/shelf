@@ -14,6 +14,10 @@ _Avoid_: store, library
 The directory holding all shelf state; `~/.agents/shelf` unless overridden.
 _Avoid_: data dir, cache dir
 
+**User home**:
+The user's own home folder (`os.homedir()`), which holds the default shelf home and is shown as `~` in paths.
+_Avoid_: home dir, home (alone; say shelf home or user home)
+
 **Reference repo**:
 A git repository cloned onto the shelf for reading, never for editing.
 _Avoid_: dependency, package, entry

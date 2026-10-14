@@ -300,7 +300,9 @@ describe("ConfigService on a shelf home of its own", () => {
       try {
         expect((await serviceAt(home)).userHome).toBe("/home/someone");
       } finally {
-        process.env["HOME"] = previous;
+        // Assigning undefined would store the string "undefined".
+        if (previous === undefined) delete process.env["HOME"];
+        else process.env["HOME"] = previous;
       }
     });
   });
