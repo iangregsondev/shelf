@@ -66,7 +66,7 @@ Every code change starts with a failing test: call the Skill tool with `mattpoco
 
 - `vp test --coverage` measures coverage with `@vitest/coverage-v8`, pinned exactly to the vitest version vite-plus bundles. Bump them together
 - Coverage covers `src/` except `src/cli/commands/` and `src/startup/`: those run only inside the built CLI that CLI tests spawn as child processes, where v8 coverage can't see. The CLI tests in `tests/cli/` cover them instead
-- Planned thresholds, enforced in CI once the backfill lands: 100% lines, functions and statements; 95% branches
+- Thresholds are enforced: 100% lines, functions and statements; 95% branches (`coverage.thresholds` in `vite.config.ts`). `vp test --coverage` fails below them, locally and in CI
 - A coverage-ignore comment (`/* v8 ignore next */` and the like) must give its reason on the same line, e.g. `/* v8 ignore next -- unreachable: Schema already rejects this */`. No reason, no ignore
 
 ### Conventions
