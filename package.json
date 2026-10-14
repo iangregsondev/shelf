@@ -8,13 +8,15 @@
 		"url": "https://github.com/iangregsondev/shelf.git"
 	},
 	"bin": {
-		"shelf": "./src/startup/index.ts"
+		"shelf": "./dist/index.mjs"
 	},
 	"files": [
-		"src/**/*.ts"
+		"dist"
 	],
 	"type": "module",
 	"scripts": {
+		"build": "vp pack",
+		"shelf": "node dist/index.mjs",
 		"test": "vp test",
 		"format": "vp fmt src tests",
 		"format:check": "vp fmt --check src tests",
