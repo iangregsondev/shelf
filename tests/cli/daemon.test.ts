@@ -1,21 +1,12 @@
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { join } from "node:path";
-import { stopDaemonIn } from "../helpers/daemon";
+import { isAlive, stopDaemonIn } from "../helpers/daemon";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { readJson, writeText } from "../helpers/files";
 
 let shelf: ShelfSandbox;
 let daemonPids: number[] = [];
 const runShelf = (args: string[], cwd?: string) => shelf.run(args, { cwd });
-
-const isAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 /** The PID daemon.json records, remembered so afterEach kills it even if the record changes. */
 const recordedPid = async (): Promise<number> => {

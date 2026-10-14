@@ -22,6 +22,7 @@ import { SyncService, type SyncAllResult } from "../../../src/domain/sync/sync-s
 import { SHELF_VERSION } from "../../../src/version";
 import { PlatformLayer } from "../../helpers/platform";
 import { readJson } from "../../helpers/files";
+import { waitUntil as pollUntil } from "../../helpers/wait";
 
 type RecordedState = { pid: number; token: string; lastTickAt?: string; version: string };
 
@@ -60,13 +61,7 @@ describe("daemonProgram", () => {
 
   /** Polls (in real time) until `check` holds, failing after 5s. */
   const waitUntil = (check: () => boolean | Promise<boolean>): Effect.Effect<void> =>
-    Effect.promise(async () => {
-      const deadline = Date.now() + 5000;
-      while (!(await check())) {
-        if (Date.now() > deadline) throw new Error("timed out waiting for the daemon");
-        await sleep(10);
-      }
-    });
+    Effect.promise(() => pollUntil(check));
 
   /** Lets the daemon fiber reach its sleep before the test clock moves. */
   const settle = Effect.promise(() => sleep(30));

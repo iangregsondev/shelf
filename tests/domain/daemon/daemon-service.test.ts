@@ -18,34 +18,17 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import { DaemonEntry, DaemonService } from "../../../src/domain/daemon/daemon-service";
 import { DaemonState, encodeDaemonState } from "../../../src/domain/daemon/daemon-schema";
 import { createMockConfigLayer } from "../config/helpers";
-import { stopDaemonIn } from "../../helpers/daemon";
+import { isAlive, stopDaemonIn } from "../../helpers/daemon";
+import { waitUntil } from "../../helpers/wait";
 import { PlatformLayer } from "../../helpers/platform";
 import { SHELF_VERSION } from "../../../src/version";
 import { readJson } from "../../helpers/files";
 
 /** The daemon entry point the test run built into the repo's `dist` (see tests/global-setup.ts). */
 const BUILT_DAEMON_ENTRY = join(import.meta.dirname, "../../../dist/daemon.mjs");
-
-const isAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const waitUntil = async (check: () => boolean | Promise<boolean>, ms = 5000): Promise<void> => {
-  const deadline = Date.now() + ms;
-  while (!(await check())) {
-    if (Date.now() > deadline) throw new Error("timed out");
-    await sleep(20);
-  }
-};
 
 const failure = (method: string) =>
   PlatformError.systemError({ _tag: "Unknown", module: "ChildProcess", method });
