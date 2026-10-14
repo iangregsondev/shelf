@@ -33,7 +33,9 @@ export class ShelffileService extends Context.Service<ShelffileService>()(
           return yield* Effect.try({
             try: () => parseShelffile(content),
             catch: (e) => {
+              /* v8 ignore else -- parseShelffile only throws ShelffileParseError; the fallback guards an unexpected throw */
               if (e instanceof ShelffileParseError) return e;
+              /* v8 ignore next -- unreachable, see above */
               return new ShelffileParseError({ message: `Failed to parse ${filePath}` });
             },
           });
