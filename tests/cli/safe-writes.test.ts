@@ -1,7 +1,7 @@
 // Safe writes to shelf state: parallel and cross-process adds never lose a
 // config entry, a stale lock is taken over, and a failed add cleans up.
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";

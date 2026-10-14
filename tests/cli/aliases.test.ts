@@ -2,7 +2,7 @@
 // can place or delete files outside the shelf, and a rename that fails on disk
 // changes nothing.
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { existsSync } from "node:fs";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -45,7 +45,7 @@ const shelfHomeEntries = async (): Promise<string[]> =>
 
 describe("aliases", () => {
 	test.each([["../escape"], [".."], ["."], ["a/b"], [".hidden"]])(
-		"add --alias %p is rejected and creates nothing",
+		"add --alias %j is rejected and creates nothing",
 		async (alias) => {
 			const result = await shelf.run(["add", await bareRepo("lib"), "--alias", alias]);
 			expect(result.exitCode).toBe(1);

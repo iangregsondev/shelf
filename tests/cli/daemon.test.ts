@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 
 let shelf: ShelfSandbox;

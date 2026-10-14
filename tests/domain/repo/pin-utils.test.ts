@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vite-plus/test";
 import {
 	stripSemverRange,
 	parseRemoteTags,
@@ -108,10 +108,10 @@ describe("pin-utils", () => {
 			},
 			{
 				name: "prerelease version matches exactly",
-				packageName: "@effect/platform-bun",
+				packageName: "@effect/platform-node",
 				version: "4.0.0-beta.31",
-				tags: ["@effect/platform-bun@4.0.0-beta.3", "@effect/platform-bun@4.0.0-beta.31"],
-				expected: "@effect/platform-bun@4.0.0-beta.31",
+				tags: ["@effect/platform-node@4.0.0-beta.3", "@effect/platform-node@4.0.0-beta.31"],
+				expected: "@effect/platform-node@4.0.0-beta.31",
 			},
 			{
 				name: "another package's tag never matches",

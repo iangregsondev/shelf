@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import { mkdtemp, rm, mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import * as Option from "effect/Option";
 import { resolveGoModule, normalizeGitUrl } from "../../../src/domain/detect/detect-utils";
 

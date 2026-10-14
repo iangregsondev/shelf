@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 import { join } from "node:path";
 import { createBareRepo } from "../helpers/temp-repo";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";

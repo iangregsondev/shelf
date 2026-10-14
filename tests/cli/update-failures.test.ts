@@ -3,7 +3,7 @@
 // test installs reference repos from a shelffile pointing at local `file://`
 // remotes, then breaks a remote by deleting it.
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

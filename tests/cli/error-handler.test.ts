@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vite-plus/test";
 import { formatUserError } from "../../src/cli/error-handler";
 
 describe("formatUserError", () => {

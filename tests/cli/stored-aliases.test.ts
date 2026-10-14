@@ -2,7 +2,7 @@
 // not a single safe folder name, such as `../outside`. Shelf must refuse to
 // act on such a repo, with a clear error, and never touch the path it names.
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";

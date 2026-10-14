@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { parseSyncInterval, resolveShelfHome } from "../../../src/domain/config/config-utils";
 
 describe("resolveShelfHome", () => {
@@ -52,11 +52,11 @@ describe("parseSyncInterval", () => {
 		["1", 1],
 		["60", 60],
 		[" 15 ", 15],
-	])("accepts the whole number %p", (raw, expected) => {
+	])("accepts the whole number %j", (raw, expected) => {
 		expect(parseSyncInterval(raw)).toBe(expected);
 	});
 
-	test.each(["0", "-5", "1.5", "2.0", "abc", "", "10m", "1e3", "Infinity"])("rejects %p", (raw) => {
+	test.each(["0", "-5", "1.5", "2.0", "abc", "", "10m", "1e3", "Infinity"])("rejects %j", (raw) => {
 		expect(parseSyncInterval(raw)).toBeUndefined();
 	});
 });

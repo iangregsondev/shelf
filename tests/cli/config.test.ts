@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 
 let shelf: ShelfSandbox;
@@ -19,7 +19,7 @@ describe("shelf config syncIntervalMinutes", () => {
 		expect(get.stdout.trim()).toBe("15");
 	});
 
-	test.each(["0", "-1", "1.5", "abc"])("rejects %p and keeps the old value", async (value) => {
+	test.each(["0", "-1", "1.5", "abc"])("rejects %j and keeps the old value", async (value) => {
 		const set = await shelf.run(["config", "syncIntervalMinutes", "--", value]);
 		expect(set.exitCode).toBe(1);
 		expect(set.stderr).toContain("syncIntervalMinutes must be a whole number of 1 or more");
@@ -30,7 +30,7 @@ describe("shelf config syncIntervalMinutes", () => {
 
 describe("shelf config <unknown key>", () => {
 	test.each([[["config", "nope"]], [["config", "nope", "5"]]])(
-		"%p fails with exit 1 and names the key",
+		"%j fails with exit 1 and names the key",
 		async (args) => {
 			const result = await shelf.run(args);
 			expect(result.exitCode).toBe(1);

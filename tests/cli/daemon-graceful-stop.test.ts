@@ -1,7 +1,7 @@
 // `shelf daemon stop` lets the daemon finish the sync step it is on. A `git`
 // shim on PATH makes every fetch slow, so the stop lands mid-sync.
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { accessSync, constants, existsSync, statSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

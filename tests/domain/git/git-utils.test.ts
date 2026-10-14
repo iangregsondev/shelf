@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vite-plus/test";
 import { gitErrorLine, parseSymrefHead } from "../../../src/domain/git/git-utils";
 
 describe("parseSymrefHead", () => {

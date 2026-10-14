@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vite-plus/test";
 import { aliasProblem } from "../../../src/domain/config/config-utils";
 import { deriveAlias, parsePin, pinFromRemoteRefs } from "../../../src/domain/repo/repo-utils";
 
@@ -103,7 +103,7 @@ describe("pinFromRemoteRefs", () => {
 
 describe("aliasProblem", () => {
 	test.each([["effect"], ["my-repo"], ["next.js"], ["a_b"], ["V2"], ["0"], ["a".repeat(100)]])(
-		"accepts %p",
+		"accepts %j",
 		(alias) => {
 			expect(aliasProblem(alias)).toBeUndefined();
 		},
@@ -124,8 +124,8 @@ describe("aliasProblem", () => {
 		["has space"],
 		["a".repeat(101)],
 		["~"],
-	])("rejects %p", (alias) => {
-		expect(aliasProblem(alias)).toBeString();
+	])("rejects %j", (alias) => {
+		expect(aliasProblem(alias)).toBeTypeOf("string");
 	});
 });
 
@@ -143,12 +143,12 @@ describe("deriveAlias edge cases", () => {
 		["/tmp/some dir/repo.git", "repo"],
 		["v5", "v5"],
 		["", "repo"],
-	])("%p gives %p", (input, expected) => {
+	])("%j gives %j", (input, expected) => {
 		expect(deriveAlias(input)).toBe(expected);
 	});
 
 	test.each([["https://[bad"], ["http://exa mple.com/x"], ["https://"], ["git@:"]])(
-		"never throws on unparsable %p and gives a valid alias",
+		"never throws on unparsable %j and gives a valid alias",
 		(input) => {
 			const alias = deriveAlias(input);
 			expect(aliasProblem(alias)).toBeUndefined();

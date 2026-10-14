@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import { ResolveService } from "../../../src/domain/resolve/resolve-service";

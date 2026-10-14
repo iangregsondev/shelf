@@ -3,7 +3,7 @@
 // stored in full, and `shelf pin` saves a pin only once a sync to it works.
 // What got stored is read back through `shelf share --stdout`.
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

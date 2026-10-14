@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "vite-plus/test";
 import { join } from "node:path";
 import { skillTemplate } from "../../src/cli/templates/skill";
 import { parse } from "yaml";

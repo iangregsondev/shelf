@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import {
 	expandOwnerRepo,
 	expandPrefixed,
@@ -66,7 +66,7 @@ describe("deriveAliasFromOwnerRepo safety", () => {
 		["owner/.hidden", "hidden"],
 		["owner/..", "repo"],
 		["owner/v2", "v2"],
-	])("%p gives %p", (ownerRepo, expected) => {
+	])("%j gives %j", (ownerRepo, expected) => {
 		expect(deriveAliasFromOwnerRepo(ownerRepo)).toBe(expected);
 	});
 });

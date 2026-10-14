@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { readJson } from "../helpers/files";

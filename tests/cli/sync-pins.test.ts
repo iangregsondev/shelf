@@ -3,7 +3,7 @@
 // commits, moves the remote on, runs `shelf update` (or `shelf pin`), and
 // checks where the reference repo's checkout ended up.
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

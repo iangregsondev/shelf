@@ -1,7 +1,7 @@
 // The daemon's lifecycle against a real daemon process in a temp shelf home.
 // Every test stops whatever it started in afterEach, even when it fails.
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { join } from "node:path";
 import { stopDaemonIn } from "../helpers/daemon";
 import { SHELF_CLI, createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
@@ -108,7 +108,7 @@ describe("daemon start", () => {
 
 describe("daemon start --foreground", () => {
 	test("status, start and stop all see the foreground daemon", async () => {
-		const foreground = spawn("bun", ["run", SHELF_CLI, "daemon", "start", "--foreground"], {
+		const foreground = spawn(process.execPath, [SHELF_CLI, "daemon", "start", "--foreground"], {
 			stdio: ["ignore", "pipe", "pipe"],
 			env: shelf.env,
 		});
@@ -192,7 +192,7 @@ describe("daemon log", () => {
 		expect(await waitFor(async () => (await readText(logPath())).includes("Daemon started"))).toBe(
 			true,
 		);
-		expect(await readText(logPath())).toStartWith("earlier line\n");
+		expect(await readText(logPath())).toMatch(/^earlier line\n/);
 	}, 20_000);
 
 	test("start rotates a log over 5 MB to daemon.log.1", async () => {

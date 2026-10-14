@@ -9,7 +9,8 @@ import { stopDaemonIn } from "./daemon";
 import { run as runProcess } from "./process";
 import { startStubServices, type StubResponses } from "./stub-services";
 
-const CLI = join(import.meta.dirname, "../../src/startup/index.ts");
+/** The built CLI (from `vp pack`, run once per test run by tests/global-setup.ts). */
+const CLI = join(import.meta.dirname, "../../dist/index.mjs");
 
 export interface ShelfResult {
 	readonly stdout: string;
@@ -31,7 +32,7 @@ export interface ShelfSandbox {
 	readonly cleanup: () => Promise<void>;
 }
 
-/** The CLI entry point, for tests that spawn it themselves (say, to run it in the background). */
+/** The built CLI, for tests that spawn it themselves under node (say, in the background). */
 export const SHELF_CLI = CLI;
 
 export const createShelfSandbox = async (
@@ -53,7 +54,7 @@ export const createShelfSandbox = async (
 		args: ReadonlyArray<string>,
 		options: { cwd?: string | undefined } = {},
 	): Promise<ShelfResult> => {
-		const { exitCode, stdout, stderr } = await runProcess(["bun", "run", CLI, ...args], {
+		const { exitCode, stdout, stderr } = await runProcess([process.execPath, CLI, ...args], {
 			cwd: options.cwd ?? process.cwd(),
 			env,
 		});

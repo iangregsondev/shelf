@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createBareRepo } from "../helpers/temp-repo";
