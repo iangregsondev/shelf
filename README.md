@@ -8,7 +8,7 @@
 ## Install
 
 ```bash
-bun install -g @rikalabs/shelf
+bun install -g @iangregsondev/shelf
 ```
 
 ## Quick Start
@@ -67,6 +67,10 @@ bun run test             # run tests (HOME points at a temp dir)
 bunx --bun tsc --noEmit  # typecheck
 ```
 
+## Credits
+
+Shelf was created by Dallen Pyrah at Rika Labs; this fork builds on the [original repository](https://github.com/Rika-Labs/shelf).
+
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
