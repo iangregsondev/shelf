@@ -88,3 +88,31 @@ describe("daemon logs", () => {
     expect(result.stdout.trimEnd().split("\n")).toEqual(["line 1", "line 2"]);
   });
 });
+
+describe("daemon restart", () => {
+  test("starts the daemon when none is running", async () => {
+    const result = await runShelf(["daemon", "restart"]);
+    expect(result.exitCode).toBe(0);
+    const pid = await recordedPid();
+    expect(result.stdout).toContain(`Daemon restarted (PID: ${pid})`);
+    expect(isAlive(pid)).toBe(true);
+  }, 20_000);
+
+  test("replaces a running daemon with a new one", async () => {
+    const start = await runShelf(["daemon", "start"]);
+    expect(start.exitCode).toBe(0);
+    const before = await recordedPid();
+
+    const result = await runShelf(["daemon", "restart"]);
+    expect(result.exitCode).toBe(0);
+    const after = await recordedPid();
+    expect(after).not.toBe(before);
+    expect(result.stdout).toContain(`Daemon restarted (PID: ${after})`);
+    expect(isAlive(before)).toBe(false);
+    expect(isAlive(after)).toBe(true);
+
+    const status = await runShelf(["daemon", "status"]);
+    expect(status.stdout).toContain("Daemon is running");
+    expect(status.stdout).toContain(String(after));
+  }, 40_000);
+});
