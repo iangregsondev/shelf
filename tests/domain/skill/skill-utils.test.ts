@@ -22,4 +22,11 @@ describe("resolveSkillDir", () => {
   test("unknown agent falls back to default .agents/skills/shelf", () => {
     expect(resolveSkillDir(Option.some("unknown"))).toBe(".agents/skills/shelf");
   });
+
+  test.each(["toString", "constructor", "__proto__", "hasOwnProperty"])(
+    "agent named after an Object.prototype member (%s) falls back to the default",
+    (agent) => {
+      expect(resolveSkillDir(Option.some(agent))).toBe(".agents/skills/shelf");
+    },
+  );
 });

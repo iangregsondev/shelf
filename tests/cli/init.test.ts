@@ -92,6 +92,14 @@ describe("shelf init skill file", () => {
     expect(existsSync(join(project, ".codex"))).toBe(false);
   });
 
+  test("an --agent named after an Object.prototype member falls back to the universal skill folder", async () => {
+    const result = await shelf.run(["init", "--agent", "toString", "--no-detect"], {
+      cwd: project,
+    });
+    expect(result.exitCode).toBe(0);
+    await expectSkillAt(result.stdout, ".agents/skills/shelf");
+  });
+
   test("--no-detect writes the skill and skips detection", async () => {
     await writeText(
       join(project, "package.json"),
