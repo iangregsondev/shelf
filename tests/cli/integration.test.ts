@@ -28,11 +28,11 @@ describe("CLI integration", () => {
 	});
 
 	describe("remove", () => {
-		test("shows clean error for non-existent repo", async () => {
+		test("shows clean error and exits 1 for non-existent repo", async () => {
 			const result = await runShelf(["remove", "does-not-exist-xyzzy"]);
 			expect(result.stderr).toContain('Repo "does-not-exist-xyzzy" not found');
 			expect(result.stderr).not.toContain("at <anonymous>");
-			expect(result.exitCode).toBe(0);
+			expect(result.exitCode).toBe(1);
 		});
 	});
 
