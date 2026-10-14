@@ -1,21 +1,27 @@
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { UnknownAgentError } from "../../../src/domain/skill/skill-errors";
 import { SkillService } from "../../../src/domain/skill/skill-service";
 import { skillTemplate } from "../../../src/domain/skill/skill-template";
 import { readText, writeText } from "../../helpers/files";
 import { PlatformLayer } from "../../helpers/platform";
 
-const install = (projectDir: string, agent: Option.Option<string>) =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const skill = yield* SkillService;
-      return yield* skill.install(projectDir, agent);
-    }).pipe(Effect.provide(SkillService.layer), Effect.provide(PlatformLayer)),
+const runInstall = (projectDir: string, agent: Option.Option<string>) =>
+  SkillService.use((skill) => skill.install(projectDir, agent)).pipe(
+    Effect.provide(SkillService.layer),
+    Effect.provide(PlatformLayer),
   );
+
+const install = (projectDir: string, agent: Option.Option<string>) =>
+  Effect.runPromise(runInstall(projectDir, agent));
+
+/** The error `install` fails with; rejects if it succeeds. */
+const installError = (projectDir: string, agent: Option.Option<string>) =>
+  Effect.runPromise(Effect.flip(runInstall(projectDir, agent)));
 
 describe("SkillService.install", () => {
   let projectDir: string;
@@ -44,22 +50,25 @@ describe("SkillService.install", () => {
     expect(await readText(path)).toBe(skillTemplate);
   });
 
-  test("writes to the universal .agents folder for an unknown agent", async () => {
-    const path = await install(projectDir, Option.some("unknown"));
-    expect(path).toBe(join(projectDir, ".agents/skills/shelf/SKILL.md"));
-    expect(await readText(path)).toBe(skillTemplate);
-  });
+  test.each(["codex", "claud", "toString", "constructor", "__proto__"])(
+    "rejects the unknown agent %s and writes nothing",
+    async (agent) => {
+      const error = await installError(projectDir, Option.some(agent));
+      expect(error).toBeInstanceOf(UnknownAgentError);
+      expect(error).toMatchObject({
+        _tag: "UnknownAgentError",
+        agent,
+        known: ["claude", "opencode", "gemini"],
+      });
+      expect(await readdir(projectDir)).toEqual([]);
+    },
+  );
 
   test("fails when the skill folder cannot be created", async () => {
     // A file stands where the project folder should be.
     const blocker = join(projectDir, "blocker");
     await writeText(blocker, "");
-    const exit = await Effect.runPromiseExit(
-      SkillService.use((skill) => skill.install(blocker, Option.none())).pipe(
-        Effect.provide(SkillService.layer),
-        Effect.provide(PlatformLayer),
-      ),
-    );
+    const exit = await Effect.runPromiseExit(runInstall(blocker, Option.none()));
     expect(exit._tag).toBe("Failure");
   });
 

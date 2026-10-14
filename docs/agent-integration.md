@@ -10,7 +10,7 @@ shelf init --agent gemini     # writes to .gemini/skills/shelf/SKILL.md
 shelf init --no-detect        # write skill file only, skip dependency detection
 ```
 
-By default, shelf writes to `.agents/skills/shelf/` — the cross-agent standard read by Codex, Copilot, Amp, OpenCode, and Gemini. Use `--agent` only for agents that require their own directory.
+By default, shelf writes to `.agents/skills/shelf/` — the cross-agent standard read by Codex, Copilot, Amp, OpenCode, and Gemini. Use `--agent` only for agents that require their own directory. `--agent` accepts only `claude`, `opencode` and `gemini`; any other name fails with exit code 1 and writes nothing, so a typo can't put the skill where your agent won't look.
 
 ## How agents use shelf
 

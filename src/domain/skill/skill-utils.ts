@@ -1,5 +1,3 @@
-import * as Option from "effect/Option";
-
 // A Map, not an object literal: an object lookup would also match Object.prototype names such as "toString".
 const agentPaths: ReadonlyMap<string, string> = new Map([
   ["claude", ".claude/skills/shelf"],
@@ -7,11 +5,11 @@ const agentPaths: ReadonlyMap<string, string> = new Map([
   ["gemini", ".gemini/skills/shelf"],
 ]);
 
-const defaultSkillDir = ".agents/skills/shelf";
+/** The agents `--agent` accepts, in the order help and errors list them. */
+export const knownAgents: ReadonlyArray<string> = [...agentPaths.keys()];
 
-/** The skill folder, relative to the project, for `agent`; the universal `.agents` one by default. */
-export const resolveSkillDir = (agent: Option.Option<string>): string =>
-  Option.match(agent, {
-    onNone: () => defaultSkillDir,
-    onSome: (a) => agentPaths.get(a) ?? defaultSkillDir,
-  });
+/** The universal skill folder, relative to the project, used when no agent is named. */
+export const defaultSkillDir = ".agents/skills/shelf";
+
+/** The skill folder, relative to the project, that `agent` reads; undefined for an agent shelf doesn't know. */
+export const resolveSkillDir = (agent: string): string | undefined => agentPaths.get(agent);

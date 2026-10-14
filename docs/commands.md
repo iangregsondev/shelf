@@ -65,12 +65,12 @@ The daemon runs `syncAll()` on a configurable interval (`shelf config syncInterv
 
 ## Management
 
-| Command                                   | Purpose                                        |
-| ----------------------------------------- | ---------------------------------------------- |
-| `shelf status`                            | Show detailed status of all repos              |
-| `shelf info <alias>`                      | Detailed info for a single repo                |
-| `shelf pin <alias> <ref>`                 | Pin a repo to a branch, tag, or commit         |
-| `shelf alias <old> <new>`                 | Rename a repo alias                            |
-| `shelf prune [--dry-run] [--force]`       | Remove unreferenced repos                      |
-| `shelf config [key] [value]`              | View or modify configuration                   |
-| `shelf init [--agent name] [--no-detect]` | Scaffold a skill file and detect project repos |
+| Command                                   | Purpose                                                                                                           |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `shelf status`                            | Show detailed status of all repos                                                                                 |
+| `shelf info <alias>`                      | Detailed info for a single repo                                                                                   |
+| `shelf pin <alias> <ref>`                 | Pin a repo to a branch, tag, or commit                                                                            |
+| `shelf alias <old> <new>`                 | Rename a repo alias                                                                                               |
+| `shelf prune [--dry-run] [--force]`       | Remove unreferenced repos                                                                                         |
+| `shelf config [key] [value]`              | View or modify configuration                                                                                      |
+| `shelf init [--agent name] [--no-detect]` | Scaffold a skill file and detect project repos; `--agent` is claude, opencode or gemini; other names are rejected |

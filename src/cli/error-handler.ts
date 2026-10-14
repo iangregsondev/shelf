@@ -27,6 +27,10 @@ const errorMessages: Record<string, (error: Record<string, unknown>) => string> 
   RegistryWriteError: (e) => `Could not save the registry: ${String(e["message"])}`,
   ResolveError: (e) => `Could not resolve "${String(e["input"])}": ${String(e["message"])}`,
   DetectError: (e) => `Detection failed: ${String(e["message"])}`,
+  UnknownAgentError: (e) => {
+    const known = Array.isArray(e["known"]) ? e["known"].map(String).join(", ") : "";
+    return `Unknown agent "${String(e["agent"])}". Expected one of: ${known}`;
+  },
   DaemonAlreadyRunningError: (e) => `Daemon is already running (PID: ${String(e["pid"])}).`,
   DaemonNotRunningError: () => `No daemon is currently running.`,
   DaemonStartError: (e) => `Failed to start daemon: ${String(e["message"])}`,
