@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { FileSystem } from "effect/FileSystem";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileIfExists, readJsonIfExists } from "../../../src/domain/config/file-store";
@@ -49,6 +49,29 @@ describe("file store", () => {
       expect(error.stage).toBe("read");
       expect(error.path).toBe(join(dir, "folder"));
     });
+
+    test("fails at the check stage when it can't tell whether the file is there", async () => {
+      const locked = join(dir, "locked");
+      await mkdir(locked);
+      await chmod(locked, 0o000);
+      try {
+        const error = await withFs((fs) =>
+          readFileIfExists(fs, join(locked, "state.json")).pipe(Effect.flip),
+        );
+        expect(error._tag).toBe("StoredFileReadError");
+        expect(error.stage).toBe("check");
+        expect(error.path).toBe(join(locked, "state.json"));
+      } finally {
+        await chmod(locked, 0o700);
+      }
+    });
+
+    test("gives an empty file as empty text", async () => {
+      await writeFile(join(dir, "empty.txt"), "");
+      expect(await withFs((fs) => readFileIfExists(fs, join(dir, "empty.txt")))).toEqual(
+        Option.some(""),
+      );
+    });
   });
 
   describe("readJsonIfExists", () => {
@@ -72,6 +95,23 @@ describe("file store", () => {
       );
       expect(error._tag).toBe("StoredFileReadError");
       expect(error.stage).toBe("parse");
+    });
+
+    test("fails at the parse stage on an empty file", async () => {
+      await writeFile(join(dir, "empty.json"), "");
+      const error = await withFs((fs) =>
+        readJsonIfExists(fs, join(dir, "empty.json")).pipe(Effect.flip),
+      );
+      expect(error.stage).toBe("parse");
+      expect(error.path).toBe(join(dir, "empty.json"));
+    });
+
+    test("passes on a read failure", async () => {
+      await mkdir(join(dir, "folder.json"));
+      const error = await withFs((fs) =>
+        readJsonIfExists(fs, join(dir, "folder.json")).pipe(Effect.flip),
+      );
+      expect(error.stage).toBe("read");
     });
   });
 });
