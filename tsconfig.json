@@ -24,7 +24,7 @@
 		"declaration": true,
 		"declarationMap": true,
 		"sourceMap": true,
-		"types": ["bun-types"],
+		"types": ["node"],
 		"lib": ["ES2022"]
 	},
 	"include": ["src/**/*.ts", "tests/**/*.ts"],
