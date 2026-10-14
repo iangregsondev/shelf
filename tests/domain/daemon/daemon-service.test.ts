@@ -9,9 +9,11 @@ import { join } from "node:path";
 import { DaemonService } from "../../../src/domain/daemon/daemon-service";
 import { DaemonState, encodeDaemonState } from "../../../src/domain/daemon/daemon-schema";
 import { ConfigService } from "../../../src/domain/config/config-service";
+import { stopDaemonIn } from "../../helpers/daemon";
 
 describe("DaemonService", () => {
 	let tempDir: string;
+	let startedPids: number[] = [];
 
 	const createTestLayer = () => {
 		const configLayer = Layer.succeed(
@@ -34,6 +36,9 @@ describe("DaemonService", () => {
 	});
 
 	afterEach(async () => {
+		// Runs even when a test fails: never leave a daemon behind.
+		await stopDaemonIn(tempDir, startedPids);
+		startedPids = [];
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
@@ -156,7 +161,7 @@ describe("DaemonService", () => {
 			}
 		});
 
-		test("cleans up stale state before starting", async () => {
+		test("cleans up stale state and starts a real daemon in the shelf home", async () => {
 			// Write state with dead PID
 			const state = new DaemonState({
 				pid: 999_999_999,
@@ -168,20 +173,25 @@ describe("DaemonService", () => {
 			const encoded = encodeDaemonState(state);
 			await writeFile(join(tempDir, "daemon.json"), JSON.stringify(encoded, null, "\t"));
 
-			// start() should clean up the stale state and proceed to spawn
-			// It may fail at the spawn step (daemon.ts path resolution in test env)
-			// but it should NOT fail with DaemonAlreadyRunningError
-			const exit = await Effect.runPromiseExit(
-				Effect.gen(function* () {
-					const daemon = yield* DaemonService;
-					yield* daemon.start();
-				}).pipe(Effect.provide(createTestLayer())),
-			);
-
-			if (Exit.isFailure(exit)) {
-				// Should NOT be "already running" — the stale one was cleaned up
-				expect(String(exit.cause)).not.toContain("DaemonAlreadyRunningError");
+			// The daemon child inherits SHELF_HOME, so point it at this test's shelf home.
+			const previousHome = process.env["SHELF_HOME"];
+			process.env["SHELF_HOME"] = tempDir;
+			let pid: number;
+			try {
+				pid = await Effect.runPromise(
+					Effect.gen(function* () {
+						const daemon = yield* DaemonService;
+						return yield* daemon.start();
+					}).pipe(Effect.provide(createTestLayer())),
+				);
+			} finally {
+				process.env["SHELF_HOME"] = previousHome;
 			}
+			startedPids.push(pid);
+
+			expect(pid).not.toBe(999_999_999);
+			const written = (await Bun.file(join(tempDir, "daemon.json")).json()) as { pid: number };
+			expect(written.pid).toBe(pid);
 		});
 	});
 

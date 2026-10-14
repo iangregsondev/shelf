@@ -38,7 +38,7 @@ export const stopDaemonIn = async (
 			// already gone
 		}
 	}
-	const deadline = Date.now() + 5_000;
+	const deadline = Date.now() + 5000;
 	while ([...pids].some(isAlive) && Date.now() < deadline) {
 		await Bun.sleep(50);
 	}

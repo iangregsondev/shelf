@@ -17,7 +17,7 @@
 	"scripts": {
 		"shelf": "bun run src/startup/index.ts",
 		"typecheck": "tsgo --noEmit",
-		"test": "HOME=$(mktemp -d) bun test",
+		"test": "bun test",
 		"format": "oxfmt src tests",
 		"format:check": "oxfmt --check src tests",
 		"lint": "oxlint --tsconfig tsconfig.json src tests",

@@ -22,7 +22,10 @@ export interface ShelfSandbox {
 	readonly home: string;
 	/** The environment every CLI run gets. */
 	readonly env: Readonly<Record<string, string>>;
-	readonly run: (args: ReadonlyArray<string>, options?: { cwd?: string }) => Promise<ShelfResult>;
+	readonly run: (
+		args: ReadonlyArray<string>,
+		options?: { cwd?: string | undefined },
+	) => Promise<ShelfResult>;
 	/** Stops any daemon in the shelf home, stops the stub server and deletes the shelf home. */
 	readonly cleanup: () => Promise<void>;
 }
@@ -39,7 +42,7 @@ export const createShelfSandbox = async (stubs: StubResponses = {}): Promise<She
 
 	const run = async (
 		args: ReadonlyArray<string>,
-		options: { cwd?: string } = {},
+		options: { cwd?: string | undefined } = {},
 	): Promise<ShelfResult> => {
 		const proc = Bun.spawn(["bun", "run", CLI, ...args], {
 			stdout: "pipe",

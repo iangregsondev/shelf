@@ -1,28 +1,23 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBareRepo } from "../helpers/temp-repo";
 
-const CLI = join(import.meta.dir, "../../src/startup/index.ts");
-
 const uniqueAlias = (prefix: string): string =>
 	`${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-const runShelf = async (
-	args: string[],
-	cwd?: string,
-): Promise<{ stdout: string; stderr: string; exitCode: number; output: string }> => {
-	const proc = Bun.spawn(["bun", "run", CLI, ...args], {
-		stdout: "pipe",
-		stderr: "pipe",
-		cwd: cwd ?? process.cwd(),
-	});
-	const exitCode = await proc.exited;
-	const stdout = await new Response(proc.stdout as ReadableStream).text();
-	const stderr = await new Response(proc.stderr as ReadableStream).text();
-	return { stdout, stderr, exitCode, output: stdout + stderr };
-};
+let shelf: ShelfSandbox;
+const runShelf = (args: string[], cwd?: string) => shelf.run(args, { cwd });
+
+beforeEach(async () => {
+	shelf = await createShelfSandbox();
+});
+
+afterEach(async () => {
+	await shelf.cleanup();
+});
 
 describe("install command", () => {
 	let tempDir: string;
@@ -33,9 +28,6 @@ describe("install command", () => {
 	});
 
 	afterEach(async () => {
-		for (const alias of aliases) {
-			await runShelf(["remove", alias]);
-		}
 		aliases.length = 0;
 		await rm(tempDir, { recursive: true, force: true });
 	});
