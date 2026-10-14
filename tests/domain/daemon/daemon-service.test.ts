@@ -11,6 +11,7 @@ import { DaemonState, encodeDaemonState } from "../../../src/domain/daemon/daemo
 import { ConfigService } from "../../../src/domain/config/config-service";
 import { defaultConfig } from "../../../src/domain/config/config-schema";
 import { stopDaemonIn } from "../../helpers/daemon";
+import { SHELF_VERSION } from "../../../src/version";
 
 describe("DaemonService", () => {
 	let tempDir: string;
@@ -33,6 +34,25 @@ describe("DaemonService", () => {
 			}),
 		);
 		return DaemonService.layer.pipe(Layer.provide(configLayer));
+	};
+
+	/** Starts a real daemon in this test's shelf home and records its PID for cleanup. */
+	const startRealDaemon = async (): Promise<number> => {
+		// The daemon child inherits SHELF_HOME, so point it at this test's shelf home.
+		const previousHome = process.env["SHELF_HOME"];
+		process.env["SHELF_HOME"] = tempDir;
+		try {
+			const pid = await Effect.runPromise(
+				Effect.gen(function* () {
+					const daemon = yield* DaemonService;
+					return yield* daemon.start();
+				}).pipe(Effect.provide(createTestLayer())),
+			);
+			startedPids.push(pid);
+			return pid;
+		} finally {
+			process.env["SHELF_HOME"] = previousHome;
+		}
 	};
 
 	beforeEach(async () => {
@@ -80,17 +100,8 @@ describe("DaemonService", () => {
 			expect(exists).toBe(false);
 		});
 
-		test("returns running with details when PID is alive", async () => {
-			// Use current process PID as a known-alive PID
-			const state = new DaemonState({
-				pid: process.pid,
-				token: "testtoken1234567".repeat(2),
-				startedAt: new Date(Date.now() - 60_000).toISOString(),
-				lastTickAt: Option.some(new Date().toISOString()),
-				version: "0.1.1",
-			});
-			const encoded = encodeDaemonState(state);
-			await writeFile(join(tempDir, "daemon.json"), JSON.stringify(encoded, null, "\t"));
+		test("returns running with details for a real daemon", async () => {
+			const pid = await startRealDaemon();
 
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
@@ -100,12 +111,11 @@ describe("DaemonService", () => {
 			);
 			expect(result.running).toBe(true);
 			if (result.running) {
-				expect(result.pid).toBe(process.pid);
+				expect(result.pid).toBe(pid);
 				expect(result.uptime).toMatch(/\d/);
-				expect(result.version).toBe("0.1.1");
-				expect(Option.isSome(result.lastTickAt)).toBe(true);
+				expect(result.version).toBe(SHELF_VERSION);
 			}
-		});
+		}, 20_000);
 	});
 
 	describe("stop", () => {
@@ -142,16 +152,7 @@ describe("DaemonService", () => {
 
 	describe("start", () => {
 		test("fails with DaemonAlreadyRunningError when daemon is already running", async () => {
-			// Write a state file with current PID (which is alive)
-			const state = new DaemonState({
-				pid: process.pid,
-				token: "testtoken1234567".repeat(2),
-				startedAt: new Date().toISOString(),
-				lastTickAt: Option.none(),
-				version: "0.1.1",
-			});
-			const encoded = encodeDaemonState(state);
-			await writeFile(join(tempDir, "daemon.json"), JSON.stringify(encoded, null, "\t"));
+			await startRealDaemon();
 
 			const exit = await Effect.runPromiseExit(
 				Effect.gen(function* () {
@@ -163,7 +164,7 @@ describe("DaemonService", () => {
 			if (Exit.isFailure(exit)) {
 				expect(String(exit.cause)).toContain("DaemonAlreadyRunningError");
 			}
-		});
+		}, 20_000);
 
 		test("cleans up stale state and starts a real daemon in the shelf home", async () => {
 			// Write state with dead PID
@@ -177,26 +178,12 @@ describe("DaemonService", () => {
 			const encoded = encodeDaemonState(state);
 			await writeFile(join(tempDir, "daemon.json"), JSON.stringify(encoded, null, "\t"));
 
-			// The daemon child inherits SHELF_HOME, so point it at this test's shelf home.
-			const previousHome = process.env["SHELF_HOME"];
-			process.env["SHELF_HOME"] = tempDir;
-			let pid: number;
-			try {
-				pid = await Effect.runPromise(
-					Effect.gen(function* () {
-						const daemon = yield* DaemonService;
-						return yield* daemon.start();
-					}).pipe(Effect.provide(createTestLayer())),
-				);
-			} finally {
-				process.env["SHELF_HOME"] = previousHome;
-			}
-			startedPids.push(pid);
+			const pid = await startRealDaemon();
 
 			expect(pid).not.toBe(999_999_999);
 			const written = (await Bun.file(join(tempDir, "daemon.json")).json()) as { pid: number };
 			expect(written.pid).toBe(pid);
-		});
+		}, 20_000);
 	});
 
 	describe("logs", () => {

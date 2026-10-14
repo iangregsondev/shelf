@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveShelfHome } from "../../../src/domain/config/config-utils";
+import { parseSyncInterval, resolveShelfHome } from "../../../src/domain/config/config-utils";
 
 describe("resolveShelfHome", () => {
 	const cases: ReadonlyArray<{
@@ -45,4 +45,18 @@ describe("resolveShelfHome", () => {
 			expect(resolveShelfHome(c.env, "/home/u", c.cwd)).toBe(c.expected);
 		});
 	}
+});
+
+describe("parseSyncInterval", () => {
+	test.each([
+		["1", 1],
+		["60", 60],
+		[" 15 ", 15],
+	])("accepts the whole number %p", (raw, expected) => {
+		expect(parseSyncInterval(raw)).toBe(expected);
+	});
+
+	test.each(["0", "-5", "1.5", "2.0", "abc", "", "10m", "1e3", "Infinity"])("rejects %p", (raw) => {
+		expect(parseSyncInterval(raw)).toBeUndefined();
+	});
 });
