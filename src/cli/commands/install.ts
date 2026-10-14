@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
+import { resolve } from "node:path";
 import { Command, Flag } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { ShelffileService } from "../../domain/shelffile/shelffile-service";
@@ -22,7 +23,7 @@ export const installCommand = Command.make("install", { dir, concurrency }, (con
 		const repo = yield* RepoService;
 		const shelffileService = yield* ShelffileService;
 		const registry = yield* RegistryService;
-		const targetDir = Option.getOrElse(config.dir, () => process.cwd());
+		const targetDir = resolve(Option.getOrElse(config.dir, () => process.cwd()));
 		const shelffile = yield* shelffileService.read(targetDir);
 		const entries = shelffile.entries as ReadonlyArray<ShelffileEntry>;
 
