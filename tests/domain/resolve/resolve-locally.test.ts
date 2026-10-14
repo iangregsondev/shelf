@@ -41,6 +41,7 @@ describe("resolveLocally", () => {
       ["http://[::1/repo.git", "is not a valid URL"],
       ["https://github.com", "has no repository path"],
       ["ftp://example.com/repo.git", 'unsupported URL scheme "ftp"'],
+      ["bad host.com/org/repo", "is not a valid URL"],
     ])("%s", (input, message) => {
       const result = resolveLocally(input);
       expect(result._tag).toBe("Invalid");
