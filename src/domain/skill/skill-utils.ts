@@ -1,10 +1,11 @@
 import * as Option from "effect/Option";
 
-const agentPaths: Record<string, string> = {
-  claude: ".claude/skills/shelf",
-  opencode: ".opencode/skills/shelf",
-  gemini: ".gemini/skills/shelf",
-};
+// A Map, not an object literal: an object lookup would also match Object.prototype names such as "toString".
+const agentPaths: ReadonlyMap<string, string> = new Map([
+  ["claude", ".claude/skills/shelf"],
+  ["opencode", ".opencode/skills/shelf"],
+  ["gemini", ".gemini/skills/shelf"],
+]);
 
 const defaultSkillDir = ".agents/skills/shelf";
 
@@ -12,5 +13,5 @@ const defaultSkillDir = ".agents/skills/shelf";
 export const resolveSkillDir = (agent: Option.Option<string>): string =>
   Option.match(agent, {
     onNone: () => defaultSkillDir,
-    onSome: (a) => agentPaths[a] ?? defaultSkillDir,
+    onSome: (a) => agentPaths.get(a) ?? defaultSkillDir,
   });

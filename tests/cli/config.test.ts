@@ -1,5 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
+import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { createBareRepo } from "../helpers/temp-repo";
+import { readJson } from "../helpers/files";
 
 let shelf: ShelfSandbox;
 
@@ -9,6 +12,37 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await shelf.cleanup();
+});
+
+describe("shelf config", () => {
+  test("with no arguments prints the default config as JSON", async () => {
+    const result = await shelf.run(["config"]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ version: 1, syncIntervalMinutes: 60, repos: [] });
+  });
+
+  test("with no arguments prints repos as they are stored in config.json", async () => {
+    const repo = await createBareRepo();
+    try {
+      const add = await shelf.run(["add", repo.dir, "--alias", "lib"]);
+      expect(add.exitCode).toBe(0);
+
+      const result = await shelf.run(["config"]);
+      expect(result.exitCode).toBe(0);
+      const printed = JSON.parse(result.stdout) as { repos: Array<Record<string, unknown>> };
+      expect(printed).toEqual(await readJson(join(shelf.home, "config.json")));
+      expect(printed.repos[0]).toMatchObject({ alias: "lib", url: repo.dir });
+      expect(result.stdout).not.toContain('"_tag"');
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  test("with the version key prints the config version", async () => {
+    const result = await shelf.run(["config", "version"]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe("1");
+  });
 });
 
 describe("shelf config syncIntervalMinutes", () => {

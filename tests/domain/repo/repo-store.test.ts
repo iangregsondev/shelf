@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dirSize } from "../../../src/domain/repo/repo-store";
+import { dirSize, listFolder, pathExists } from "../../../src/domain/repo/repo-store";
 import { writeText } from "../../helpers/files";
 
 describe("dirSize", () => {
@@ -38,5 +38,50 @@ describe("dirSize", () => {
     await symlink(join(dir, "nowhere"), join(dir, "dangling"));
     const size = await Effect.runPromise(dirSize(dir));
     expect(size).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe("listFolder", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "shelf-listfolder-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("lists the names directly inside the folder", async () => {
+    await writeText(join(dir, "a.txt"), "a");
+    await writeText(join(dir, "sub", "b.txt"), "b");
+    const names = await Effect.runPromise(listFolder(dir));
+    expect([...names].sort()).toEqual(["a.txt", "sub"]);
+  });
+
+  test("a missing folder lists nothing rather than failing", async () => {
+    expect(await Effect.runPromise(listFolder(join(dir, "missing")))).toEqual([]);
+  });
+});
+
+describe("pathExists", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "shelf-pathexists-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("is true for a folder or file that is there", async () => {
+    await writeText(join(dir, "a.txt"), "a");
+    expect(await Effect.runPromise(pathExists(dir))).toBe(true);
+    expect(await Effect.runPromise(pathExists(join(dir, "a.txt")))).toBe(true);
+  });
+
+  test("is false for a missing path", async () => {
+    expect(await Effect.runPromise(pathExists(join(dir, "missing")))).toBe(false);
   });
 });

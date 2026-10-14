@@ -19,7 +19,7 @@ import {
   RepoFolderError,
   RepoNotFoundError,
 } from "./repo-errors";
-import { deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
+import { declaredVersion, deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
 import { dirSize, listFolder, pathExists } from "./repo-store";
 
@@ -266,12 +266,10 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
           .readFileString(join(process.cwd(), "package.json"))
           .pipe(Effect.mapError(noPackageJson));
         const pkgJson = yield* Effect.try({
-          try: () => JSON.parse(pkgText) as Record<string, unknown>,
+          try: () => JSON.parse(pkgText) as Record<string, unknown> | null,
           catch: noPackageJson,
         });
-        const deps = (pkgJson["dependencies"] ?? {}) as Record<string, string>;
-        const devDeps = (pkgJson["devDependencies"] ?? {}) as Record<string, string>;
-        const version = deps[packageName] ?? devDeps[packageName];
+        const version = declaredVersion(pkgJson, packageName);
         if (!version) {
           return yield* new AutoPinResolutionError({
             message: `Package "${packageName}" not found in dependencies or devDependencies`,

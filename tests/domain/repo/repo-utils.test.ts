@@ -1,6 +1,11 @@
 import { describe, test, expect } from "vite-plus/test";
 import { aliasProblem } from "../../../src/domain/config/config-utils";
-import { deriveAlias, parsePin, pinFromRemoteRefs } from "../../../src/domain/repo/repo-utils";
+import {
+  declaredVersion,
+  deriveAlias,
+  parsePin,
+  pinFromRemoteRefs,
+} from "../../../src/domain/repo/repo-utils";
 
 describe("deriveAlias", () => {
   test("derives from HTTPS URL", () => {
@@ -142,6 +147,7 @@ describe("deriveAlias edge cases", () => {
     ["https://example.com/a/my%20repo", "my-20repo"],
     ["/tmp/some dir/repo.git", "repo"],
     ["v5", "v5"],
+    ["git@host/user/lib.git", "lib"],
     ["", "repo"],
   ])("%j gives %j", (input, expected) => {
     expect(deriveAlias(input)).toBe(expected);
@@ -158,5 +164,51 @@ describe("deriveAlias edge cases", () => {
   test("cuts a long name to 100 characters", () => {
     const alias = deriveAlias(`https://example.com/x/${"a".repeat(150)}`);
     expect(alias).toBe("a".repeat(100));
+  });
+});
+
+describe("declaredVersion", () => {
+  test("reads the version from dependencies", () => {
+    expect(declaredVersion({ dependencies: { react: "^18.2.0" } }, "react")).toBe("^18.2.0");
+  });
+
+  test("falls back to devDependencies", () => {
+    expect(
+      declaredVersion(
+        { dependencies: { vue: "3.0.0" }, devDependencies: { react: "~18.1.0" } },
+        "react",
+      ),
+    ).toBe("~18.1.0");
+  });
+
+  test("prefers dependencies over devDependencies", () => {
+    expect(
+      declaredVersion(
+        { dependencies: { react: "18.2.0" }, devDependencies: { react: "17.0.0" } },
+        "react",
+      ),
+    ).toBe("18.2.0");
+  });
+
+  test("is undefined for a package the manifest doesn't declare", () => {
+    expect(declaredVersion({ dependencies: { vue: "3.0.0" } }, "react")).toBeUndefined();
+  });
+
+  test("ignores names inherited from Object.prototype", () => {
+    expect(declaredVersion({ dependencies: {} }, "constructor")).toBeUndefined();
+  });
+
+  test("ignores a version that isn't a string", () => {
+    expect(declaredVersion({ dependencies: { react: 18 } }, "react")).toBeUndefined();
+  });
+
+  test("ignores dependency fields that aren't objects", () => {
+    expect(
+      declaredVersion({ dependencies: "react", devDependencies: null }, "react"),
+    ).toBeUndefined();
+  });
+
+  test("is undefined for a null manifest", () => {
+    expect(declaredVersion(null, "react")).toBeUndefined();
   });
 });

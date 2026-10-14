@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { readJson } from "./files";
 import { setTimeout as sleep } from "node:timers/promises";
 
-const isAlive = (pid: number): boolean => {
+/** Whether a process with `pid` exists (signal 0 probes without killing). */
+export const isAlive = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
     return true;

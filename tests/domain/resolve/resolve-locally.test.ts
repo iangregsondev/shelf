@@ -41,10 +41,19 @@ describe("resolveLocally", () => {
       ["http://[::1/repo.git", "is not a valid URL"],
       ["https://github.com", "has no repository path"],
       ["ftp://example.com/repo.git", 'unsupported URL scheme "ftp"'],
+      ["bad host.com/org/repo", "is not a valid URL"],
     ])("%s", (input, message) => {
       const result = resolveLocally(input);
       expect(result._tag).toBe("Invalid");
       expect(result._tag === "Invalid" && result.message).toContain(message);
+    });
+
+    test("an invalid host shorthand is quoted as typed, not with the https:// added", () => {
+      expect(resolveLocally("bad host.com/org/repo")).toEqual({
+        _tag: "Invalid",
+        message:
+          '"bad host.com/org/repo" is not a valid URL. Try: shelf add owner/repo or shelf add <full-url>',
+      });
     });
   });
 

@@ -2,7 +2,9 @@ import { describe, expect, test, beforeEach, afterEach } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DetectService } from "../../../src/domain/detect/detect-service";
@@ -11,6 +13,7 @@ import { defaultConfig, RepoEntry, ShelfConfig } from "../../../src/domain/confi
 import { createMockConfigLayer } from "../../domain/config/helpers";
 import { writeText } from "../../helpers/files";
 import { PlatformLayer } from "../../helpers/platform";
+import { startStubServices } from "../../helpers/stub-services";
 
 const runWithLayers = <A, E>(
   effect: Effect.Effect<A, E, DetectService>,
@@ -295,5 +298,263 @@ require github.com/gin-gonic/gin v1.9.1
       expect(names).toContain("vitest");
       expect(names).toContain("eslint");
     });
+  });
+});
+
+const detectIn = (dir: string, configLayer?: Layer.Layer<ConfigService>) =>
+  runWithLayers(
+    Effect.gen(function* () {
+      const detect = yield* DetectService;
+      return yield* detect.detect(dir);
+    }),
+    configLayer,
+  );
+
+const shelvedConfig = (url: string, alias: string) =>
+  createMockConfigLayer({
+    load: () =>
+      Effect.succeed(
+        new ShelfConfig({
+          version: defaultConfig.version,
+          syncIntervalMinutes: defaultConfig.syncIntervalMinutes,
+          repos: [
+            new RepoEntry({
+              url,
+              alias,
+              pin: Option.none(),
+              depth: Option.none(),
+              sparse: Option.none(),
+              addedAt: new Date().toISOString(),
+              lastSyncedAt: Option.none(),
+            }),
+          ],
+        }),
+      ),
+  });
+
+/** A registry that answers every package with a body that is not JSON. */
+const startMalformedRegistry = async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end("{not json");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: `http://127.0.0.1:${port}`,
+    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+};
+
+describe("DetectService.detect resolving packages through the npm registry", () => {
+  let tempDir: string;
+  let stops: Array<() => Promise<void>>;
+  const originalRegistry = process.env["SHELF_NPM_REGISTRY_URL"];
+
+  const useRegistry = (url: string) => {
+    process.env["SHELF_NPM_REGISTRY_URL"] = url;
+  };
+
+  const useStubRegistry = async (npm: Record<string, unknown>) => {
+    const services = await startStubServices({ npm });
+    stops.push(services.stop);
+    useRegistry(services.npmUrl);
+  };
+
+  const writePackageJson = (dependencies: Record<string, string>) =>
+    writeText(join(tempDir, "package.json"), JSON.stringify({ dependencies }));
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "shelf-detect-npm-test-"));
+    stops = [];
+  });
+
+  afterEach(async () => {
+    process.env["SHELF_NPM_REGISTRY_URL"] = originalRegistry;
+    for (const stop of stops) await stop();
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  test("uses the repository url the registry gives, normalized to an https clone url", async () => {
+    await useStubRegistry({
+      "left-pad-xyz": {
+        repository: { type: "git", url: "git+https://github.com/acme/left-pad.git" },
+      },
+    });
+    await writePackageJson({ "left-pad-xyz": "^1.0.0" });
+
+    const result = await detectIn(tempDir);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        name: "left-pad-xyz",
+        url: "https://github.com/acme/left-pad.git",
+        source: "npm",
+        alreadyShelved: false,
+      }),
+    ]);
+  });
+
+  test("accepts a repository given as a shorthand string", async () => {
+    await useStubRegistry({ "@acme/widget-xyz": { repository: "acme/widget" } });
+    await writePackageJson({ "@acme/widget-xyz": "^1.0.0" });
+
+    const result = await detectIn(tempDir);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        name: "acme-widget-xyz",
+        url: "https://github.com/acme/widget.git",
+        source: "npm",
+      }),
+    ]);
+  });
+
+  test("marks a registry-resolved repo as already shelved when its url is on the shelf", async () => {
+    await useStubRegistry({ "left-pad-xyz": { repository: "github:acme/left-pad" } });
+    await writePackageJson({ "left-pad-xyz": "^1.0.0" });
+
+    const result = await detectIn(
+      tempDir,
+      shelvedConfig("https://github.com/acme/left-pad.git", "pad"),
+    );
+
+    expect(result.map((d) => d.alreadyShelved)).toEqual([true]);
+  });
+
+  test("marks a registry-resolved repo as already shelved when its alias is on the shelf", async () => {
+    await useStubRegistry({ "left-pad-xyz": { repository: "github:acme/left-pad" } });
+    await writePackageJson({ "left-pad-xyz": "^1.0.0" });
+
+    const result = await detectIn(
+      tempDir,
+      shelvedConfig("https://example.com/other.git", "left-pad-xyz"),
+    );
+
+    expect(result.map((d) => d.alreadyShelved)).toEqual([true]);
+  });
+
+  test.each([
+    ["has no repository field", { name: "no-repo" }],
+    ["has a repository object without a url", { repository: { type: "git" } }],
+    ["has an empty repository string", { repository: "" }],
+    ["is JSON null", null],
+  ])("skips a package whose registry document %s", async (_label, doc) => {
+    await useStubRegistry({ "odd-pkg-xyz": doc });
+    await writePackageJson({ "odd-pkg-xyz": "^1.0.0", react: "^18.0.0" });
+
+    const result = await detectIn(tempDir);
+
+    expect(result.map((d) => d.name)).toEqual(["react"]);
+  });
+
+  test("skips a package the registry answers with a body that is not JSON", async () => {
+    const registry = await startMalformedRegistry();
+    stops.push(registry.stop);
+    useRegistry(registry.url);
+    await writePackageJson({ "odd-pkg-xyz": "^1.0.0", react: "^18.0.0" });
+
+    const result = await detectIn(tempDir);
+
+    expect(result.map((d) => d.name)).toEqual(["react"]);
+  });
+
+  test("skips a package when the registry cannot be reached, and keeps detecting", async () => {
+    const services = await startStubServices();
+    await services.stop();
+    useRegistry(services.npmUrl);
+    await writePackageJson({ "odd-pkg-xyz": "^1.0.0", react: "^18.0.0" });
+    await writeText(
+      join(tempDir, "go.mod"),
+      "module x\n\nrequire github.com/gin-gonic/gin v1.9.1\n",
+    );
+
+    const result = await detectIn(tempDir);
+
+    expect(result.map((d) => d.name)).toEqual(["react", "gin"]);
+  });
+});
+
+describe("DetectService.detect with unusual manifests", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "shelf-detect-manifest-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  test("treats a package.json it cannot read as missing and still reads go.mod", async () => {
+    await mkdir(join(tempDir, "package.json"));
+    await writeText(
+      join(tempDir, "go.mod"),
+      "module x\n\nrequire github.com/gin-gonic/gin v1.9.1\n",
+    );
+
+    const result = await detectIn(tempDir);
+
+    expect(result.map((d) => d.name)).toEqual(["gin"]);
+  });
+
+  test("treats a go.mod it cannot read as missing", async () => {
+    await writeText(
+      join(tempDir, "package.json"),
+      JSON.stringify({ dependencies: { react: "1" } }),
+    );
+    await mkdir(join(tempDir, "go.mod"));
+
+    const result = await detectIn(tempDir);
+
+    expect(result.map((d) => d.name)).toEqual(["react"]);
+  });
+
+  test("finds nothing in an empty go.mod", async () => {
+    await writeText(join(tempDir, "go.mod"), "");
+
+    expect(await detectIn(tempDir)).toEqual([]);
+  });
+
+  test("names a major-version go module after the repo, not the version suffix", async () => {
+    await writeText(
+      join(tempDir, "go.mod"),
+      "module x\n\nrequire github.com/go-chi/chi/v5 v5.0.0\n",
+    );
+
+    const result = await detectIn(tempDir);
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        name: "chi",
+        url: "https://github.com/go-chi/chi.git",
+        source: "go",
+      }),
+    ]);
+  });
+
+  test("marks a go repo as already shelved when its url is on the shelf", async () => {
+    await writeText(
+      join(tempDir, "go.mod"),
+      "module x\n\nrequire github.com/gin-gonic/gin v1.9.1\n",
+    );
+
+    const result = await detectIn(
+      tempDir,
+      shelvedConfig("https://github.com/gin-gonic/gin.git", "my-gin"),
+    );
+
+    expect(result.map((d) => d.alreadyShelved)).toEqual([true]);
+  });
+
+  test("keeps only the first repo when two dependencies point at the same url", async () => {
+    await writeText(
+      join(tempDir, "go.mod"),
+      "module x\n\nrequire (\n\tgithub.com/go-chi/chi v1.5.4\n\tgithub.com/go-chi/chi/v5 v5.0.0\n)\n",
+    );
+
+    const result = await detectIn(tempDir);
+
+    expect(result.map((d) => d.url)).toEqual(["https://github.com/go-chi/chi.git"]);
   });
 });

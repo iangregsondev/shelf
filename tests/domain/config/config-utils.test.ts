@@ -1,8 +1,13 @@
 import { describe, expect, test } from "vite-plus/test";
 import * as PlatformError from "effect/PlatformError";
+import * as Effect from "effect/Effect";
 import {
+  ALIAS_MAX_LENGTH,
+  aliasProblem,
+  checkAlias,
   errorCode,
   osError,
+  osErrorMessage,
   parseSyncInterval,
   resolveShelfHome,
 } from "../../../src/domain/config/config-utils";
@@ -92,5 +97,79 @@ describe("parseSyncInterval", () => {
 
   test.each(["0", "-5", "1.5", "2.0", "abc", "", "10m", "1e3", "Infinity"])("rejects %j", (raw) => {
     expect(parseSyncInterval(raw)).toBeUndefined();
+  });
+});
+
+describe("errorCode", () => {
+  test("gives the code of an error that has one, as a string", () => {
+    expect(errorCode(Object.assign(new Error("gone"), { code: "ENOENT" }))).toBe("ENOENT");
+    expect(errorCode({ code: 42 })).toBe("42");
+  });
+
+  test.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["a string", "ENOENT"],
+    ["an error with no code", new Error("boom")],
+  ])("gives undefined for %s", (_name, value) => {
+    expect(errorCode(value)).toBeUndefined();
+  });
+});
+
+describe("osErrorMessage", () => {
+  test("gives the message of the Node error a FileSystem failure wraps", () => {
+    const wrapped = PlatformError.systemError({
+      _tag: "NotFound",
+      module: "FileSystem",
+      method: "readFile",
+      cause: new Error("ENOENT: no such file or directory, open '/x'"),
+    });
+    expect(osErrorMessage(wrapped)).toBe("ENOENT: no such file or directory, open '/x'");
+  });
+
+  test("gives the message of a plain error", () => {
+    expect(osErrorMessage(new Error("boom"))).toBe("boom");
+  });
+
+  test("gives anything that is not an error as text", () => {
+    expect(osErrorMessage("disk on fire")).toBe("disk on fire");
+    expect(osErrorMessage(7)).toBe("7");
+  });
+});
+
+describe("aliasProblem", () => {
+  test.each(["react", "my-repo", "a.b_c-1", "9lives", "x".repeat(ALIAS_MAX_LENGTH)])(
+    "accepts %j",
+    (alias) => {
+      expect(aliasProblem(alias)).toBeUndefined();
+    },
+  );
+
+  test.each(["", ".", "..", "../outside", "a/b", "-flag", ".hidden", "_x", "sp ace", "a\\b"])(
+    "rejects %j as not a safe folder name",
+    (alias) => {
+      expect(aliasProblem(alias)).toBe(
+        "must start with a letter or digit and use only letters, digits, '.', '_' and '-'",
+      );
+    },
+  );
+
+  test("rejects an alias longer than the limit", () => {
+    expect(aliasProblem("x".repeat(ALIAS_MAX_LENGTH + 1))).toBe("must be at most 100 characters");
+  });
+});
+
+describe("checkAlias", () => {
+  test("succeeds with a safe alias", async () => {
+    expect(await Effect.runPromise(checkAlias("my-repo"))).toBe("my-repo");
+  });
+
+  test("fails with InvalidAliasError naming the alias and the problem", async () => {
+    const error = await Effect.runPromise(Effect.flip(checkAlias("../x")));
+    expect(error._tag).toBe("InvalidAliasError");
+    expect(error.alias).toBe("../x");
+    expect(error.message).toBe(
+      "must start with a letter or digit and use only letters, digits, '.', '_' and '-'",
+    );
   });
 });

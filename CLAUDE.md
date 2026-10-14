@@ -13,6 +13,7 @@ Shelf runs on Node.js 24. The toolchain is vite-plus (`vp`), with pnpm as the pa
 - `node dist/index.mjs` — run the built shelf CLI (`vp pack` first)
 - `vp test` — run all tests (vitest). It builds `dist/` first. Tests run offline, in temp shelf homes, and never touch `~/.agents/shelf`
 - `vp test tests/cli/add-resolve.test.ts` — run one test file
+- `vp test --coverage` — run all tests and print a coverage report for `src/` (files below 100% only; the full html report lands in `coverage/`). CI and the publish workflow run this
 - `vp check` — format check, type-aware lint and typecheck
 - `vp check --no-fmt --no-lint` — typecheck only
 - `vp check --fix` — apply format and lint fixes
@@ -55,6 +56,20 @@ Dependency direction: `command → service → storage boundary`. Reverse import
 - Versions are pinned exactly; bump `effect` and `@effect/platform-node` together
 
 ## Testing
+
+<important if="you are about to change code in src/">
+
+Every code change starts with a failing test: call the Skill tool with `mattpocock-skills:tdd` and follow its red → green loop. This applies in plain chats too, not only inside `/implement` and `/implement-spec`. A bug fix starts with a test that reproduces the bug.
+</important>
+
+### Coverage
+
+- `vp test --coverage` measures coverage with `@vitest/coverage-v8`, pinned exactly to the vitest version vite-plus bundles. Bump them together
+- Coverage covers `src/` except `src/cli/commands/` and `src/startup/`: those run only inside the built CLI that CLI tests spawn as child processes, where v8 coverage can't see. The CLI tests in `tests/cli/` cover them instead
+- Thresholds are enforced: 100% lines, functions and statements; 95% branches (`coverage.thresholds` in `vite.config.ts`). `vp test --coverage` fails below them, locally and in CI
+- A coverage-ignore comment (`/* v8 ignore next */` and the like) must give its reason on the same line, e.g. `/* v8 ignore next -- unreachable: Schema already rejects this */`. No reason, no ignore
+
+### Conventions
 
 - Tests run on vitest through `vp test`; config is the `test` block in `vite.config.ts`
 - Import test helpers explicitly from `vite-plus/test` (`import { describe, test, expect, afterEach } from "vite-plus/test"`); there are no globals
