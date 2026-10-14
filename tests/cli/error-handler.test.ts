@@ -81,6 +81,12 @@ describe("formatUserError: known error tags", () => {
     expect(formatUserError(error)).toBe(expected);
   });
 
+  test("formats an UnknownAgentError that lost its known-agent list without throwing", () => {
+    expect(formatUserError({ _tag: "UnknownAgentError", agent: "claud" })).toBe(
+      'Unknown agent "claud". Expected one of: ',
+    );
+  });
+
   test("formats a real Error subclass carrying a _tag", () => {
     const error = Object.assign(new Error("clone failed"), { _tag: "GitOperationError" });
     expect(formatUserError(error)).toBe("Git error: clone failed");
