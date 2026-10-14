@@ -36,6 +36,8 @@ shelf daemon start
 
 Agents read repos directly at `~/.agents/shelf/repos/{alias}/` using their native tools.
 
+All shelf state lives in the shelf home, `~/.agents/shelf` by default. Set `SHELF_HOME` to use a different directory.
+
 ## How It Works
 
 ```
@@ -63,7 +65,7 @@ Shelf manages the lifecycle — clone, pin, sync, remove. Your agent uses its ow
 ## Development
 
 ```bash
-bun run test             # run tests (HOME points at a temp dir)
+bun run test             # run tests (offline, in temp shelf homes)
 bunx --bun tsc --noEmit  # typecheck
 ```
 

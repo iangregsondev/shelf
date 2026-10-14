@@ -7,8 +7,8 @@ Shelf is a standalone CLI that maintains a global, always-up-to-date cache of co
 ## Commands
 
 - `bun run src/startup/index.ts` — run shelf CLI
-- `bun run test` — run all tests with `HOME` pointed at a fresh temp dir. Never run bare `bun test`: until the shelf home override lands, tests write to the real `~/.agents/shelf`
-- `HOME=$(mktemp -d) bun test --coverage` — run with coverage
+- `bun run test` — run all tests. They run offline, in temp shelf homes, and never touch `~/.agents/shelf`
+- `bun run test --coverage` — run with coverage
 - `bun run check` — format check, lint and typecheck
 - `bunx --bun tsc --noEmit` — typecheck only
 
@@ -46,16 +46,24 @@ Dependency direction: `command → service → storage boundary`. Reverse import
 
 ## Testing
 
+- `tests/setup.ts` (preloaded for every run) sets `SHELF_HOME` to a temp dir and points `SHELF_NPM_REGISTRY_URL` and `SHELF_GITHUB_API_URL` at an empty local stub, so no test reaches the real shelf home or the network
+- CLI tests run the real `shelf` binary through `createShelfSandbox()` in `tests/helpers/shelf-cli.ts`: a fresh temp shelf home per test, plus stub npm and GitHub responses (`tests/helpers/stub-services.ts`). Call `cleanup()` in `afterEach`
+- A test that starts a daemon must stop it in `afterEach` with `stopDaemonIn()` from `tests/helpers/daemon.ts`, so it is stopped even when the test fails
 - Tests mirror source in `tests/domain/{domain}/`
 - Each domain has `helpers.ts` with mock layers via `Layer.succeed(Service, Service.of(impl))`
 - Use `Effect.runPromise` / `Effect.runPromiseExit` for test assertions
 
 ## Storage
 
-- Config: `~/.agents/shelf/config.json`
-- Registry: `~/.agents/shelf/registry.json`
-- Repos: `~/.agents/shelf/repos/{alias}/`
+All shelf state lives in the shelf home: `$SHELF_HOME` if set (a relative path resolves against the working directory), otherwise `~/.agents/shelf`. `ConfigService` resolves it once (`resolveShelfHome` in `config-utils.ts`); everything else takes paths from `ConfigService`, never from `homedir()`.
+
+- Config: `<shelf home>/config.json`
+- Registry: `<shelf home>/registry.json`
+- Repos: `<shelf home>/repos/{alias}/`
+- Daemon state and log: `<shelf home>/daemon.json`, `<shelf home>/daemon.log`
 - Shelffile: `./shelffile` (per-project)
+
+External services: the npm registry and GitHub API base URLs read `SHELF_NPM_REGISTRY_URL` and `SHELF_GITHUB_API_URL`, falling back to `https://registry.npmjs.org` and `https://api.github.com`.
 
 ## Agent skills
 
