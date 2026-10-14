@@ -1,15 +1,16 @@
 // `shelf prune` with no flags, `--dry-run` and `--force`, against a repo that
 // a project installed and then dropped from its shelffile, next to a repo
-// added by hand (always referenced).
+// added by hand (always referenced). Also how prune treats trash a remove left.
 
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createRemote, type Remote } from "../helpers/git-remote";
 import { readJson, readText, writeText } from "../helpers/files";
+import { runningAsRoot } from "../helpers/process";
 
 let shelf: ShelfSandbox;
 let tempDir: string;
@@ -89,5 +90,37 @@ describe("shelf prune flags", () => {
     expect(repoExists("dropped")).toBe(false);
     expect(repoExists("manual")).toBe(true);
     expect(await storedAliases()).toEqual(["manual"]);
+  });
+
+  test("with no flags clears trash left by an earlier remove", async () => {
+    await mkdir(join(shelf.home, "repos", ".shelf-trash-old-1234", "sub"), { recursive: true });
+
+    const result = await shelf.run(["prune"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(join(shelf.home, "repos", ".shelf-trash-old-1234"))).toBe(false);
+  });
+
+  test("--dry-run leaves trash alone", async () => {
+    await mkdir(join(shelf.home, "repos", ".shelf-trash-old-1234"));
+
+    const result = await shelf.run(["prune", "--dry-run"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(join(shelf.home, "repos", ".shelf-trash-old-1234"))).toBe(true);
+  });
+
+  test.skipIf(runningAsRoot)("warns about trash it can't delete", async () => {
+    const trash = join(shelf.home, "repos", ".shelf-trash-old-1234");
+    await writeText(join(trash, "stuck.txt"), "x");
+    await chmod(trash, 0o555);
+    try {
+      const result = await shelf.run(["prune"]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toContain(`Warning: could not delete ${trash}: EACCES`);
+    } finally {
+      await chmod(trash, 0o755);
+    }
   });
 });

@@ -42,9 +42,12 @@ export const createMockConfigLayer = (
     fn: (current: ShelfConfig) => ShelfConfig | Effect.Effect<ShelfConfig, E>,
   ): Effect.Effect<ShelfConfig, ConfigParseError | ConfigWriteError | E> =>
     Effect.gen(function* () {
-      const result = fn(yield* impl.load());
+      const current = yield* impl.load();
+      const result = fn(current);
       const next = Effect.isEffect(result) ? yield* result : result;
-      yield* save(next);
+      if (next !== current) {
+        yield* save(next);
+      }
       return next;
     });
   const updateRepo = <E = never>(

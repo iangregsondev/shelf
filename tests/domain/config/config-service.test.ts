@@ -396,6 +396,15 @@ describe("ConfigService on a shelf home of its own", () => {
       expect(await readdir(home)).toEqual(["config.json"]);
     });
 
+    test("saves nothing when fn gives back the stored config unchanged", async () => {
+      // Hand-written, so a save would show as a reformat.
+      await writeText(configFile, '{"version":1,"syncIntervalMinutes":30,"repos":[]}');
+      const svc = await serviceAt(home);
+      const saved = await Effect.runPromise(svc.update((current) => current));
+      expect(saved.syncIntervalMinutes).toBe(30);
+      expect(await readText(configFile)).toBe('{"version":1,"syncIntervalMinutes":30,"repos":[]}');
+    });
+
     test("saves nothing when the stored config is invalid", async () => {
       await writeFile(configFile, "{not json");
       const svc = await serviceAt(home);
@@ -420,7 +429,12 @@ describe("ConfigService on a shelf home of its own", () => {
         const error = await Effect.runPromise(
           Effect.flip(
             svc.update((current) =>
-              Effect.promise(() => chmod(home, 0o500)).pipe(Effect.as(current)),
+              Effect.promise(() => chmod(home, 0o500)).pipe(
+                // A changed config, so update has something to save.
+                Effect.as(
+                  new ShelfConfig({ version: 1, syncIntervalMinutes: 5, repos: current.repos }),
+                ),
+              ),
             ),
           ),
         );

@@ -4,7 +4,7 @@ import * as Option from "effect/Option";
 import * as Context from "effect/Context";
 import { FileSystem } from "effect/FileSystem";
 import { randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
 import { ConfigService } from "../config/config-service";
 import { checkAlias, osErrorMessage } from "../config/config-utils";
@@ -25,12 +25,30 @@ import { declaredVersion, deriveAlias, parsePin, pinFromRemoteRefs } from "./rep
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
 import { dirSize, listFolder, pathExists, sameFolder } from "./repo-store";
 
+/** A trash folder that could not be deleted. */
+export interface TrashLeft {
+  readonly path: string;
+  readonly message: string;
+}
+
 /** What `RepoService.remove` removed. */
 export interface RemovedRepo {
   readonly alias: string;
   /** True when only a folder was there, with no config entry for it. */
   readonly orphan: boolean;
+  /** Trash folders, this repo's or older ones, that could not be deleted. */
+  readonly trashLeft: ReadonlyArray<TrashLeft>;
 }
+
+/** Repo folders moved aside by `remove`, waiting to be deleted. */
+const TRASH_PREFIX = ".shelf-trash-";
+
+/**
+ * A temp name beside the repo folder `path`, for `kind` of work on it. Aliases
+ * can't start with ".", so no alias ever takes it, and `remove` never sees it.
+ */
+const tempSibling = (path: string, kind: "add" | "rename" | "trash"): string =>
+  join(dirname(path), `.shelf-${kind}-${basename(path)}-${randomUUID()}`);
 
 /** What is on disk for a reference repo. */
 export interface RepoFolder {
@@ -91,7 +109,29 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
         .resolveCommit(repoDir, hash)
         .pipe(Effect.map((full) => new RepoPin({ type: "commit", value: full })));
 
+    /**
+     * Deletes every trash folder under the repos folder. A failed delete is
+     * not an error: the folder is already off the shelf, and the next remove
+     * or prune tries again.
+     */
+    const clearTrash = Effect.fn("RepoService.clearTrash")(function* () {
+      const names = yield* listFolder(config.reposDir);
+      const left: TrashLeft[] = [];
+      for (const name of names.filter((n) => n.startsWith(TRASH_PREFIX))) {
+        const path = join(config.reposDir, name);
+        yield* fs.remove(path, { recursive: true, force: true }).pipe(
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              left.push({ path, message: osErrorMessage(error) });
+            }),
+          ),
+        );
+      }
+      return left;
+    });
+
     return {
+      clearTrash,
       resolvePin,
 
       /**
@@ -137,23 +177,22 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
         const targetDir = yield* config.repoPath(resolvedAlias);
         // rename() silently replaces an empty folder, so refuse any folder
         // already at the alias, before cloning and again before the rename.
-        const refuseTaken = Effect.gen(function* () {
+        const failIfTaken = Effect.gen(function* () {
           if (yield* pathExists(targetDir)) {
             return yield* new RepoAlreadyExistsError({ alias: resolvedAlias });
           }
         });
-        yield* refuseTaken;
-        // Clone into a temp folder, then rename it into place, so `remove`
-        // never takes a half-made clone for an orphan folder. Aliases can't
-        // start with ".", so the temp name never clashes with one. The clone
-        // runs outside the config lock; only the config write takes turns
-        // with other adds.
-        const cloneDir = join(dirname(targetDir), `.shelf-add-${resolvedAlias}-${randomUUID()}`);
+        yield* failIfTaken;
+        // Clone into a temp folder, so `remove` never takes a half-made clone
+        // for an orphan folder. The clone runs outside the config lock; the
+        // rename into place and the config write run under it, so `remove`
+        // sees the repo folder only once it has a config entry.
+        const cloneDir = tempSibling(targetDir, "add");
         const folderError = (path: string) => (error: unknown) =>
           new RepoFolderError({ path, message: osErrorMessage(error) });
         yield* fs.makeDirectory(cloneDir).pipe(Effect.mapError(folderError(cloneDir)));
         // A failed add only ever removes the folder it made itself.
-        let madeDir = cloneDir;
+        let ownedDir = cloneDir;
         yield* Effect.gen(function* () {
           yield* git.clone(url, cloneDir, pin, depth, sparse);
           // A commit pin is stored as its full hash, read from the fresh clone.
@@ -161,9 +200,6 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
             Option.isSome(pin) && pin.value.type === "commit"
               ? Option.some(yield* fullCommitPin(cloneDir, pin.value.value))
               : pin;
-          yield* refuseTaken;
-          yield* fs.rename(cloneDir, targetDir).pipe(Effect.mapError(folderError(targetDir)));
-          madeDir = targetDir;
           const now = new Date().toISOString();
           const newRepo = new RepoEntry({
             url,
@@ -175,13 +211,19 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
             lastSyncedAt: Option.some(now),
           });
           yield* config.update((current) =>
-            current.repos.some((r: RepoEntry) => r.alias === resolvedAlias)
-              ? Effect.fail(new RepoAlreadyExistsError({ alias: resolvedAlias }))
-              : Effect.succeed(new ShelfConfig({ ...current, repos: [...current.repos, newRepo] })),
+            Effect.gen(function* () {
+              if (current.repos.some((r: RepoEntry) => r.alias === resolvedAlias)) {
+                return yield* new RepoAlreadyExistsError({ alias: resolvedAlias });
+              }
+              yield* failIfTaken;
+              yield* fs.rename(cloneDir, targetDir).pipe(Effect.mapError(folderError(targetDir)));
+              ownedDir = targetDir;
+              return new ShelfConfig({ ...current, repos: [...current.repos, newRepo] });
+            }),
           );
         }).pipe(
           Effect.onError(() =>
-            fs.remove(madeDir, { recursive: true, force: true }).pipe(Effect.ignore),
+            fs.remove(ownedDir, { recursive: true, force: true }).pipe(Effect.ignore),
           ),
         );
         return resolvedAlias;
@@ -190,43 +232,73 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
       /**
        * Removes a reference repo: its folder, then its config entry. A folder
        * with no config entry (an orphan, which would block `add`) is removed
-       * too. If the folder can't be deleted, the config entry is kept.
+       * too. The folder is first renamed aside to trash, which is all or
+       * nothing: if that fails, the folder and the config entry are both
+       * kept. The trash is deleted last; what can't be deleted comes back in
+       * `trashLeft`, for the next remove or prune to try again.
        */
       remove: Effect.fn("RepoService.remove")(function* (aliasOrUrl: string) {
-        const deleteFolder = (alias: string, path: string) =>
-          fs
-            .remove(path, { recursive: true, force: true })
+        // Set once the folder is in the trash, to move it back if the config
+        // write then fails.
+        let moved: { readonly from: string; readonly to: string } | undefined;
+        const moveToTrash = Effect.fn("RepoService.moveToTrash")(function* (
+          alias: string,
+          path: string,
+        ) {
+          // A repo whose folder is already gone just loses its entry.
+          if (!(yield* pathExists(path))) {
+            return;
+          }
+          const trash = tempSibling(path, "trash");
+          yield* fs
+            .rename(path, trash)
             .pipe(
               Effect.mapError(
                 (error) => new RepoRemoveError({ alias, path, message: osErrorMessage(error) }),
               ),
             );
-        const cfg = yield* config.load();
-        const repo = cfg.repos.find(
-          (r: RepoEntry) => r.alias === aliasOrUrl || r.url === aliasOrUrl,
-        );
-        if (!repo) {
-          // A URL or unsafe name is never an orphan folder's alias.
-          const orphanDir = yield* checkAlias(aliasOrUrl).pipe(
-            Effect.flatMap(config.repoPath),
-            Effect.option,
-          );
-          if (Option.isNone(orphanDir) || !(yield* pathExists(orphanDir.value))) {
-            return yield* new RepoNotFoundError({ alias: aliasOrUrl });
-          }
-          yield* deleteFolder(aliasOrUrl, orphanDir.value);
-          const removed: RemovedRepo = { alias: aliasOrUrl, orphan: true };
-          return removed;
-        }
-        yield* deleteFolder(repo.alias, yield* config.repoPath(repo.alias));
-        yield* config.update(
-          (current) =>
-            new ShelfConfig({
-              ...current,
-              repos: current.repos.filter((r: RepoEntry) => r.alias !== repo.alias),
+          moved = { from: path, to: trash };
+        });
+        let found: { readonly alias: string; readonly orphan: boolean } | undefined;
+        // Under the config lock, so an add can't move a folder into place
+        // between the orphan check and the move aside. The slow delete runs
+        // after the lock is released.
+        yield* config
+          .update((current) =>
+            Effect.gen(function* () {
+              const repo = current.repos.find(
+                (r: RepoEntry) => r.alias === aliasOrUrl || r.url === aliasOrUrl,
+              );
+              if (repo) {
+                yield* moveToTrash(repo.alias, yield* config.repoPath(repo.alias));
+                found = { alias: repo.alias, orphan: false };
+                return new ShelfConfig({
+                  ...current,
+                  repos: current.repos.filter((r: RepoEntry) => r.alias !== repo.alias),
+                });
+              }
+              // A URL or unsafe name is never an orphan folder's alias.
+              const orphanDir = yield* checkAlias(aliasOrUrl).pipe(
+                Effect.flatMap(config.repoPath),
+                Effect.option,
+              );
+              if (Option.isNone(orphanDir) || !(yield* pathExists(orphanDir.value))) {
+                return yield* new RepoNotFoundError({ alias: aliasOrUrl });
+              }
+              yield* moveToTrash(aliasOrUrl, orphanDir.value);
+              found = { alias: aliasOrUrl, orphan: true };
+              // Unchanged, so nothing is saved.
+              return current;
             }),
-        );
-        const removed: RemovedRepo = { alias: repo.alias, orphan: false };
+          )
+          .pipe(
+            Effect.onError(() =>
+              moved === undefined
+                ? Effect.void
+                : fs.rename(moved.to, moved.from).pipe(Effect.ignore),
+            ),
+          );
+        const removed: RemovedRepo = { ...found!, trashLeft: yield* clearTrash() };
         return removed;
       }),
 
@@ -264,7 +336,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
           if (!caseOnly) {
             return fs.rename(src, dst);
           }
-          const tmp = join(dirname(dst), `.shelf-rename-${randomUUID()}`);
+          const tmp = tempSibling(dst, "rename");
           return fs.rename(src, tmp).pipe(
             Effect.andThen(
               fs.rename(tmp, dst).pipe(

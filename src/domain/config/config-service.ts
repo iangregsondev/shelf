@@ -61,7 +61,8 @@ export class ConfigService extends Context.Service<ConfigService>()(
       /**
        * Reads the config, applies `fn` and saves the result, holding the
        * in-process and cross-process config locks throughout. `fn` may fail
-       * to abort the update without saving. Returns the saved config.
+       * to abort the update without saving, or give back the config it was
+       * handed to save nothing. Returns the saved config.
        */
       const update = <E = never>(
         fn: (current: ShelfConfig) => ShelfConfig | Effect.Effect<ShelfConfig, E>,
@@ -70,7 +71,9 @@ export class ConfigService extends Context.Service<ConfigService>()(
           const current = yield* load();
           const result = fn(current);
           const next = Effect.isEffect(result) ? yield* result : result;
-          yield* save(next);
+          if (next !== current) {
+            yield* save(next);
+          }
           return next;
         }).pipe(locked, Effect.withSpan("ConfigService.update"));
 

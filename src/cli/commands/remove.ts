@@ -3,6 +3,7 @@ import * as Console from "effect/Console";
 import { Argument, Command } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
+import { trashLeftWarning } from "../error-handler";
 
 const aliasOrUrl = Argument.String("alias-or-url");
 
@@ -17,5 +18,8 @@ export const removeCommand = Command.make("remove", { aliasOrUrl }, (config) =>
         ? `Removed orphan folder for "${removed.alias}" (it had no config entry).`
         : `Removed repo "${removed.alias}"`,
     );
+    for (const trash of removed.trashLeft) {
+      yield* Console.error(trashLeftWarning(trash));
+    }
   }),
 ).pipe(Command.withDescription("Remove a repository from shelf"));

@@ -5,6 +5,7 @@ import { ConfigService } from "../../domain/config/config-service";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 import type { RepoEntry } from "../../domain/config/config-schema";
+import { trashLeftWarning } from "../error-handler";
 
 const dryRun = Flag.Boolean("dry-run").pipe(
   Flag.withDefault(false),
@@ -23,6 +24,10 @@ export const pruneCommand = Command.make("prune", { dryRun, force }, (config) =>
     const scan = yield* registry.scanReferences();
     if (!config.dryRun) {
       yield* registry.dropProjects(scan.staleProjects);
+      // Trash is what an earlier remove couldn't finish deleting: always safe to clear.
+      for (const trash of yield* repo.clearTrash()) {
+        yield* Console.error(trashLeftWarning(trash));
+      }
     }
     for (const dir of scan.staleProjects) {
       yield* Console.log(
