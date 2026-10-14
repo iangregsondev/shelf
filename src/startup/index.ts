@@ -21,6 +21,7 @@ import { detectCommand } from "../cli/commands/detect";
 import { daemonCommand } from "../cli/commands/daemon";
 import { AppLayer } from "./layers/app";
 import { formatUserError } from "../cli/error-handler";
+import { SHELF_VERSION } from "../version";
 
 const shelf = Command.make("shelf").pipe(
 	Command.withSubcommands([
@@ -43,7 +44,7 @@ const shelf = Command.make("shelf").pipe(
 	Command.withDescription("A global cache of code reference repositories for AI agents"),
 );
 
-const program = Command.run(shelf, { version: "0.2.0" });
+const program = Command.run(shelf, { version: SHELF_VERSION });
 
 program.pipe(
 	Effect.provide(Layer.mergeAll(AppLayer, BunServicesLayer)),
