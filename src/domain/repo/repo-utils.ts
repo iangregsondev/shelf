@@ -74,6 +74,9 @@ export type PinInput =
 const FULL_HASH = /^[0-9a-f]{40}$/i;
 const COMMIT_HASH = /^[0-9a-f]{4,40}$/i;
 
+/** Whether `value` is a full 40-character commit hash. */
+export const isFullCommitHash = (value: string): boolean => FULL_HASH.test(value);
+
 /**
  * Reads a pin the user typed. `branch:`, `tag:` and `commit:` forms, and a
  * full 40-character hash, are taken as stated. Anything else is a bare name

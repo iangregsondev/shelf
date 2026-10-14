@@ -1,8 +1,8 @@
 import * as Option from "effect/Option";
-import { RepoPin } from "../config/config-schema";
+import type { RepoPin } from "../config/config-schema";
 import type { Shelffile, ShelffileEntry } from "./shelffile-schema";
 import { ShelffileParseError } from "./shelffile-errors";
-import { aliasProblem } from "../repo/repo-utils";
+import { aliasProblem, isFullCommitHash, parsePin } from "../repo/repo-utils";
 
 export const parseShelffilePin = (raw: string): RepoPin => {
 	if (!raw.startsWith("pin:")) {
@@ -10,19 +10,10 @@ export const parseShelffilePin = (raw: string): RepoPin => {
 			message: `Invalid pin format: "${raw}" (must start with "pin:")`,
 		});
 	}
-	const rest = raw.slice(4);
-	if (rest.startsWith("branch:")) {
-		return new RepoPin({ type: "branch", value: rest.slice(7) });
-	}
-	if (rest.startsWith("tag:")) {
-		return new RepoPin({ type: "tag", value: rest.slice(4) });
-	}
-	if (rest.startsWith("commit:") && /^[0-9a-f]{4,40}$/i.test(rest.slice(7))) {
-		return new RepoPin({ type: "commit", value: rest.slice(7) });
-	}
-	if (/^[0-9a-f]{40}$/i.test(rest)) {
-		return new RepoPin({ type: "commit", value: rest });
-	}
+	// Same forms as `shelf pin`, except a bare name: a shelffile is read
+	// offline, so there is no remote to decide whether it is a tag or a branch.
+	const input = parsePin(raw.slice(4));
+	if (input._tag === "Explicit") return input.pin;
 	throw new ShelffileParseError({
 		message: `Invalid pin format: "${raw}" (expected pin:branch:<name>, pin:tag:<name>, pin:commit:<hash> or pin:<40-char-hash>)`,
 	});
@@ -88,7 +79,7 @@ export const serializeShelffile = (shelffile: Shelffile): string => {
 			// A full hash is written bare; a short one (from an older config) keeps
 			// its `commit:` prefix so it still parses back.
 			line +=
-				p.type === "commit" && /^[0-9a-f]{40}$/i.test(p.value)
+				p.type === "commit" && isFullCommitHash(p.value)
 					? ` pin:${p.value}`
 					: ` pin:${p.type}:${p.value}`;
 		}
