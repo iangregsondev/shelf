@@ -37,6 +37,15 @@ const stopTimeoutMs = (): number => {
 	return Number.isInteger(override) && override > 0 ? override : 30_000;
 };
 const POLL_MS = 50;
+/** The daemon process's entry point; status and stop recognise it by this file. */
+const DAEMON_ENTRY = new URL("../../startup/daemon.ts", import.meta.url).pathname;
+/** The command line of a daemon started with `token`. */
+const daemonCommand = (token: string): string[] => [
+	process.execPath,
+	DAEMON_ENTRY,
+	"--token",
+	token,
+];
 
 /** The command line of a running process, or undefined if there is no such process. */
 const commandLineOf = (pid: number): string | undefined => {
@@ -133,13 +142,12 @@ export class DaemonService extends Context.Service<DaemonService>()(
 					}).pipe(Effect.catch(() => Effect.void));
 
 					const token = generateToken();
-					const daemonEntry = new URL("../../startup/daemon.ts", import.meta.url).pathname;
 					const child = yield* Effect.try({
 						try: () => {
 							// Append, never truncate: the log survives restarts until rotated.
 							const logFd = openSync(logPath, "a");
 							try {
-								const proc = Bun.spawn([process.execPath, daemonEntry, "--token", token], {
+								const proc = Bun.spawn(daemonCommand(token), {
 									stdio: ["ignore", logFd, logFd],
 									detached: true,
 									env: { ...process.env, SHELF_DAEMON: "1" },
@@ -178,6 +186,46 @@ export class DaemonService extends Context.Service<DaemonService>()(
 						}
 						yield* Effect.sleep(POLL_MS);
 					}
+				}),
+
+				/**
+				 * Runs the daemon attached to this terminal: the same daemon process
+				 * `start` spawns, so status and stop recognise it, with its output
+				 * here instead of the log. Returns when the daemon exits; if this
+				 * process is interrupted (Ctrl+C), asks the daemon to stop and waits.
+				 */
+				runForeground: Effect.fn("DaemonService.runForeground")(function* () {
+					yield* config.ensureDirectories();
+					const existing = yield* readState();
+					const check = verifyDaemon(existing);
+					if (check.alive) {
+						return yield* new DaemonAlreadyRunningError({ pid: check.state.pid });
+					}
+					if (existing) {
+						yield* removeState();
+					}
+					const token = generateToken();
+					const child = yield* Effect.try({
+						try: () =>
+							Bun.spawn(daemonCommand(token), {
+								stdio: ["inherit", "inherit", "inherit"],
+								env: { ...process.env, SHELF_DAEMON: "1" },
+							}),
+						catch: (err) =>
+							new DaemonStartError({ message: `Failed to spawn daemon process: ${err}` }),
+					});
+					yield* Effect.promise(() => child.exited).pipe(
+						Effect.onInterrupt(() =>
+							Effect.promise(async () => {
+								try {
+									child.kill("SIGTERM");
+								} catch {
+									// already gone
+								}
+								await child.exited;
+							}),
+						),
+					);
 				}),
 
 				stop: Effect.fn("DaemonService.stop")(function* () {

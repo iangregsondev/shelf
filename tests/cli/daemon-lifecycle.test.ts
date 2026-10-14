@@ -4,7 +4,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { join } from "node:path";
 import { stopDaemonIn } from "../helpers/daemon";
-import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
+import { SHELF_CLI, createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 
 let shelf: ShelfSandbox;
 let otherPids: number[] = [];
@@ -100,6 +100,33 @@ describe("daemon start", () => {
 		expect(again.exitCode).toBe(1);
 		expect(again.stderr).toContain(`already running (PID: ${pid})`);
 	}, 20_000);
+});
+
+describe("daemon start --foreground", () => {
+	test("status, start and stop all see the foreground daemon", async () => {
+		const foreground = Bun.spawn(["bun", "run", SHELF_CLI, "daemon", "start", "--foreground"], {
+			stdio: ["ignore", "pipe", "pipe"],
+			env: shelf.env,
+		});
+		otherPids.push(foreground.pid);
+		expect(await waitFor(async () => (await readState()) !== undefined)).toBe(true);
+		const state = await readState();
+		otherPids.push(state!.pid);
+
+		const status = await shelf.run(["daemon", "status"]);
+		expect(status.stdout).toContain("Daemon is running");
+		expect(status.stdout).toContain(String(state!.pid));
+		expect(await readState()).toEqual(state);
+
+		const again = await shelf.run(["daemon", "start"]);
+		expect(again.exitCode).toBe(1);
+		expect(again.stderr).toContain(`already running (PID: ${state!.pid})`);
+
+		const stop = await shelf.run(["daemon", "stop"]);
+		expect(stop.exitCode).toBe(0);
+		expect(await waitFor(() => foreground.exitCode !== null)).toBe(true);
+		expect(await Bun.file(statePath()).exists()).toBe(false);
+	}, 30_000);
 });
 
 describe("daemon identity", () => {
