@@ -18,12 +18,7 @@
     "build": "vp pack",
     "shelf": "node dist/index.mjs",
     "test": "vp test",
-    "format": "vp fmt src tests",
-    "format:check": "vp fmt --check src tests",
-    "lint": "vp lint --tsconfig tsconfig.json src tests",
-    "lint:fix": "vp lint --fix --tsconfig tsconfig.json src tests",
-    "check": "vp check",
-    "fix": "vp fmt src tests && vp lint --fix --tsconfig tsconfig.json src tests"
+    "check": "vp check"
   },
   "dependencies": {
     "@effect/platform-node": "4.0.4",
