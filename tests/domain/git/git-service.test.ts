@@ -4,15 +4,21 @@ import * as Option from "effect/Option";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PlatformLayer, runGit } from "../../helpers/platform";
+import { PlatformLayer } from "../../helpers/platform";
 import { RepoPin } from "../../../src/domain/config/config-schema";
 import { GitService } from "../../../src/domain/git/git-service";
 import { createBareRepo, createTempRepo } from "../../helpers/temp-repo";
 import { readText, writeText } from "../../helpers/files";
-import { run } from "../../helpers/process";
+import { git, run } from "../../helpers/process";
 import { existsSync } from "node:fs";
 
-describe("runGit", () => {
+/** Runs `use` against the real GitService. */
+const withGit = <A, E>(use: (service: GitService["Service"]) => Effect.Effect<A, E>) =>
+  Effect.gen(function* () {
+    return yield* use(yield* GitService);
+  }).pipe(Effect.provide(GitService.layer), Effect.provide(PlatformLayer));
+
+describe("GitService running git", () => {
   let tempDir: string;
 
   beforeEach(async () => {
@@ -27,33 +33,32 @@ describe("runGit", () => {
     test("clones a repo to target dir", async () => {
       const source = await createBareRepo({ "hello.txt": "world" });
       const targetDir = join(tempDir, "cloned");
-      await Effect.runPromise(runGit(["clone", source.dir, targetDir]));
+      await Effect.runPromise(
+        withGit((service) =>
+          service.clone(source.dir, targetDir, Option.none(), Option.none(), Option.none()),
+        ),
+      );
       const filePath = join(targetDir, "hello.txt");
       expect(existsSync(filePath)).toBe(true);
       expect(await readText(filePath)).toBe("world");
       await source.cleanup();
     });
 
-    test("clones with branch pin", async () => {
-      const bareSource = await createBareRepo({ "file.txt": "content" });
-      const defaultBranch = (
-        await run(["git", "symbolic-ref", "HEAD", "--short"], { cwd: bareSource.dir })
-      ).stdout.trim();
-      const targetDir = join(tempDir, "branch-clone");
-      await Effect.runPromise(
-        runGit(["clone", "--branch", defaultBranch, bareSource.dir, targetDir]),
-      );
-      const filePath = join(targetDir, "file.txt");
-      expect(existsSync(filePath)).toBe(true);
-      await bareSource.cleanup();
-    });
-
-    test("fails on invalid URL", async () => {
+    test("fails with a GitOperationError on invalid URL", async () => {
       const targetDir = join(tempDir, "bad-clone");
-      const result = await Effect.runPromiseExit(
-        runGit(["clone", "https://invalid.example.com/nonexistent.git", targetDir]),
+      const result = await Effect.runPromise(
+        withGit((service) =>
+          service.clone(
+            "https://invalid.example.com/nonexistent.git",
+            targetDir,
+            Option.none(),
+            Option.none(),
+            Option.none(),
+          ),
+        ).pipe(Effect.flip),
       );
-      expect(result._tag).toBe("Failure");
+      expect(result._tag).toBe("GitOperationError");
+      expect(result.message.length).toBeGreaterThan(0);
     });
   });
 
@@ -61,13 +66,21 @@ describe("runGit", () => {
     test("fetches successfully from a cloned repo", async () => {
       const source = await createBareRepo();
       const targetDir = join(tempDir, "fetch-test");
-      await Effect.runPromise(runGit(["clone", source.dir, targetDir]));
-      await Effect.runPromise(runGit(["fetch", "--all", "--prune"], targetDir));
+      await git(["clone", source.dir, targetDir]);
+      await Effect.runPromise(
+        withGit((service) =>
+          service.fetch(targetDir, "+refs/heads/*:refs/remotes/origin/*", Option.none()),
+        ),
+      );
       await source.cleanup();
     });
 
     test("fails for non-repo directory", async () => {
-      const result = await Effect.runPromiseExit(runGit(["fetch", "--all"], tempDir));
+      const result = await Effect.runPromiseExit(
+        withGit((service) =>
+          service.fetch(tempDir, "+refs/heads/*:refs/remotes/origin/*", Option.none()),
+        ),
+      );
       expect(result._tag).toBe("Failure");
     });
   });
@@ -84,7 +97,7 @@ describe("runGit", () => {
         await run(["git", "rev-list", "--max-parents=0", "HEAD"], { cwd: source.dir })
       ).stdout.trim();
 
-      await Effect.runPromise(runGit(["checkout", initialHash], source.dir));
+      await Effect.runPromise(withGit((service) => service.checkout(source.dir, initialHash)));
       const filePath = join(source.dir, "file.txt");
       expect(await readText(filePath)).toBe("initial content");
       await source.cleanup();
@@ -96,8 +109,9 @@ describe("runGit", () => {
       await writeText(join(source.dir, "file.txt"), "v2");
       await run(["git", "add", "."], { cwd: source.dir });
       await run(["git", "commit", "-m", "v2"], { cwd: source.dir });
+      await run(["git", "checkout", "-"], { cwd: source.dir });
 
-      await Effect.runPromise(runGit(["checkout", "release-v2"], source.dir));
+      await Effect.runPromise(withGit((service) => service.checkout(source.dir, "release-v2")));
       const filePath = join(source.dir, "file.txt");
       expect(await readText(filePath)).toBe("v2");
       await source.cleanup();
@@ -224,7 +238,7 @@ describe("GitService", () => {
   test("fetch on a cloned repo", async () => {
     const source = await createBareRepo();
     const targetDir = join(tempDir, "svc-fetch");
-    await Effect.runPromise(runGit(["clone", source.dir, targetDir]));
+    await git(["clone", source.dir, targetDir]);
     await Effect.runPromise(
       Effect.gen(function* () {
         const git = yield* GitService;
@@ -244,7 +258,7 @@ describe("GitService", () => {
     await rm(bareDir, { recursive: true, force: true });
     await run(["git", "clone", "--bare", sourceRepo.dir, bareDir]);
     const targetDir = join(tempDir, "svc-shallow-fetch");
-    await Effect.runPromise(runGit(["clone", "--depth", "1", `file://${bareDir}`, targetDir]));
+    await git(["clone", "--depth", "1", `file://${bareDir}`, targetDir]);
     await Effect.runPromise(
       Effect.gen(function* () {
         const git = yield* GitService;
@@ -259,7 +273,7 @@ describe("GitService", () => {
   test("getDefaultBranch returns correct branch", async () => {
     const source = await createBareRepo();
     const targetDir = join(tempDir, "svc-default-branch");
-    await Effect.runPromise(runGit(["clone", source.dir, targetDir]));
+    await git(["clone", source.dir, targetDir]);
     const branch = await Effect.runPromise(
       Effect.gen(function* () {
         const git = yield* GitService;

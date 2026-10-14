@@ -5,10 +5,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitService } from "../../../src/domain/git/git-service";
-import { PlatformLayer, runGit } from "../../helpers/platform";
+import { PlatformLayer } from "../../helpers/platform";
 import { createTempRepo } from "../../helpers/temp-repo";
 import { writeText } from "../../helpers/files";
-import { run } from "../../helpers/process";
+import { git, run } from "../../helpers/process";
 import { existsSync } from "node:fs";
 
 describe("GitService default clone behavior", () => {
@@ -82,7 +82,7 @@ describe("GitService default clone behavior", () => {
     );
 
     // With --single-branch, remote tracking branches should be limited
-    const branches = await Effect.runPromise(runGit(["branch", "-r"], targetDir));
+    const branches = await git(["branch", "-r"], targetDir);
     // Should not have the 'feature' branch tracked
     expect(branches).not.toContain("origin/feature");
 

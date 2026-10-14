@@ -14,6 +14,15 @@ export interface RunOptions {
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
 }
 
+/** Runs `git <args>` in `cwd` and returns its trimmed stdout; rejects with its stderr if it fails. */
+export const git = async (args: ReadonlyArray<string>, cwd?: string): Promise<string> => {
+  const result = await run(["git", ...args], { cwd });
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr.trim()}`);
+  }
+  return result.stdout.trim();
+};
+
 /** Spawns `argv`, waits for it to exit and returns its exit code and output. Rejects only if it cannot start. */
 export const run = (argv: ReadonlyArray<string>, options: RunOptions = {}): Promise<RunResult> =>
   new Promise((resolve, reject) => {

@@ -2,21 +2,58 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
+import * as Stream from "effect/Stream";
+import * as ChildProcess from "effect/process/ChildProcess";
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
 import type { RepoPin } from "../config/config-schema";
 import { GitOperationError } from "./git-errors";
-import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
-import { parseSymrefHead, runGit as spawnGit } from "./git-utils";
+import { parseSymrefHead } from "./git-utils";
+
+const collectText = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
+  Stream.mkString(Stream.decodeText(stream));
 
 // Every git call puts `--` before URLs, refspecs and paths, so input that
 // starts with `-` is never read as an option.
 export class GitService extends Context.Service<GitService>()("shelf/domain/git/GitService", {
   make: Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner;
+
+    /** Runs `git <args>` in `cwd` and returns its trimmed stdout; fails with its stderr. */
     const runGit = (
       args: ReadonlyArray<string>,
       cwd?: string,
-    ): Effect.Effect<string, GitOperationError> =>
-      spawnGit(args, cwd).pipe(Effect.provideService(ChildProcessSpawner, spawner));
+    ): Effect.Effect<string, GitOperationError> => {
+      const command = `git ${args.join(" ")}`;
+      return Effect.gen(function* () {
+        const proc = yield* spawner.spawn(
+          ChildProcess.make("git", [...args], {
+            cwd: cwd ?? process.cwd(),
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "pipe",
+            detached: false,
+          }),
+        );
+        const [stdout, stderr, exitCode] = yield* Effect.all(
+          [collectText(proc.stdout), collectText(proc.stderr), proc.exitCode],
+          { concurrency: "unbounded" },
+        );
+        if (exitCode !== 0) {
+          return yield* new GitOperationError({
+            command,
+            message: stderr.trim() || `git ${args[0]} failed with exit code ${exitCode}`,
+          });
+        }
+        return stdout.trim();
+      }).pipe(
+        Effect.scoped,
+        Effect.mapError((error) =>
+          error instanceof GitOperationError
+            ? error
+            : new GitOperationError({ command, message: error.message }),
+        ),
+      );
+    };
 
     /**
      * Fetches one refspec from `origin`. With a depth the fetch is shallow;
