@@ -15,7 +15,7 @@ describe("formatUserError: known error tags", () => {
         path: "/x/repos/lib",
         message: "EACCES: permission denied",
       },
-      "Could not delete the repo folder /x/repos/lib: EACCES: permission denied. Its config entry was kept.",
+      "Could not move the repo folder /x/repos/lib aside to remove it: EACCES: permission denied. The folder and its config entry were kept.",
     ],
     [
       { _tag: "InvalidAliasError", alias: "../x", message: "must not contain slashes" },

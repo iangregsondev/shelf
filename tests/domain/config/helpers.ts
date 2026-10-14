@@ -14,6 +14,8 @@ export type ConfigOverrides = {
   readonly repoPath?: (alias: string) => string;
   /** The shelf home; `reposDir`, `configPath` and the default `repoPath` sit inside it. */
   readonly shelfHome?: string;
+  /** The user's home folder. */
+  readonly userHome?: string;
 };
 
 const defaultConfigImpl = (shelfHome: string) => ({
@@ -23,6 +25,7 @@ const defaultConfigImpl = (shelfHome: string) => ({
   ensureDirectories: (): Effect.Effect<void, ConfigWriteError> => Effect.void,
   repoPath: (alias: string): string => join(shelfHome, "repos", alias),
   shelfHome,
+  userHome: "/tmp/shelf-test-user",
   reposDir: join(shelfHome, "repos"),
   configPath: join(shelfHome, "config.json"),
 });
@@ -42,9 +45,12 @@ export const createMockConfigLayer = (
     fn: (current: ShelfConfig) => ShelfConfig | Effect.Effect<ShelfConfig, E>,
   ): Effect.Effect<ShelfConfig, ConfigParseError | ConfigWriteError | E> =>
     Effect.gen(function* () {
-      const result = fn(yield* impl.load());
+      const current = yield* impl.load();
+      const result = fn(current);
       const next = Effect.isEffect(result) ? yield* result : result;
-      yield* save(next);
+      if (next !== current) {
+        yield* save(next);
+      }
       return next;
     });
   const updateRepo = <E = never>(

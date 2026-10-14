@@ -17,7 +17,9 @@ export class ConfigService extends Context.Service<ConfigService>()(
   {
     make: Effect.gen(function* () {
       const fs = yield* FileSystem;
-      const shelfHome = resolveShelfHome(process.env, homedir(), process.cwd());
+      // The only place shelf reads the user's home folder.
+      const userHome = homedir();
+      const shelfHome = resolveShelfHome(process.env, userHome, process.cwd());
       const configFile = join(shelfHome, "config.json");
       const reposDir = join(shelfHome, "repos");
 
@@ -61,7 +63,8 @@ export class ConfigService extends Context.Service<ConfigService>()(
       /**
        * Reads the config, applies `fn` and saves the result, holding the
        * in-process and cross-process config locks throughout. `fn` may fail
-       * to abort the update without saving. Returns the saved config.
+       * to abort the update without saving, or give back the config it was
+       * handed to save nothing. Returns the saved config.
        */
       const update = <E = never>(
         fn: (current: ShelfConfig) => ShelfConfig | Effect.Effect<ShelfConfig, E>,
@@ -70,7 +73,9 @@ export class ConfigService extends Context.Service<ConfigService>()(
           const current = yield* load();
           const result = fn(current);
           const next = Effect.isEffect(result) ? yield* result : result;
-          yield* save(next);
+          if (next !== current) {
+            yield* save(next);
+          }
           return next;
         }).pipe(locked, Effect.withSpan("ConfigService.update"));
 
@@ -121,6 +126,8 @@ export class ConfigService extends Context.Service<ConfigService>()(
           checkAlias(alias).pipe(Effect.map((safe) => join(reposDir, safe))),
 
         shelfHome,
+        /** The user's home folder (`os.homedir()`). */
+        userHome,
         reposDir,
         configPath: configFile,
       };

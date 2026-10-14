@@ -1,8 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
-import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { RepoEntry, ShelfConfig, RepoPin } from "../../../src/domain/config/config-schema";
@@ -18,23 +20,23 @@ import { GitOperationError } from "../../../src/domain/git/git-errors";
 import { ConfigWriteError } from "../../../src/domain/config/config-errors";
 import { RegistryWriteError } from "../../../src/domain/registry/registry-errors";
 
-// `add` claims the repo folder on disk before cloning, so point repoPath at a
-// fresh temp folder per test.
+// `add` and `remove` move repo folders to temp names beside them, so give each
+// test a fresh shelf home with a real repos folder.
+let shelfHome: string;
 let reposDir: string;
 
 beforeEach(async () => {
-  reposDir = await mkdtemp(join(tmpdir(), "shelf-repo-service-"));
+  shelfHome = await mkdtemp(join(tmpdir(), "shelf-repo-service-"));
+  reposDir = join(shelfHome, "repos");
+  await mkdir(reposDir);
 });
 
 afterEach(async () => {
-  await rm(reposDir, { recursive: true, force: true });
+  await rm(shelfHome, { recursive: true, force: true });
 });
 
 const buildRepoLayer = (configOverrides = {}, gitOverrides = {}, syncOverrides = {}) => {
-  const configLayer = createMockConfigLayer({
-    repoPath: (alias: string) => join(reposDir, alias),
-    ...configOverrides,
-  });
+  const configLayer = createMockConfigLayer({ shelfHome, ...configOverrides });
   const gitLayer = createMockGitLayer(gitOverrides);
   const syncLayer = createMockSyncLayer(syncOverrides);
   return RepoService.layer.pipe(
@@ -125,14 +127,16 @@ describe("RepoService", () => {
           return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
         }).pipe(Effect.flip, Effect.provide(buildRepoLayer({ repoPath: () => targetDir }))),
       );
+      // The first folder add makes is the temp folder it clones into.
+      const cloneDir = (error as { path: string }).path;
+      expect(cloneDir).toMatch(/[/\\]missing-parent[/\\]\.shelf-add-effect-[0-9a-f-]{36}$/);
       expect(error).toMatchObject({
         _tag: "RepoFolderError",
-        path: targetDir,
-        message: `ENOENT: no such file or directory, mkdir '${targetDir}'`,
+        message: `ENOENT: no such file or directory, mkdir '${cloneDir}'`,
       });
     });
 
-    test("removes the folder it claimed when the clone fails", async () => {
+    test("leaves no folder behind when the clone fails", async () => {
       const error = await Effect.runPromise(
         Effect.gen(function* () {
           const repo = yield* RepoService;
@@ -151,7 +155,7 @@ describe("RepoService", () => {
         ),
       );
       expect(error._tag).toBe("GitOperationError");
-      expect(existsSync(join(reposDir, "effect"))).toBe(false);
+      expect(await readdir(reposDir)).toEqual([]);
     });
   });
 
@@ -332,7 +336,7 @@ describe("RepoService", () => {
           return yield* repo.remove("test-repo");
         }).pipe(Effect.provide(layer)),
       );
-      expect(result).toEqual({ alias: "test-repo", orphan: false });
+      expect(result).toEqual({ alias: "test-repo", orphan: false, trashLeft: [] });
       expect(savedConfig?.repos.length).toBe(0);
     });
 
@@ -781,7 +785,67 @@ describe("RepoService.add, more", () => {
       layer,
     );
     expect(error).toMatchObject({ _tag: "RepoAlreadyExistsError", alias: "lib" });
-    expect(existsSync(join(reposDir, "lib"))).toBe(false);
+    expect(await readdir(reposDir)).toEqual([]);
+  });
+
+  test("a remove during the clone leaves the clone alone, and the add completes", async () => {
+    const started = Effect.runSync(Deferred.make<void>());
+    const gate = Effect.runSync(Deferred.make<void>());
+    const layer = buildRepoLayer(
+      {},
+      {
+        clone: (_url: string, dir: string) =>
+          Effect.promise(() => writeText(join(dir, "lib.ts"), "code")).pipe(
+            Effect.andThen(Deferred.succeed(started, undefined)),
+            Effect.andThen(Deferred.await(gate)),
+          ),
+      },
+    );
+    const { added, removeError } = await runRepo(
+      (repo) =>
+        Effect.gen(function* () {
+          const adding = yield* Effect.forkChild(
+            repo.add({ url: "https://github.com/test/lib.git" }),
+          );
+          yield* Deferred.await(started);
+          const removeError = yield* Effect.flip(repo.remove("lib"));
+          yield* Deferred.succeed(gate, undefined);
+          return { added: yield* Fiber.join(adding), removeError };
+        }),
+      layer,
+    );
+    expect(removeError).toMatchObject({ _tag: "RepoNotFoundError", alias: "lib" });
+    expect(added).toBe("lib");
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+    expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+  });
+
+  test("a folder that appears at the alias during the clone is left alone, and the clone removed", async () => {
+    const layer = buildRepoLayer(
+      {},
+      { clone: () => Effect.promise(() => writeText(join(reposDir, "lib", "keep.txt"), "mine")) },
+    );
+    const error = await failureOf(
+      (repo) => repo.add({ url: "https://github.com/test/lib.git" }),
+      layer,
+    );
+    expect(error).toMatchObject({ _tag: "RepoAlreadyExistsError", alias: "lib" });
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+    expect(await readdir(join(reposDir, "lib"))).toEqual(["keep.txt"]);
+  });
+
+  test("fails with RepoFolderError naming the OS error when the clone can't move into place", async () => {
+    const layer = buildRepoLayer(
+      {},
+      { clone: (_url: string, dir: string) => Effect.promise(() => rm(dir, { recursive: true })) },
+    );
+    const error = await failureOf(
+      (repo) => repo.add({ url: "https://github.com/test/lib.git" }),
+      layer,
+    );
+    expect(error).toMatchObject({ _tag: "RepoFolderError", path: join(reposDir, "lib") });
+    expect((error as { message: string }).message).toContain("ENOENT");
+    expect(await readdir(reposDir)).toEqual([]);
   });
 
   test("an unsafe alias is refused before anything is cloned", async () => {
@@ -816,7 +880,7 @@ describe("RepoService.remove, more", () => {
       },
     });
     const removed = await runRepo((repo) => repo.remove("https://github.com/test/lib.git"), layer);
-    expect(removed).toEqual({ alias: "lib", orphan: false });
+    expect(removed).toEqual({ alias: "lib", orphan: false, trashLeft: [] });
     expect(existsSync(join(reposDir, "lib"))).toBe(false);
     expect(saved!.repos.map((r) => r.alias)).toEqual(["other"]);
   });
@@ -1055,7 +1119,7 @@ describe("RepoService.remove, orphans and failures", () => {
       },
     });
     const removed = await runRepo((repo) => repo.remove("ghost"), layer);
-    expect(removed).toEqual({ alias: "ghost", orphan: true });
+    expect(removed).toEqual({ alias: "ghost", orphan: true, trashLeft: [] });
     expect(existsSync(join(reposDir, "ghost"))).toBe(false);
     expect(saved).toBe(false);
   });
@@ -1066,7 +1130,7 @@ describe("RepoService.remove, orphans and failures", () => {
       (repo) => repo.remove("lib"),
       buildRepoLayer({ load: () => Effect.succeed(configOf(entry("lib"))) }),
     );
-    expect(removed).toEqual({ alias: "lib", orphan: false });
+    expect(removed).toEqual({ alias: "lib", orphan: false, trashLeft: [] });
   });
 
   test("a URL with no config entry fails with RepoNotFoundError", async () => {
@@ -1080,8 +1144,9 @@ describe("RepoService.remove, orphans and failures", () => {
     });
   });
 
-  test("a failed folder delete fails with RepoRemoveError and keeps the config entry", async () => {
-    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+  test("a folder that can't be moved aside fails with RepoRemoveError, and keeps the folder and the config entry", async () => {
+    await writeText(join(reposDir, "lib", "a.ts"), "a");
+    await writeText(join(reposDir, "lib", "b.ts"), "b");
     let saved = false;
     const layer = buildRepoLayer({
       load: () => Effect.succeed(configOf(entry("lib"))),
@@ -1090,16 +1155,119 @@ describe("RepoService.remove, orphans and failures", () => {
         return Effect.void;
       },
     });
-    await chmod(join(reposDir, "lib"), 0o555);
+    // A read-only repos folder: nothing inside it can be renamed or deleted.
+    await chmod(reposDir, 0o555);
     try {
       const error = await failureOf((repo) => repo.remove("lib"), layer);
       expect(error).toMatchObject({ _tag: "RepoRemoveError", path: join(reposDir, "lib") });
       expect((error as { message: string }).message).toContain("EACCES");
     } finally {
-      await chmod(join(reposDir, "lib"), 0o755);
+      await chmod(reposDir, 0o755);
     }
     expect(saved).toBe(false);
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+    expect((await readdir(join(reposDir, "lib"))).sort()).toEqual(["a.ts", "b.ts"]);
+  });
+
+  test("a failed delete after the move aside still drops the entry, and leaves only trash", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    let saved: ShelfConfig | undefined;
+    const layer = buildRepoLayer({
+      load: () => Effect.succeed(configOf(entry("lib"), entry("keep"))),
+      save: (c: ShelfConfig) => {
+        saved = c;
+        return Effect.void;
+      },
+    });
+    // A read-only repo folder can be renamed, but nothing inside it deleted.
+    await chmod(join(reposDir, "lib"), 0o555);
+    let left: ReadonlyArray<string> = [];
+    try {
+      const removed = await runRepo((repo) => repo.remove("lib"), layer);
+      left = await readdir(reposDir);
+      expect(left).toEqual([expect.stringMatching(/^\.shelf-trash-lib-[0-9a-f-]{36}$/)]);
+      expect(removed).toEqual({
+        alias: "lib",
+        orphan: false,
+        trashLeft: [{ path: join(reposDir, left[0]!), message: expect.stringContaining("EACCES") }],
+      });
+    } finally {
+      await Promise.all(left.map((name) => chmod(join(reposDir, name), 0o755)));
+    }
+    expect(saved?.repos.map((r) => r.alias)).toEqual(["keep"]);
+  });
+
+  test("moves the folder back when the config write fails", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    const layer = buildRepoLayer({
+      load: () => Effect.succeed(configOf(entry("lib"))),
+      save: () => Effect.fail(new ConfigWriteError({ message: "disk full" })),
+    });
+    const error = await failureOf((repo) => repo.remove("lib"), layer);
+    expect(error).toMatchObject({ _tag: "ConfigWriteError" });
+    expect(await readdir(reposDir)).toEqual(["lib"]);
     expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+  });
+
+  test("trash cleared while the config write fails can't take the folder it moves back", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    // Another remove or prune clears trash just as this remove's write fails.
+    let service: RepoService["Service"] | undefined;
+    const layer = buildRepoLayer({
+      load: () => Effect.succeed(configOf(entry("lib"))),
+      save: () =>
+        service!
+          .clearTrash()
+          .pipe(Effect.andThen(Effect.fail(new ConfigWriteError({ message: "disk full" })))),
+    });
+    const error = await failureOf((repo) => {
+      service = repo;
+      return repo.remove("lib");
+    }, layer);
+    expect(error).toMatchObject({ _tag: "ConfigWriteError" });
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+    expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+  });
+
+  test("a failed config write after the add moves its clone into place leaves no folder", async () => {
+    const layer = buildRepoLayer({
+      save: () => Effect.fail(new ConfigWriteError({ message: "disk full" })),
+    });
+    const error = await failureOf(
+      (repo) => repo.add({ url: "https://github.com/test/lib.git" }),
+      layer,
+    );
+    expect(error).toMatchObject({ _tag: "ConfigWriteError" });
+    expect(await readdir(reposDir)).toEqual([]);
+  });
+
+  test("clears trash left by an earlier remove", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    await writeText(join(reposDir, ".shelf-trash-old-1234", "old.ts"), "old");
+    await writeText(join(reposDir, ".shelf-add-new-5678", "new.ts"), "new");
+    const removed = await runRepo(
+      (repo) => repo.remove("lib"),
+      buildRepoLayer({ load: () => Effect.succeed(configOf(entry("lib"))) }),
+    );
+    expect(removed).toEqual({ alias: "lib", orphan: false, trashLeft: [] });
+    // Only trash goes: an add's temp folder may be a clone still running.
+    expect(await readdir(reposDir)).toEqual([".shelf-add-new-5678"]);
+  });
+});
+
+describe("RepoService.clearTrash", () => {
+  test("deletes every trash folder, and nothing else", async () => {
+    await writeText(join(reposDir, ".shelf-trash-a-1", "a.ts"), "a");
+    await writeText(join(reposDir, ".shelf-trash-b-2", "b.ts"), "b");
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    const left = await runRepo((repo) => repo.clearTrash(), buildRepoLayer());
+    expect(left).toEqual([]);
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+  });
+
+  test("finds nothing to clear when the repos folder is missing", async () => {
+    await rm(reposDir, { recursive: true });
+    expect(await runRepo((repo) => repo.clearTrash(), buildRepoLayer())).toEqual([]);
   });
 });
 
