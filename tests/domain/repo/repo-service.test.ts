@@ -513,6 +513,30 @@ describe("RepoService", () => {
       expect(Option.getOrUndefined(result)?.value).toBe("v5.4.0");
     });
 
+    // A package.json that doesn't hold a version string for the package is a
+    // typed AutoPinResolutionError, never a crash.
+    test.each([
+      ["a package.json of null", "null", "effect"],
+      ["a version that isn't a string", JSON.stringify({ dependencies: { effect: 5 } }), "effect"],
+      [
+        "a package named like an Object built-in",
+        JSON.stringify({ dependencies: {} }),
+        "constructor",
+      ],
+    ])("fails with AutoPinResolutionError for %s", async (_name, manifest, packageName) => {
+      await writeText(join(fixtureDir, "package.json"), manifest);
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.resolveAutoPin("https://github.com/x/y.git", packageName);
+        }).pipe(Effect.flip, Effect.provide(buildRepoLayer())),
+      );
+      expect(error).toMatchObject({
+        _tag: "AutoPinResolutionError",
+        message: `Package "${packageName}" not found in dependencies or devDependencies`,
+      });
+    });
+
     test("fails when package not in dependencies", async () => {
       const layer = buildRepoLayer(
         {},
@@ -531,5 +555,489 @@ describe("RepoService", () => {
       );
       expect(exit._tag).toBe("Failure");
     });
+  });
+});
+
+const entry = (alias: string, pin: Option.Option<RepoPin> = Option.none()) =>
+  new RepoEntry({
+    url: `https://github.com/test/${alias}.git`,
+    alias,
+    addedAt: "2026-01-01",
+    pin,
+    depth: Option.none(),
+    sparse: Option.none(),
+    lastSyncedAt: Option.none(),
+  });
+
+const configOf = (...repos: ReadonlyArray<RepoEntry>) =>
+  new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos });
+
+/** A `load` that gives each config in turn, then the last one forever. */
+const loadSequence = (...configs: ReadonlyArray<ShelfConfig>) => {
+  let calls = 0;
+  return () => Effect.succeed(configs[Math.min(calls++, configs.length - 1)]!);
+};
+
+const runRepo = <A, E>(
+  body: (repo: RepoService["Service"]) => Effect.Effect<A, E>,
+  layer: Layer.Layer<RepoService, unknown>,
+) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      return yield* body(yield* RepoService);
+    }).pipe(Effect.provide(layer)) as Effect.Effect<A, E>,
+  );
+
+const failureOf = <A, E>(
+  body: (repo: RepoService["Service"]) => Effect.Effect<A, E>,
+  layer: Layer.Layer<RepoService, unknown>,
+) => runRepo((repo) => Effect.flip(body(repo)), layer);
+
+describe("RepoService.resolvePin", () => {
+  test("an invalid pin fails with PinResolutionError", async () => {
+    const error = await failureOf((repo) => repo.resolvePin("u", "commit:xyz"), buildRepoLayer());
+    expect(error).toMatchObject({
+      _tag: "PinResolutionError",
+      message: 'Pin "commit:xyz" is not a commit hash (4 to 40 hex characters)',
+    });
+  });
+
+  test("an explicit pin is taken as stated, without asking the remote", async () => {
+    let asked = false;
+    const layer = buildRepoLayer(
+      {},
+      {
+        lsRemoteRefs: () => {
+          asked = true;
+          return Effect.succeed("");
+        },
+      },
+    );
+    const pin = await runRepo((repo) => repo.resolvePin("u", "tag:v1"), layer);
+    expect(pin).toEqual(new RepoPin({ type: "tag", value: "v1" }));
+    expect(asked).toBe(false);
+  });
+
+  test("a bare name is a tag pin when the remote has that tag", async () => {
+    const layer = buildRepoLayer(
+      {},
+      { lsRemoteRefs: () => Effect.succeed("a1\trefs/heads/v1\nb2\trefs/tags/v1") },
+    );
+    const pin = await runRepo((repo) => repo.resolvePin("u", "v1"), layer);
+    expect(pin).toEqual(new RepoPin({ type: "tag", value: "v1" }));
+  });
+
+  test("a bare name is a branch pin when the remote has only that branch", async () => {
+    const layer = buildRepoLayer({}, { lsRemoteRefs: () => Effect.succeed("a1\trefs/heads/dev") });
+    const pin = await runRepo((repo) => repo.resolvePin("u", "dev"), layer);
+    expect(pin).toEqual(new RepoPin({ type: "branch", value: "dev" }));
+  });
+
+  test("a bare name the remote lacks fails with PinResolutionError", async () => {
+    const error = await failureOf(
+      (repo) => repo.resolvePin("https://x/y.git", "dev"),
+      buildRepoLayer(),
+    );
+    expect(error).toMatchObject({
+      _tag: "PinResolutionError",
+      message:
+        '"dev" is neither a tag nor a branch on https://x/y.git. Use commit:<hash> for a commit.',
+    });
+  });
+});
+
+describe("RepoService.pin", () => {
+  test("fails with RepoNotFoundError for an unknown alias", async () => {
+    const error = await failureOf((repo) => repo.pin("nope", "branch:main"), buildRepoLayer());
+    expect(error).toMatchObject({ _tag: "RepoNotFoundError", alias: "nope" });
+  });
+
+  test("syncs to a branch pin, then saves it", async () => {
+    const synced: Array<RepoEntry> = [];
+    let saved: ShelfConfig | undefined;
+    let ensured = false;
+    const layer = buildRepoLayer(
+      {
+        load: () => Effect.succeed(configOf(entry("lib"))),
+        save: (c: ShelfConfig) => {
+          saved = c;
+          return Effect.void;
+        },
+      },
+      {
+        ensureCommit: () => {
+          ensured = true;
+          return Effect.void;
+        },
+      },
+      {
+        syncRepo: (r: RepoEntry) => {
+          synced.push(r);
+          return Effect.void;
+        },
+      },
+    );
+    const pin = await runRepo((repo) => repo.pin("lib", "branch:dev"), layer);
+    const expected = new RepoPin({ type: "branch", value: "dev" });
+    expect(pin).toEqual(expected);
+    expect(synced.map((r) => Option.getOrUndefined(r.pin))).toEqual([expected]);
+    expect(Option.getOrUndefined(saved!.repos[0]!.pin)).toEqual(expected);
+    expect(ensured).toBe(false);
+  });
+
+  test("fetches a commit pin into the clone and stores its full hash", async () => {
+    const full = "a".repeat(40);
+    const calls: Array<string> = [];
+    let saved: ShelfConfig | undefined;
+    const layer = buildRepoLayer(
+      {
+        load: () => Effect.succeed(configOf(entry("lib"))),
+        save: (c: ShelfConfig) => {
+          saved = c;
+          return Effect.void;
+        },
+      },
+      {
+        ensureCommit: (dir: string, hash: string) => {
+          calls.push(`ensure ${dir} ${hash}`);
+          return Effect.void;
+        },
+        resolveCommit: (dir: string, hash: string) => {
+          calls.push(`resolve ${dir} ${hash}`);
+          return Effect.succeed(full);
+        },
+      },
+      {
+        syncRepo: (r: RepoEntry) => {
+          calls.push(`sync ${Option.getOrUndefined(r.pin)?.value}`);
+          return Effect.void;
+        },
+      },
+    );
+    const pin = await runRepo((repo) => repo.pin("lib", "commit:aaaa"), layer);
+    const dir = join(reposDir, "lib");
+    expect(calls).toEqual([`ensure ${dir} aaaa`, `resolve ${dir} aaaa`, `sync ${full}`]);
+    expect(pin).toEqual(new RepoPin({ type: "commit", value: full }));
+    expect(Option.getOrUndefined(saved!.repos[0]!.pin)?.value).toBe(full);
+  });
+
+  test("saves nothing when the sync to the pin fails", async () => {
+    let saved = false;
+    const layer = buildRepoLayer(
+      {
+        load: () => Effect.succeed(configOf(entry("lib"))),
+        save: () => {
+          saved = true;
+          return Effect.void;
+        },
+      },
+      {},
+      {
+        syncRepo: () =>
+          Effect.fail(new GitOperationError({ command: "git checkout", message: "no" })) as never,
+      },
+    );
+    const error = await failureOf((repo) => repo.pin("lib", "branch:dev"), layer);
+    expect(error).toMatchObject({ _tag: "GitOperationError" });
+    expect(saved).toBe(false);
+  });
+
+  test("fails with RepoNotFoundError when the repo is removed during the sync", async () => {
+    const layer = buildRepoLayer({ load: loadSequence(configOf(entry("lib")), configOf()) });
+    const error = await failureOf((repo) => repo.pin("lib", "branch:dev"), layer);
+    expect(error).toMatchObject({ _tag: "RepoNotFoundError", alias: "lib" });
+  });
+});
+
+describe("RepoService.add, more", () => {
+  test("stores a commit pin as the full hash read from the fresh clone", async () => {
+    const full = "b".repeat(40);
+    let saved: ShelfConfig | undefined;
+    const layer = buildRepoLayer(
+      {
+        save: (c: ShelfConfig) => {
+          saved = c;
+          return Effect.void;
+        },
+      },
+      { resolveCommit: () => Effect.succeed(full) },
+    );
+    await runRepo(
+      (repo) =>
+        repo.add({
+          url: "https://github.com/test/lib.git",
+          pin: Option.some(new RepoPin({ type: "commit", value: "bbbb" })),
+        }),
+      layer,
+    );
+    expect(saved!.repos[0]!.pin).toEqual(Option.some(new RepoPin({ type: "commit", value: full })));
+  });
+
+  test("an add that loses a race for the alias fails and removes the clone it made", async () => {
+    const layer = buildRepoLayer({ load: loadSequence(configOf(), configOf(entry("lib"))) });
+    const error = await failureOf(
+      (repo) => repo.add({ url: "https://github.com/test/lib.git" }),
+      layer,
+    );
+    expect(error).toMatchObject({ _tag: "RepoAlreadyExistsError", alias: "lib" });
+    expect(existsSync(join(reposDir, "lib"))).toBe(false);
+  });
+
+  test("an unsafe alias is refused before anything is cloned", async () => {
+    let cloned = false;
+    const layer = buildRepoLayer(
+      {},
+      {
+        clone: () => {
+          cloned = true;
+          return Effect.void;
+        },
+      },
+    );
+    const error = await failureOf(
+      (repo) => repo.add({ url: "https://x/y.git", alias: Option.some("../escape") }),
+      layer,
+    );
+    expect(error).toMatchObject({ _tag: "InvalidAliasError" });
+    expect(cloned).toBe(false);
+  });
+});
+
+describe("RepoService.remove, more", () => {
+  test("removes a repo named by its URL, folder and all", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    let saved: ShelfConfig | undefined;
+    const layer = buildRepoLayer({
+      load: () => Effect.succeed(configOf(entry("lib"), entry("other"))),
+      save: (c: ShelfConfig) => {
+        saved = c;
+        return Effect.void;
+      },
+    });
+    const alias = await runRepo((repo) => repo.remove("https://github.com/test/lib.git"), layer);
+    expect(alias).toBe("lib");
+    expect(existsSync(join(reposDir, "lib"))).toBe(false);
+    expect(saved!.repos.map((r) => r.alias)).toEqual(["other"]);
+  });
+});
+
+describe("RepoService.rename, more", () => {
+  test("an unsafe new alias is refused", async () => {
+    const error = await failureOf(
+      (repo) => repo.rename("lib", "../x"),
+      buildRepoLayer({ load: () => Effect.succeed(configOf(entry("lib"))) }),
+    );
+    expect(error).toMatchObject({ _tag: "InvalidAliasError" });
+  });
+
+  test("fails with RepoNotFoundError for an unknown alias", async () => {
+    const error = await failureOf((repo) => repo.rename("lib", "renamed"), buildRepoLayer());
+    expect(error).toMatchObject({ _tag: "RepoNotFoundError", alias: "lib" });
+  });
+
+  test("fails with RepoAlreadyExistsError when the new alias is taken", async () => {
+    const error = await failureOf(
+      (repo) => repo.rename("lib", "other"),
+      buildRepoLayer({ load: () => Effect.succeed(configOf(entry("lib"), entry("other"))) }),
+    );
+    expect(error).toMatchObject({ _tag: "RepoAlreadyExistsError", alias: "other" });
+  });
+
+  test("refuses when a folder is already at the new path, and moves nothing", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    await writeText(join(reposDir, "renamed", "stray.txt"), "x");
+    const error = await failureOf(
+      (repo) => repo.rename("lib", "renamed"),
+      buildRepoLayer({ load: () => Effect.succeed(configOf(entry("lib"))) }),
+    );
+    expect(error).toMatchObject({
+      _tag: "AliasRenameError",
+      message: `a folder already exists at ${join(reposDir, "renamed")}`,
+    });
+    expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+    expect(existsSync(join(reposDir, "renamed", "lib.ts"))).toBe(false);
+  });
+
+  test("renames the config entry and the manual registry entry", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    let saved: ShelfConfig | undefined;
+    const renamed: Array<[string, string]> = [];
+    const layer = RepoService.layer.pipe(
+      Layer.provide(
+        createMockConfigLayer({
+          repoPath: (alias: string) => join(reposDir, alias),
+          load: () => Effect.succeed(configOf(entry("lib"))),
+          save: (c: ShelfConfig) => {
+            saved = c;
+            return Effect.void;
+          },
+        }),
+      ),
+      Layer.provide(createMockGitLayer()),
+      Layer.provide(createMockSyncLayer()),
+      Layer.provide(
+        createMockRegistryLayer({
+          renameManual: (from: string, to: string) => {
+            renamed.push([from, to]);
+            return Effect.void;
+          },
+        } as never),
+      ),
+      Layer.provide(PlatformLayer),
+    );
+    await runRepo((repo) => repo.rename("lib", "renamed"), layer);
+    expect(saved!.repos.map((r) => r.alias)).toEqual(["renamed"]);
+    expect(renamed).toEqual([["lib", "renamed"]]);
+  });
+
+  test("moves the folder back when another rename takes the alias first", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    const layer = buildRepoLayer({
+      load: loadSequence(configOf(entry("lib")), configOf(entry("lib"), entry("renamed"))),
+    });
+    const error = await failureOf((repo) => repo.rename("lib", "renamed"), layer);
+    expect(error).toMatchObject({ _tag: "RepoAlreadyExistsError", alias: "renamed" });
+    expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+    expect(existsSync(join(reposDir, "renamed"))).toBe(false);
+  });
+
+  test("moves the folder back when the repo is removed mid-rename", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    const layer = buildRepoLayer({ load: loadSequence(configOf(entry("lib")), configOf()) });
+    const error = await failureOf((repo) => repo.rename("lib", "renamed"), layer);
+    expect(error).toMatchObject({ _tag: "RepoNotFoundError", alias: "lib" });
+    expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+    expect(existsSync(join(reposDir, "renamed"))).toBe(false);
+  });
+});
+
+describe("RepoService.folder", () => {
+  test("describes a repo folder that is on disk", async () => {
+    await writeText(join(reposDir, "lib", "a.txt"), "12345");
+    await writeText(join(reposDir, "lib", "src", "b.ts"), "123");
+    const folder = await runRepo((repo) => repo.folder("lib"), buildRepoLayer());
+    expect({ ...folder, contents: [...folder.contents].sort() }).toEqual({
+      path: join(reposDir, "lib"),
+      exists: true,
+      sizeBytes: 8,
+      contents: ["a.txt", "src"],
+    });
+  });
+
+  test("describes a missing repo folder as empty", async () => {
+    const folder = await runRepo((repo) => repo.folder("lib"), buildRepoLayer());
+    expect(folder).toEqual({
+      path: join(reposDir, "lib"),
+      exists: false,
+      sizeBytes: 0,
+      contents: [],
+    });
+  });
+});
+
+describe("RepoService.resolveAutoPin, failures", () => {
+  let fixtureDir: string;
+  let originalCwd: string;
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    fixtureDir = await mkdtemp(join(tmpdir(), "shelf-autopin-fail-"));
+    process.chdir(fixtureDir);
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    await rm(fixtureDir, { recursive: true, force: true });
+  });
+
+  const autoPin = (packageName: string, tags = "") =>
+    failureOf(
+      (repo) => repo.resolveAutoPin("https://x/y.git", packageName),
+      buildRepoLayer({}, { lsRemoteTags: () => Effect.succeed(tags) }),
+    );
+
+  test("fails when the working directory has no package.json", async () => {
+    expect(await autoPin("effect")).toMatchObject({
+      _tag: "AutoPinResolutionError",
+      message: "No package.json found in current directory",
+    });
+  });
+
+  test("fails the same way when package.json is not JSON", async () => {
+    await writeText(join(fixtureDir, "package.json"), "{ not json");
+    expect(await autoPin("effect")).toMatchObject({
+      _tag: "AutoPinResolutionError",
+      message: "No package.json found in current directory",
+    });
+  });
+
+  test("looks past a null dependencies field to devDependencies", async () => {
+    await writeText(
+      join(fixtureDir, "package.json"),
+      JSON.stringify({ dependencies: null, devDependencies: { effect: "^1.2.3" } }),
+    );
+    const pin = await runRepo(
+      (repo) => repo.resolveAutoPin("https://x/y.git", "effect"),
+      buildRepoLayer({}, { lsRemoteTags: () => Effect.succeed("a\trefs/tags/v1.2.3") }),
+    );
+    expect(pin).toEqual(Option.some(new RepoPin({ type: "tag", value: "v1.2.3" })));
+  });
+
+  test("fails when the remote has no tag for the declared version", async () => {
+    await writeText(
+      join(fixtureDir, "package.json"),
+      JSON.stringify({ dependencies: { effect: "^1.2.3" } }),
+    );
+    expect(await autoPin("effect", "a\trefs/tags/v9.9.9")).toMatchObject({
+      _tag: "AutoPinResolutionError",
+      message: "No matching tag found for effect@1.2.3",
+    });
+  });
+});
+
+describe("RepoService.sync, more", () => {
+  test("fails with RepoNotFoundError for an unknown alias", async () => {
+    const error = await failureOf((repo) => repo.sync(Option.some("nope")), buildRepoLayer());
+    expect(error).toMatchObject({ _tag: "RepoNotFoundError", alias: "nope" });
+  });
+
+  test("reports one repo and no failures after syncing an alias", async () => {
+    const result = await runRepo(
+      (repo) => repo.sync(Option.some("lib")),
+      buildRepoLayer({ load: () => Effect.succeed(configOf(entry("lib"))) }),
+    );
+    expect(result).toEqual({ total: 1, failures: [] });
+  });
+
+  test("passes back the result of syncing every repo", async () => {
+    const all = { total: 3, failures: [{ alias: "x", error: "boom" }] };
+    const result = await runRepo(
+      (repo) => repo.sync(Option.none()),
+      buildRepoLayer({}, {}, { syncAll: () => Effect.succeed(all as never) }),
+    );
+    expect(result).toEqual(all);
+  });
+
+  // Every pin kind reaches the sync unchanged: the sync domain decides what
+  // each pin means.
+  test.each([
+    ["a branch pin", Option.some(new RepoPin({ type: "branch", value: "dev" }))],
+    ["a tag pin", Option.some(new RepoPin({ type: "tag", value: "v1.0.0" }))],
+    ["a commit pin", Option.some(new RepoPin({ type: "commit", value: "c".repeat(40) }))],
+    ["no pin", Option.none<RepoPin>()],
+  ])("syncs a repo with %s as stored", async (_name, pin) => {
+    const synced: Array<Option.Option<RepoPin>> = [];
+    const layer = buildRepoLayer(
+      { load: () => Effect.succeed(configOf(entry("lib", pin))) },
+      {},
+      {
+        syncRepo: (r: RepoEntry) => {
+          synced.push(r.pin);
+          return Effect.void;
+        },
+      },
+    );
+    await runRepo((repo) => repo.sync(Option.some("lib")), layer);
+    expect(synced).toEqual([pin]);
   });
 });

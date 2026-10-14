@@ -1,80 +1,100 @@
 import { describe, test, expect } from "vite-plus/test";
 import { formatUserError } from "../../src/cli/error-handler";
 
-describe("formatUserError", () => {
-  test("formats ResolveError", () => {
-    const error = { _tag: "ResolveError", input: "foobar", message: "Not found" };
-    const result = formatUserError(error);
-    expect(result).toBe('Could not resolve "foobar": Not found');
+describe("formatUserError: known error tags", () => {
+  test.each([
+    [
+      { _tag: "RepoNotFoundError", alias: "effect" },
+      'Repo "effect" not found. Run `shelf list` to see available repos.',
+    ],
+    [{ _tag: "RepoAlreadyExistsError", alias: "effect" }, 'Repo "effect" already exists.'],
+    [
+      { _tag: "InvalidAliasError", alias: "../x", message: "must not contain slashes" },
+      'Invalid alias "../x": must not contain slashes.',
+    ],
+    [
+      { _tag: "AliasRenameError", from: "old", to: "new", message: "target exists" },
+      'Could not rename "old" to "new": target exists. Nothing was changed.',
+    ],
+    [{ _tag: "GitOperationError", message: "clone failed" }, "Git error: clone failed"],
+    [
+      { _tag: "SyncFailedError", failed: 2, total: 5 },
+      "Sync failed: 2 of 5 repos could not be synced.",
+    ],
+    [
+      { _tag: "AutoPinResolutionError", message: "no tags found" },
+      "Auto-pin failed: no tags found",
+    ],
+    [{ _tag: "PinResolutionError", message: "unknown ref" }, "Pin failed: unknown ref"],
+    [{ _tag: "ConfigParseError", message: "bad JSON" }, "Config error: bad JSON"],
+    [{ _tag: "ConfigWriteError", message: "disk full" }, "Could not save shelf state: disk full"],
+    [
+      { _tag: "RepoFolderError", path: "/shelf/repos/x", message: "permission denied" },
+      "Could not create the repo folder /shelf/repos/x: permission denied",
+    ],
+    [
+      { _tag: "InvalidConfigValueError", message: "syncIntervalMinutes must be a number" },
+      "syncIntervalMinutes must be a number",
+    ],
+    [
+      { _tag: "UnknownConfigKeyError", key: "colour" },
+      'Unknown config key "colour". Known keys: syncIntervalMinutes, version.',
+    ],
+    [
+      { _tag: "InstallFailedError", failed: 1, total: 3 },
+      "Install failed: 1 of 3 repos could not be added.",
+    ],
+    [
+      { _tag: "ConfigNotFoundError", path: "/shelf/config.json" },
+      "Config not found: /shelf/config.json",
+    ],
+    [
+      { _tag: "ShelffileNotFoundError", path: "/project/shelffile" },
+      "No shelffile found at /project/shelffile. Create one or use `shelf share` to generate one.",
+    ],
+    [{ _tag: "ShelffileParseError", message: "line 3" }, "Shelffile error: line 3"],
+    [{ _tag: "RegistryParseError", message: "bad JSON" }, "Registry error: bad JSON"],
+    [
+      { _tag: "RegistryWriteError", message: "disk full" },
+      "Could not save the registry: disk full",
+    ],
+    [
+      { _tag: "ResolveError", input: "foobar", message: "Not found" },
+      'Could not resolve "foobar": Not found',
+    ],
+    [
+      { _tag: "DetectError", message: "No package.json found" },
+      "Detection failed: No package.json found",
+    ],
+    [{ _tag: "DaemonAlreadyRunningError", pid: 12_345 }, "Daemon is already running (PID: 12345)."],
+    [{ _tag: "DaemonNotRunningError" }, "No daemon is currently running."],
+    [{ _tag: "DaemonStartError", message: "Spawn failed" }, "Failed to start daemon: Spawn failed"],
+    [
+      { _tag: "DaemonStillStoppingError", pid: 42 },
+      "The daemon (PID: 42) is still finishing its current step; it stops once that step is done. Run `shelf daemon status` to check.",
+    ],
+  ])("formats $_tag", (error, expected) => {
+    expect(formatUserError(error)).toBe(expected);
   });
 
-  test("formats DetectError", () => {
-    const error = { _tag: "DetectError", message: "No package.json found" };
-    const result = formatUserError(error);
-    expect(result).toBe("Detection failed: No package.json found");
+  test("formats a real Error subclass carrying a _tag", () => {
+    const error = Object.assign(new Error("clone failed"), { _tag: "GitOperationError" });
+    expect(formatUserError(error)).toBe("Git error: clone failed");
   });
+});
 
-  test("formats DaemonAlreadyRunningError", () => {
-    const error = { _tag: "DaemonAlreadyRunningError", pid: 12_345 };
-    const result = formatUserError(error);
-    expect(result).toBe("Daemon is already running (PID: 12345).");
-  });
-
-  test("formats DaemonNotRunningError", () => {
-    const error = { _tag: "DaemonNotRunningError" };
-    const result = formatUserError(error);
-    expect(result).toBe("No daemon is currently running.");
-  });
-
-  test("formats DaemonStartError", () => {
-    const error = { _tag: "DaemonStartError", message: "Spawn failed" };
-    const result = formatUserError(error);
-    expect(result).toBe("Failed to start daemon: Spawn failed");
-  });
-
-  test("formats RepoNotFoundError", () => {
-    const error = { _tag: "RepoNotFoundError", alias: "test-repo" };
-    const result = formatUserError(error);
-    expect(result).toContain("test-repo");
-    expect(result).toContain("not found");
-  });
-
-  test("formats RepoAlreadyExistsError", () => {
-    const error = { _tag: "RepoAlreadyExistsError", alias: "test-repo" };
-    const result = formatUserError(error);
-    expect(result).toContain("already exists");
-  });
-
-  test("formats GitOperationError", () => {
-    const error = { _tag: "GitOperationError", message: "clone failed" };
-    const result = formatUserError(error);
-    expect(result).toContain("Git error");
-  });
-
-  test("formats ShelffileNotFoundError", () => {
-    const error = { _tag: "ShelffileNotFoundError", path: "/tmp/shelffile" };
-    const result = formatUserError(error);
-    expect(result).toContain("No shelffile found");
-  });
-
-  test("returns null for unknown error types", () => {
-    const error = { _tag: "SomeRandomError" };
+describe("formatUserError: anything else returns null", () => {
+  test.each([
+    ["an unknown tag", { _tag: "SomeRandomError" }],
+    ["a tag named after an Object.prototype method", { _tag: "toString" }],
+    ["a tag named after Object.prototype.constructor", { _tag: "constructor" }],
+    ["a plain Error", new Error("plain error")],
+    ["an object without _tag", { message: "no tag" }],
+    ["null", null],
+    ["undefined", undefined],
+    ["a string", "some error"],
+    ["a number", 42],
+  ])("%s", (_label, error) => {
     expect(formatUserError(error)).toBeNull();
-  });
-
-  test("returns null for non-tagged errors", () => {
-    expect(formatUserError(new Error("plain error"))).toBeNull();
-  });
-
-  test("returns null for null", () => {
-    expect(formatUserError(null)).toBeNull();
-  });
-
-  test("returns null for undefined", () => {
-    expect(formatUserError(undefined)).toBeNull();
-  });
-
-  test("returns null for string", () => {
-    expect(formatUserError("some error")).toBeNull();
   });
 });
