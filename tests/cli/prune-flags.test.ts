@@ -4,7 +4,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
@@ -123,4 +123,28 @@ describe("shelf prune flags", () => {
       await chmod(trash, 0o755);
     }
   });
+
+  test.skipIf(runningAsRoot)(
+    "--force warns about trash its own removes couldn't delete",
+    async () => {
+      await dropFromShelffile();
+      const repos = join(shelf.home, "repos");
+      // A read-only repo folder can be moved aside, but its files not deleted.
+      await chmod(join(repos, "dropped"), 0o555);
+      let trash: string[] = [];
+      try {
+        const result = await shelf.run(["prune", "--force"]);
+        trash = (await readdir(repos)).filter((name) => name.startsWith(".shelf-trash-dropped-"));
+
+        expect(result.exitCode).toBe(0);
+        expect(result.output).toContain('Removed "dropped"');
+        expect(trash).toHaveLength(1);
+        expect(result.stderr).toContain(
+          `Warning: could not delete ${join(repos, trash[0]!)}: EACCES`,
+        );
+      } finally {
+        await Promise.all(trash.map((name) => chmod(join(repos, name), 0o755)));
+      }
+    },
+  );
 });

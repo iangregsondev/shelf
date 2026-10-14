@@ -3,7 +3,7 @@ import * as Console from "effect/Console";
 import { Argument, Command } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
-import { trashLeftWarning } from "../error-handler";
+import { trashLeftWarning } from "../warnings";
 
 const aliasOrUrl = Argument.String("alias-or-url");
 

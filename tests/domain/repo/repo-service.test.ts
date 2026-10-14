@@ -1209,6 +1209,38 @@ describe("RepoService.remove, orphans and failures", () => {
     expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
   });
 
+  test("trash cleared while the config write fails can't take the folder it moves back", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    // Another remove or prune clears trash just as this remove's write fails.
+    let service: RepoService["Service"] | undefined;
+    const layer = buildRepoLayer({
+      load: () => Effect.succeed(configOf(entry("lib"))),
+      save: () =>
+        service!
+          .clearTrash()
+          .pipe(Effect.andThen(Effect.fail(new ConfigWriteError({ message: "disk full" })))),
+    });
+    const error = await failureOf((repo) => {
+      service = repo;
+      return repo.remove("lib");
+    }, layer);
+    expect(error).toMatchObject({ _tag: "ConfigWriteError" });
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+    expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+  });
+
+  test("a failed config write after the add moves its clone into place leaves no folder", async () => {
+    const layer = buildRepoLayer({
+      save: () => Effect.fail(new ConfigWriteError({ message: "disk full" })),
+    });
+    const error = await failureOf(
+      (repo) => repo.add({ url: "https://github.com/test/lib.git" }),
+      layer,
+    );
+    expect(error).toMatchObject({ _tag: "ConfigWriteError" });
+    expect(await readdir(reposDir)).toEqual([]);
+  });
+
   test("clears trash left by an earlier remove", async () => {
     await writeText(join(reposDir, "lib", "lib.ts"), "code");
     await writeText(join(reposDir, ".shelf-trash-old-1234", "old.ts"), "old");

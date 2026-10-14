@@ -40,7 +40,7 @@ Repos on the shelf are caches: sync force-checks out the pinned ref and discards
 
 `shelf remove <alias>` also cleans up an orphan folder: a folder under `repos/` with no config entry.
 
-`shelf remove` first moves the repo folder aside to `repos/.shelf-trash-<alias>-<id>/`, then drops the config entry, then deletes the moved folder. If the move fails, nothing changes. If the delete fails, the repo is still removed from the shelf: shelf warns and leaves the trash folder, and the next `shelf remove` or `shelf prune` (without `--dry-run`) deletes it.
+`shelf remove` first moves the repo folder aside, then drops the config entry, then renames the moved folder to trash (`repos/.shelf-trash-<alias>-<id>/`) and deletes it. If the move fails, nothing changes; if the config can't be saved, the folder is moved back. If the delete fails, the repo is still removed from the shelf: shelf warns and leaves the trash folder, and the next `shelf remove` or `shelf prune` (without `--dry-run`) deletes it.
 
 `shelf add` clones into `repos/.shelf-add-<alias>-<id>/` and moves the clone into place once it is done, so a half-made clone never shows up as a repo.
 

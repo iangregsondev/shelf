@@ -22,6 +22,14 @@ _Avoid_: dependency, package, entry
 The unique name a reference repo goes by on the shelf; also its folder name, so it is a single safe path segment.
 _Avoid_: name, id, slug
 
+**Orphan folder**:
+A folder in the repos folder named like an alias but with no config entry; it blocks `add` under that alias, and `remove` deletes it.
+_Avoid_: stray folder, leftover
+
+**Trash**:
+The folder of a removed reference repo, renamed aside (`.shelf-trash-…`) and waiting to be deleted; `remove` and `prune` delete it.
+_Avoid_: bin, garbage
+
 **Shorthand**:
 A short way of naming a repo that shelf expands to a full git URL, such as `owner/repo`, `github:owner/repo` or a known package name.
 _Avoid_: short name, slug
@@ -70,5 +78,5 @@ The shelf's record of which projects have installed from a shelffile, used to te
 _Avoid_: index, project list
 
 **Prune**:
-Removing reference repos that no registered project's shelffile references.
+Removing reference repos that no registered project's shelffile references, and deleting any trash.
 _Avoid_: cleanup, gc
