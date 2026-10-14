@@ -10,7 +10,7 @@ import { ConfigService } from "../config/config-service";
 import { GitService } from "../git/git-service";
 import { SyncService } from "../sync/sync-service";
 import { AutoPinResolutionError, RepoAlreadyExistsError, RepoNotFoundError } from "./repo-errors";
-import { deriveAlias } from "./repo-utils";
+import { checkAlias, deriveAlias } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
 
 const errorCode = (error: unknown): string | undefined =>
@@ -32,8 +32,8 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				depth: Option.Option<number>,
 				sparse: Option.Option<ReadonlyArray<string>>,
 			) {
+				const resolvedAlias = yield* checkAlias(Option.getOrElse(alias, () => deriveAlias(url)));
 				yield* config.ensureDirectories();
-				const resolvedAlias = Option.getOrElse(alias, () => deriveAlias(url));
 				const cfg = yield* config.load();
 				if (cfg.repos.some((r: RepoEntry) => r.alias === resolvedAlias)) {
 					return yield* new RepoAlreadyExistsError({ alias: resolvedAlias });

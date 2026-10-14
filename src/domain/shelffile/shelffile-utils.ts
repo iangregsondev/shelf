@@ -2,6 +2,7 @@ import * as Option from "effect/Option";
 import { RepoPin } from "../config/config-schema";
 import type { Shelffile, ShelffileEntry } from "./shelffile-schema";
 import { ShelffileParseError } from "./shelffile-errors";
+import { aliasProblem } from "../repo/repo-utils";
 
 export const parseShelffilePin = (raw: string): RepoPin => {
 	if (!raw.startsWith("pin:")) {
@@ -32,6 +33,12 @@ export const parseShelffileLine = (line: string, lineNumber: number): ShelffileE
 		});
 	}
 	const alias = parts[0] as string;
+	const problem = aliasProblem(alias);
+	if (problem !== undefined) {
+		throw new ShelffileParseError({
+			message: `Line ${lineNumber}: invalid alias "${alias}": ${problem}`,
+		});
+	}
 	const url = parts[1] as string;
 	let pin: Option.Option<RepoPin> = Option.none();
 	if (parts.length >= 3) {

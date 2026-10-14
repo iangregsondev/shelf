@@ -5,6 +5,7 @@ import * as Context from "effect/Context";
 import { join } from "node:path";
 import { ConfigService } from "../config/config-service";
 import { lookupBuiltin } from "../resolve/resolve-utils";
+import { deriveAlias } from "../repo/repo-utils";
 import { DetectedRepo } from "./detect-schema";
 import {
 	parsePackageJson,
@@ -73,14 +74,16 @@ export class DetectService extends Context.Service<DetectService>()(
 					if (Option.isSome(pkgContent)) {
 						const deps = parsePackageJson(pkgContent.value);
 						for (const dep of deps) {
+							// `@scope/name` can't be a folder name; the alias is `scope-name`.
+							const alias = deriveAlias(dep.name);
 							const registryUrl = lookupBuiltin(dep.name);
 							if (registryUrl) {
 								detected.push(
 									new DetectedRepo({
-										name: dep.name,
+										name: alias,
 										url: registryUrl,
 										source: "npm",
-										alreadyShelved: shelvedAliases.has(dep.name) || shelvedUrls.has(registryUrl),
+										alreadyShelved: shelvedAliases.has(alias) || shelvedUrls.has(registryUrl),
 									}),
 								);
 								continue;
@@ -89,10 +92,10 @@ export class DetectService extends Context.Service<DetectService>()(
 							if (Option.isSome(npmUrl)) {
 								detected.push(
 									new DetectedRepo({
-										name: dep.name,
+										name: alias,
 										url: npmUrl.value,
 										source: "npm",
-										alreadyShelved: shelvedAliases.has(dep.name) || shelvedUrls.has(npmUrl.value),
+										alreadyShelved: shelvedAliases.has(alias) || shelvedUrls.has(npmUrl.value),
 									}),
 								);
 							}
@@ -107,14 +110,14 @@ export class DetectService extends Context.Service<DetectService>()(
 						for (const dep of deps) {
 							const goUrl = resolveGoModule(dep.name);
 							if (Option.isSome(goUrl)) {
+								// `.../chi/v5` is named `chi`, not `v5`.
+								const alias = deriveAlias(dep.name);
 								detected.push(
 									new DetectedRepo({
-										name: dep.name.split("/").pop() ?? dep.name,
+										name: alias,
 										url: goUrl.value,
 										source: "go",
-										alreadyShelved:
-											shelvedAliases.has(dep.name.split("/").pop() ?? dep.name) ||
-											shelvedUrls.has(goUrl.value),
+										alreadyShelved: shelvedAliases.has(alias) || shelvedUrls.has(goUrl.value),
 									}),
 								);
 							}
