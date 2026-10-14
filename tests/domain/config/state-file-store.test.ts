@@ -165,6 +165,29 @@ describe("state file store on disk", () => {
       expect(await readdir(dir)).toEqual([]);
     });
 
+    test("takes over a lock naming this process's own PID, left by an earlier process that had it", async () => {
+      // In a container shelf often runs as the same PID every time, so a
+      // crashed run's lock can name this process. No fiber here holds it
+      // (they take turns first), so it can only be left over.
+      await writeFile(lockPath, String(process.pid));
+      expect(await run(Effect.succeed("ran"))).toBe("ran");
+      expect(await exists(lockPath)).toBe(false);
+    }, 5000);
+
+    test("stops waiting at once when interrupted while another live process holds the lock", async () => {
+      await writeFile(lockPath, "1");
+      const started = Date.now();
+      const result = await Effect.runPromise(
+        Effect.succeed("ran").pipe(
+          withStateFileLock(statePath, onError),
+          Effect.timeoutOption("100 millis"),
+        ),
+      );
+      expect(result._tag).toBe("None");
+      expect(Date.now() - started).toBeLessThan(2000);
+      expect(await readFile(lockPath, "utf8")).toBe("1");
+    }, 5000);
+
     test("takes over an empty lock file older than five seconds", async () => {
       await writeFile(lockPath, "");
       const old = new Date(Date.now() - 10_000);

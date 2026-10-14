@@ -17,9 +17,16 @@ export class ShelffileService extends Context.Service<ShelffileService>()(
       return {
         read: Effect.fn("ShelffileService.read")(function* (dir: string) {
           const filePath = join(dir, SHELFFILE_NAME);
+          // `exists` gives false only when nothing is there; a failure (say, a
+          // folder that can't be searched) means the file can't be read, not
+          // that it is missing, so prune keeps the repos it might reference.
           const fileExists = yield* fs
             .exists(filePath)
-            .pipe(Effect.mapError(() => new ShelffileNotFoundError({ path: filePath })));
+            .pipe(
+              Effect.mapError(
+                () => new ShelffileParseError({ message: `Failed to read ${filePath}` }),
+              ),
+            );
           if (!fileExists) {
             return yield* new ShelffileNotFoundError({ path: filePath });
           }

@@ -4,7 +4,7 @@ import * as Option from "effect/Option";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { UnknownAgentError } from "../../../src/domain/skill/skill-errors";
+import { SkillWriteError, UnknownAgentError } from "../../../src/domain/skill/skill-errors";
 import { SkillService } from "../../../src/domain/skill/skill-service";
 import { skillTemplate } from "../../../src/domain/skill/skill-template";
 import { readText, writeText } from "../../helpers/files";
@@ -64,12 +64,17 @@ describe("SkillService.install", () => {
     },
   );
 
-  test("fails when the skill folder cannot be created", async () => {
+  test("fails with SkillWriteError naming the skill file when its folder cannot be created", async () => {
     // A file stands where the project folder should be.
     const blocker = join(projectDir, "blocker");
     await writeText(blocker, "");
-    const exit = await Effect.runPromiseExit(runInstall(blocker, Option.none()));
-    expect(exit._tag).toBe("Failure");
+    const error = await installError(blocker, Option.none());
+    expect(error).toBeInstanceOf(SkillWriteError);
+    expect(error).toMatchObject({
+      _tag: "SkillWriteError",
+      path: join(blocker, ".agents/skills/shelf/SKILL.md"),
+      message: expect.stringContaining("ENOTDIR"),
+    });
   });
 
   test("replaces an existing skill file", async () => {

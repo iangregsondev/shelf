@@ -103,6 +103,17 @@ describe("shelf init skill file", () => {
     },
   );
 
+  test("a skill file it can't write fails with one clear line, not a stack trace", async () => {
+    // A file stands where the .agents folder should be.
+    await writeText(join(project, ".agents"), "");
+    const result = await shelf.run(["init", "--no-detect"], { cwd: project });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      `Could not write the skill file ${join(project, ".agents/skills/shelf/SKILL.md")}`,
+    );
+    expect(result.stderr).not.toMatch(/^\s+at /m);
+  });
+
   test("--no-detect writes the skill and skips detection", async () => {
     await writeText(
       join(project, "package.json"),

@@ -77,6 +77,14 @@ describe("formatUserError: known error tags", () => {
       { _tag: "UnknownAgentError", agent: "claud", known: ["claude", "opencode", "gemini"] },
       'Unknown agent "claud". Expected one of: claude, opencode, gemini',
     ],
+    [
+      {
+        _tag: "SkillWriteError",
+        path: "/project/.agents/skills/shelf/SKILL.md",
+        message: "permission denied",
+      },
+      "Could not write the skill file /project/.agents/skills/shelf/SKILL.md: permission denied",
+    ],
   ])("formats $_tag", (error, expected) => {
     expect(formatUserError(error)).toBe(expected);
   });

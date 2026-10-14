@@ -62,6 +62,16 @@ describe("shelf config syncIntervalMinutes", () => {
   });
 });
 
+describe("shelf config version <value>", () => {
+  test("fails with exit 1, says version is read-only, and keeps it", async () => {
+    const result = await shelf.run(["config", "version", "2"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("version is read-only");
+    expect(result.stderr).not.toContain("Unknown config key");
+    expect((await shelf.run(["config", "version"])).stdout.trim()).toBe("1");
+  });
+});
+
 describe("shelf config <unknown key>", () => {
   test.each([[["config", "nope"]], [["config", "nope", "5"]]])(
     "%j fails with exit 1 and names the key",

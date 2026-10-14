@@ -1,8 +1,12 @@
 import { describe, test, expect } from "vite-plus/test";
+import * as Option from "effect/Option";
+import { RepoPin } from "../../../src/domain/config/config-schema";
 import { aliasProblem } from "../../../src/domain/config/config-utils";
 import {
   declaredVersion,
   deriveAlias,
+  describeLastSynced,
+  describePin,
   parsePin,
   pinFromRemoteRefs,
 } from "../../../src/domain/repo/repo-utils";
@@ -210,5 +214,31 @@ describe("declaredVersion", () => {
 
   test("is undefined for a null manifest", () => {
     expect(declaredVersion(null, "react")).toBeUndefined();
+  });
+});
+
+describe("describePin", () => {
+  test("names the default branch for an unpinned repo", () => {
+    expect(describePin(Option.none())).toBe("(default branch)");
+  });
+
+  test.each([
+    ["branch", "main", "branch:main"],
+    ["tag", "v1.2.3", "tag:v1.2.3"],
+    ["commit", "abc1234", "commit:abc1234"],
+  ] as const)("gives a %s pin as type:value", (type, value, expected) => {
+    expect(describePin(Option.some(new RepoPin({ type, value })))).toBe(expected);
+  });
+});
+
+describe("describeLastSynced", () => {
+  test("says never for a repo that has not synced", () => {
+    expect(describeLastSynced(Option.none())).toBe("never");
+  });
+
+  test("gives the sync time as stored", () => {
+    expect(describeLastSynced(Option.some("2026-01-01T00:00:00.000Z"))).toBe(
+      "2026-01-01T00:00:00.000Z",
+    );
   });
 });

@@ -27,7 +27,9 @@ Unknown bare names fall back to a GitHub API search by stars.
 
 - `--pin branch:<name>` — track a branch (auto-syncs)
 - `--pin tag:<name>` — pin to a tag
-- `--pin <commit-hash>` — pin to a specific commit
+- `--pin commit:<hash>` — pin to a specific commit (a short hash of 4 or more hex characters works)
+- `--pin <40-char-hash>` — the same, for a full commit hash
+- `--pin <name>` — a bare name: a tag of that name if the remote has one, else a branch
 - `--pin auto` — resolve version from `package.json` dependencies
 
 ### Clone behavior

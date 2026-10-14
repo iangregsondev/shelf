@@ -47,6 +47,10 @@ export const configCommand = Command.make("config", { key, value }, (args) =>
         (current) => new ShelfConfig({ ...current, syncIntervalMinutes: num }),
       );
       yield* Console.log(`Set syncIntervalMinutes = ${num}`);
+    } else if (k === "version") {
+      return yield* new InvalidConfigValueError({
+        message: "version is read-only: it is the config file format, which shelf sets",
+      });
     } else {
       return yield* new UnknownConfigKeyError({ key: k });
     }

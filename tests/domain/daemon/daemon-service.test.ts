@@ -528,5 +528,10 @@ describe("DaemonService", () => {
       await writeFile(logPath(), "line 1\nline 2\nline 3\n");
       expect(await runOk((daemon) => daemon.logs(50))).toBe("line 1\nline 2\nline 3");
     });
+
+    test.each([0, -2])("returns no lines when asked for %i, like tail -n 0", async (n) => {
+      await writeFile(logPath(), "line 1\nline 2\nline 3\n");
+      expect(await runOk((daemon) => daemon.logs(n))).toBe("");
+    });
   });
 });

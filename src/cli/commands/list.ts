@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
-import * as Option from "effect/Option";
 import { Command } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
+import { describeLastSynced, describePin } from "../../domain/repo/repo-utils";
 import { ConfigService } from "../../domain/config/config-service";
 import type { RepoEntry } from "../../domain/config/config-schema";
 
@@ -16,15 +16,9 @@ export const listCommand = Command.make("list", {}, () =>
       return;
     }
     for (const r of repos as ReadonlyArray<RepoEntry>) {
-      const pinStr = Option.match(r.pin, {
-        onNone: () => "(default branch)",
-        onSome: (p) => `${p.type}:${p.value}`,
-      });
-      const syncStr = Option.match(r.lastSyncedAt, {
-        onNone: () => "never",
-        onSome: (s: string) => s,
-      });
-      yield* Console.log(`  ${r.alias} — ${r.url} [${pinStr}] (synced: ${syncStr})`);
+      yield* Console.log(
+        `  ${r.alias} — ${r.url} [${describePin(r.pin)}] (synced: ${describeLastSynced(r.lastSyncedAt)})`,
+      );
       const path = yield* config
         .repoPath(r.alias)
         .pipe(Effect.orElseSucceed(() => "(invalid alias: rename it in config.json)"));

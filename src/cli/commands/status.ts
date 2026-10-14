@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
-import * as Option from "effect/Option";
 import { Command } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
+import { describeLastSynced, describePin } from "../../domain/repo/repo-utils";
 import { RegistryService } from "../../domain/registry/registry-service";
 import { ShelffileService } from "../../domain/shelffile/shelffile-service";
 import type { RepoEntry } from "../../domain/config/config-schema";
@@ -33,18 +33,12 @@ export const statusCommand = Command.make("status", {}, () =>
     }
     const manualSet = new Set(reg.manual);
     for (const r of repos as ReadonlyArray<RepoEntry>) {
-      const pinStr = Option.match(r.pin, {
-        onNone: () => "(default branch)",
-        onSome: (p) => `${p.type}:${p.value}`,
-      });
-      const syncStr = Option.match(r.lastSyncedAt, {
-        onNone: () => "never",
-        onSome: (s: string) => s,
-      });
       const { sizeBytes } = yield* repo.folder(r.alias);
       const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
       yield* Console.log(`  ${r.alias} — ${r.url}`);
-      yield* Console.log(`    Pin: ${pinStr}  |  Synced: ${syncStr}  |  Size: ${sizeMb} MB`);
+      yield* Console.log(
+        `    Pin: ${describePin(r.pin)}  |  Synced: ${describeLastSynced(r.lastSyncedAt)}  |  Size: ${sizeMb} MB`,
+      );
       const refs: string[] = [];
       if (manualSet.has(r.alias)) refs.push("manual");
       const projects = refMap.get(r.alias);

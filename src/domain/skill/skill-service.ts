@@ -4,7 +4,8 @@ import * as Context from "effect/Context";
 import * as Option from "effect/Option";
 import { FileSystem } from "effect/FileSystem";
 import { join } from "node:path";
-import { UnknownAgentError } from "./skill-errors";
+import { osErrorMessage } from "../config/config-utils";
+import { SkillWriteError, UnknownAgentError } from "./skill-errors";
 import { skillTemplate } from "./skill-template";
 import { defaultSkillDir, knownAgents, resolveSkillDir } from "./skill-utils";
 
@@ -34,8 +35,12 @@ export class SkillService extends Context.Service<SkillService>()(
           }
           const skillDir = join(projectDir, relativeDir);
           const skillPath = join(skillDir, "SKILL.md");
-          yield* fs.makeDirectory(skillDir, { recursive: true });
-          yield* fs.writeFileString(skillPath, skillTemplate);
+          yield* fs.makeDirectory(skillDir, { recursive: true }).pipe(
+            Effect.andThen(fs.writeFileString(skillPath, skillTemplate)),
+            Effect.mapError(
+              (error) => new SkillWriteError({ path: skillPath, message: osErrorMessage(error) }),
+            ),
+          );
           return skillPath;
         }),
       };

@@ -1,5 +1,17 @@
+import * as Option from "effect/Option";
 import { RepoPin } from "../config/config-schema";
 import { ALIAS_MAX_LENGTH, aliasProblem } from "../config/config-utils";
+
+/** A repo's pin as the CLI shows it: `type:value`, or `(default branch)` when unpinned. */
+export const describePin = (pin: Option.Option<RepoPin>): string =>
+  Option.match(pin, {
+    onNone: () => "(default branch)",
+    onSome: (p) => `${p.type}:${p.value}`,
+  });
+
+/** When a repo last synced, as the CLI shows it: the stored time, or `never`. */
+export const describeLastSynced = (lastSyncedAt: Option.Option<string>): string =>
+  Option.getOrElse(lastSyncedAt, () => "never");
 
 const FALLBACK_ALIAS = "repo";
 const SCOPED_PACKAGE_PATTERN = /^@([^/]+)\/([^/]+)$/;

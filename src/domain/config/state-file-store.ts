@@ -65,7 +65,9 @@ const isLockStale = async (lockPath: string): Promise<boolean> => {
     throw error;
   }
   const pid = parseLockPid(content);
-  if (pid !== undefined) return !isProcessAlive(pid);
+  // Fibers in this process take turns before touching the lock file, so a lock
+  // naming this PID was left by an earlier process that had the same PID.
+  if (pid !== undefined) return pid === process.pid || !isProcessAlive(pid);
   // No PID yet: the owner may be mid-write, or crashed before writing one.
   try {
     const info = await stat(lockPath);
@@ -135,7 +137,9 @@ const acquireLockFile = <E>(
         if (Date.now() > deadline) {
           return yield* Effect.fail(fail(new Error("timed out waiting for another shelf process")));
         }
-        yield* Effect.sleep(Duration.millis(10 + Math.random() * 40));
+        // This runs as acquireUseRelease's uninterruptible acquire; no lock is
+        // held while waiting, so let an interrupt (Ctrl+C) end the wait.
+        yield* Effect.interruptible(Effect.sleep(Duration.millis(10 + Math.random() * 40)));
       }
     }
   });

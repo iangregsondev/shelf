@@ -31,6 +31,8 @@ const errorMessages: Record<string, (error: Record<string, unknown>) => string> 
     const known = Array.isArray(e["known"]) ? e["known"].map(String).join(", ") : "";
     return `Unknown agent "${String(e["agent"])}". Expected one of: ${known}`;
   },
+  SkillWriteError: (e) =>
+    `Could not write the skill file ${String(e["path"])}: ${String(e["message"])}`,
   DaemonAlreadyRunningError: (e) => `Daemon is already running (PID: ${String(e["pid"])}).`,
   DaemonNotRunningError: () => `No daemon is currently running.`,
   DaemonStartError: (e) => `Failed to start daemon: ${String(e["message"])}`,

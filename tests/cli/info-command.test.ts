@@ -44,6 +44,17 @@ describe("shelf info", () => {
     expect(result.stdout).toMatch(/\nContents:\n {2}file\.txt\n$/);
   });
 
+  test("leaves out the Contents heading when the folder holds only hidden entries", async () => {
+    expect((await shelf.run(["add", remote.url, "--alias", "lib"])).exitCode).toBe(0);
+    // Only .git is left.
+    await rm(join(shelf.home, "repos", "lib", "file.txt"));
+
+    const result = await shelf.run(["info", "lib"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).not.toContain("Contents:");
+  });
+
   test("an unknown alias fails with a clear error and exit 1", async () => {
     const result = await shelf.run(["info", "missing"]);
 

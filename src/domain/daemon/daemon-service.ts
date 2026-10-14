@@ -318,7 +318,8 @@ export class DaemonService extends Context.Service<DaemonService>()(
           if (!content) return "No daemon logs found.";
           // Drop the final newline, or the empty string after it counts as a line.
           const allLines = content.replace(/\n$/, "").split("\n");
-          return allLines.slice(-lines).join("\n");
+          // slice(-0) is slice(0), the whole log: 0 or fewer lines gives none, like `tail -n 0`.
+          return lines > 0 ? allLines.slice(-lines).join("\n") : "";
         }),
       };
     }),

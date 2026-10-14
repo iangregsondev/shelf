@@ -147,6 +147,27 @@ describe("prune", () => {
       }
     },
   );
+
+  test.skipIf(runningAsRoot)(
+    "deletes nothing when a project folder can be seen but not searched, and warns",
+    async () => {
+      const locked = await makeProject("locked", `lib-locked ${remote.url}\n`);
+      expect((await shelf.run(["install", "--dir", locked])).exitCode).toBe(0);
+      // Readable and writable, but no search (x) bit: stat works, the shelffile can't be checked.
+      await chmod(locked, 0o600);
+
+      try {
+        const result = await shelf.run(["prune", "--force"]);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toContain(join(locked, "shelffile"));
+        expect(result.output).toContain("Not removing any repos");
+        expect(await repoExists("lib-locked")).toBe(true);
+      } finally {
+        await chmod(locked, 0o755);
+      }
+    },
+  );
 });
 
 describe("install --dir", () => {

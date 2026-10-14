@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
-import * as Option from "effect/Option";
 import { Argument, Command } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
+import { describeLastSynced, describePin } from "../../domain/repo/repo-utils";
 import { RegistryService } from "../../domain/registry/registry-service";
 import { ShelffileService } from "../../domain/shelffile/shelffile-service";
 import { RepoNotFoundError } from "../../domain/repo/repo-errors";
@@ -22,20 +22,12 @@ export const infoCommand = Command.make("info", { alias }, (config) =>
     }
     const folder = yield* repo.folder(entry.alias);
     const repoDir = folder.path;
-    const pinStr = Option.match(entry.pin, {
-      onNone: () => "(default branch)",
-      onSome: (p) => `${p.type}:${p.value}`,
-    });
-    const syncStr = Option.match(entry.lastSyncedAt, {
-      onNone: () => "never",
-      onSome: (s: string) => s,
-    });
     const sizeMb = (folder.sizeBytes / (1024 * 1024)).toFixed(1);
     yield* Console.log(`Alias:       ${entry.alias}`);
     yield* Console.log(`URL:         ${entry.url}`);
-    yield* Console.log(`Pin:         ${pinStr}`);
+    yield* Console.log(`Pin:         ${describePin(entry.pin)}`);
     yield* Console.log(`Added:       ${entry.addedAt}`);
-    yield* Console.log(`Last synced: ${syncStr}`);
+    yield* Console.log(`Last synced: ${describeLastSynced(entry.lastSyncedAt)}`);
     yield* Console.log(`Disk size:   ${sizeMb} MB`);
     yield* Console.log(`Path:        ${repoDir}`);
     if (!folder.exists) {
@@ -59,10 +51,11 @@ export const infoCommand = Command.make("info", { alias }, (config) =>
     yield* refs.length > 0
       ? Console.log(`Referenced:  ${refs.join(", ")}`)
       : Console.log(`Referenced:  none (candidate for \`shelf prune\`)`);
-    // Top-level directory listing
-    if (folder.contents.length > 0) {
+    // Top-level directory listing, leaving out hidden entries such as .git
+    const visible = folder.contents.filter((i) => !i.startsWith("."));
+    if (visible.length > 0) {
       yield* Console.log(`\nContents:`);
-      for (const item of folder.contents.filter((i) => !i.startsWith("."))) {
+      for (const item of visible) {
         yield* Console.log(`  ${item}`);
       }
     }

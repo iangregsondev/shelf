@@ -44,15 +44,17 @@ describe("ShelffileService", () => {
     });
 
     test.skipIf(runningAsRoot)(
-      "fails with ShelffileNotFoundError when the folder cannot be searched",
+      "fails with ShelffileParseError, not ShelffileNotFoundError, when the folder cannot be searched",
       async () => {
         const locked = join(tempDir, "locked");
         await mkdir(locked);
         await chmod(locked, 0o000);
         try {
           const error = await runError(read(join(locked, "inner")));
-          expect(error._tag).toBe("ShelffileNotFoundError");
-          expect(error).toMatchObject({ path: join(locked, "inner", "shelffile") });
+          expect(error._tag).toBe("ShelffileParseError");
+          expect(error).toMatchObject({
+            message: `Failed to read ${join(locked, "inner", "shelffile")}`,
+          });
         } finally {
           await chmod(locked, 0o755);
         }
