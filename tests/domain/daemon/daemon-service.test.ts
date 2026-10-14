@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DaemonService } from "../../../src/domain/daemon/daemon-service";
+import { DaemonEntry, DaemonService } from "../../../src/domain/daemon/daemon-service";
 import { DaemonState, encodeDaemonState } from "../../../src/domain/daemon/daemon-schema";
 import { ConfigService } from "../../../src/domain/config/config-service";
 import { defaultConfig } from "../../../src/domain/config/config-schema";
@@ -15,6 +15,9 @@ import { PlatformLayer } from "../../helpers/platform";
 import { SHELF_VERSION } from "../../../src/version";
 import { readJson } from "../../helpers/files";
 import { existsSync } from "node:fs";
+
+/** The daemon entry point the test run built into the repo's `dist` (see tests/global-setup.ts). */
+const BUILT_DAEMON_ENTRY = join(import.meta.dirname, "../../../dist/daemon.mjs");
 
 describe("DaemonService", () => {
   let tempDir: string;
@@ -37,7 +40,11 @@ describe("DaemonService", () => {
         configPath: join(tempDir, "config.json"),
       }),
     );
-    return DaemonService.layer.pipe(Layer.provide(configLayer), Layer.provide(PlatformLayer));
+    return DaemonService.layer.pipe(
+      Layer.provide(configLayer),
+      Layer.provide(Layer.succeed(DaemonEntry, BUILT_DAEMON_ENTRY)),
+      Layer.provide(PlatformLayer),
+    );
   };
 
   /** Starts a real daemon in this test's shelf home and records its PID for cleanup. */

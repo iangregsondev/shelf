@@ -43,42 +43,47 @@ const stopTimeoutMs = (): number => {
 };
 const POLL_MS = 50;
 /**
- * The daemon process's entry point, the built `daemon.mjs`; status and stop
- * recognise it by this file. Bundled, this code sits in `dist` next to it. Run
- * from source (the tests), it uses the one built into the repo's `dist`.
+ * The path of the daemon process's entry point, the built `daemon.mjs`;
+ * status and stop recognise the daemon by this file. The default is the one
+ * next to this code, as bundled into `dist`. Code run from source (the tests)
+ * provides the path of a built `daemon.mjs` instead.
  */
-const DAEMON_ENTRY = fileURLToPath(
-  new URL(
-    import.meta.url.endsWith(".ts") ? "../../../dist/daemon.mjs" : "./daemon.mjs",
-    import.meta.url,
-  ),
-);
-/** The command line of a daemon started with `token`. */
-const daemonCommand = (token: string): string[] => [
-  process.execPath,
-  DAEMON_ENTRY,
-  "--token",
-  token,
-];
+export const DaemonEntry = Context.Reference<string>("shelf/domain/daemon/DaemonEntry", {
+  defaultValue: () => fileURLToPath(new URL("./daemon.mjs", import.meta.url)),
+});
+
+/** Where the daemon's stdout and stderr go: appended to the log file, or this terminal. */
+type DaemonOutput = { readonly log: string } | "terminal";
 
 /**
- * The background daemon's launch command: `sh` points the daemon's stdout and
- * stderr at the log, appending so the log survives restarts until rotated,
- * then `exec`s the daemon so it keeps the same pid and command line.
+ * The command that launches a daemon started with `token`: `node <entry>
+ * --token <token>`, with `SHELF_DAEMON=1`. Logging to a file, `sh` points the
+ * daemon's stdout and stderr at the log, appending so the log survives
+ * restarts until rotated, then `exec`s the daemon so it keeps the same pid
+ * and command line, detached so it outlives this process.
  */
-const backgroundDaemonCommand = (token: string, logPath: string): ChildProcess.Command =>
-  ChildProcess.make(
+const daemonCommand = (
+  entry: string,
+  token: string,
+  output: DaemonOutput,
+): ChildProcess.Command => {
+  const args = [entry, "--token", token];
+  const env = { env: { SHELF_DAEMON: "1" }, extendEnv: true } as const;
+  if (output === "terminal") {
+    return ChildProcess.make(process.execPath, args, {
+      ...env,
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+      detached: false,
+    });
+  }
+  return ChildProcess.make(
     "/bin/sh",
-    ["-c", 'log="$1"; shift; exec "$@" >>"$log" 2>&1', "sh", logPath, ...daemonCommand(token)],
-    {
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "ignore",
-      detached: true,
-      env: { SHELF_DAEMON: "1" },
-      extendEnv: true,
-    },
+    ["-c", 'log="$1"; shift; exec "$@" >>"$log" 2>&1', "sh", output.log, process.execPath, ...args],
+    { ...env, stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true },
   );
+};
 
 /** The command line of a running process, or undefined if there is no such process. */
 const commandLineOf = (
@@ -132,6 +137,7 @@ export class DaemonService extends Context.Service<DaemonService>()(
       const fs = yield* FileSystem;
       const spawner = yield* ChildProcessSpawner;
       const config = yield* ConfigService;
+      const daemonEntry = yield* DaemonEntry;
       const statePath = daemonStatePath(config.shelfHome);
       const logPath = daemonLogPath(config.shelfHome);
 
@@ -183,7 +189,7 @@ export class DaemonService extends Context.Service<DaemonService>()(
           return yield* Effect.scoped(
             Effect.gen(function* () {
               const child = yield* spawner
-                .spawn(backgroundDaemonCommand(token, logPath))
+                .spawn(daemonCommand(daemonEntry, token, { log: logPath }))
                 .pipe(Effect.mapError(spawnError));
               // Unreferenced, the daemon outlives this process and the scope.
               yield* child.unref.pipe(Effect.mapError(spawnError));
@@ -234,20 +240,10 @@ export class DaemonService extends Context.Service<DaemonService>()(
             yield* removeState();
           }
           const token = generateToken();
-          const [command, ...args] = daemonCommand(token);
           yield* Effect.scoped(
             Effect.gen(function* () {
               const child = yield* spawner
-                .spawn(
-                  ChildProcess.make(command ?? process.execPath, args, {
-                    stdin: "inherit",
-                    stdout: "inherit",
-                    stderr: "inherit",
-                    detached: false,
-                    env: { SHELF_DAEMON: "1" },
-                    extendEnv: true,
-                  }),
-                )
+                .spawn(daemonCommand(daemonEntry, token, "terminal"))
                 .pipe(
                   Effect.mapError(
                     (err) =>
