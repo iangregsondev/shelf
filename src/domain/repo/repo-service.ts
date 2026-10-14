@@ -28,6 +28,8 @@ import {
   parsePin,
   parseTempName,
   pinFromRemoteRefs,
+  sameIgnoringCase,
+  settleDeadTemp,
   tempName,
   tempPrefix,
   type TempKind,
@@ -118,12 +120,11 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 
     /**
      * Settles dead temp folders: those of adds, removes and case-only
-     * renames whose process is gone. A dead remove's or rename's folder
-     * moves back to the repo folder of a config entry it belongs to, when
-     * that folder is missing (it died partway); every other one becomes
-     * trash. A folder that can't be moved comes back for
-     * a warning; the next remove or prune tries again. A PID from another
-     * PID namespace (a repos folder shared with a container) reads as gone.
+     * renames whose process is gone. Each moves back to a repo folder,
+     * becomes trash or is kept, by `settleDeadTemp`. A folder that can't
+     * be moved comes back for a warning; the next remove or prune tries
+     * again. A PID from another PID namespace (a repos folder shared with
+     * a container) reads as gone.
      */
     const settleDeadTempFolders = Effect.gen(function* () {
       const dead = (yield* listFolder(config.reposDir)).flatMap((name) => {
@@ -141,29 +142,24 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
       yield* config.update((current) =>
         Effect.gen(function* () {
           for (const temp of dead) {
-            // The entries this folder may belong back to: a remove's own
-            // alias, or a case-only rename's alias in either spelling (the
-            // config may hold the old one or the new one). An add's folder
-            // belongs to none: its entry is only saved once it is in place.
-            const owners = current.repos.filter((r: RepoEntry) =>
-              temp.kind === "removing"
-                ? r.alias === temp.alias
-                : temp.kind === "rename" && r.alias.toLowerCase() === temp.alias.toLowerCase(),
-            );
-            // It moves back only into an owner whose repo folder is missing.
-            let to: string | undefined;
-            for (const owner of owners) {
-              // A hand-edited alias may be unsafe; such an entry never gets a folder.
-              const repoDir = Option.getOrUndefined(
-                yield* config.repoPath(owner.alias).pipe(Effect.option),
-              );
-              if (repoDir !== undefined && !(yield* pathExists(repoDir))) {
-                to = repoDir;
-                break;
+            // Config entries this folder could belong back to: same alias,
+            // ignoring case, with no repo folder. A hand-edited alias may be
+            // unsafe; such an entry never gets a folder.
+            const missingFolders: string[] = [];
+            for (const r of current.repos) {
+              if (!sameIgnoringCase(r.alias, temp.alias)) continue;
+              const repoDir = yield* config.repoPath(r.alias).pipe(Effect.option);
+              if (Option.isSome(repoDir) && !(yield* pathExists(repoDir.value))) {
+                missingFolders.push(r.alias);
               }
             }
-            // Named from reposDir, not tempSibling, which an unsafe alias would break.
-            to ??= join(config.reposDir, tempName("trash", temp.alias, process.pid, randomUUID()));
+            const settlement = settleDeadTemp(temp, missingFolders);
+            if (settlement._tag === "Keep") continue;
+            const to =
+              settlement._tag === "MoveBack"
+                ? join(config.reposDir, settlement.alias)
+                : // Named from reposDir, not tempSibling, which an unsafe alias would break.
+                  join(config.reposDir, tempName("trash", temp.alias, process.pid, randomUUID()));
             yield* fs.rename(temp.path, to).pipe(
               Effect.catch((error) =>
                 Effect.sync(() => {
@@ -422,7 +418,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
         }
         // A case-only rename goes through a temp name, so the file system
         // can't treat it as a no-op.
-        const caseOnly = oldPath.toLowerCase() === newPath.toLowerCase();
+        const caseOnly = sameIgnoringCase(oldPath, newPath);
         const moveFolder = (src: string, dst: string) => {
           if (!caseOnly) {
             return fs.rename(src, dst);

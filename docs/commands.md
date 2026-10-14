@@ -44,7 +44,7 @@ Repos on the shelf are caches: sync force-checks out the pinned ref and discards
 
 `shelf add` clones into `repos/.shelf-add-<alias>-<pid>-<id>/` and moves the clone into place once it is done, so a half-made clone never shows up as a repo.
 
-If an add, a remove or a case-only `shelf alias` (`react` to `React`) is killed partway, its hidden folder names the process (`<pid>`) that made it. Once that process is gone, the next `shelf remove` or `shelf prune` (without `--dry-run`) moves it back or deletes it: a killed remove's or alias change's folder moves back when its repo is still in the config and has no folder, and anything else is deleted.
+If an add, a remove or a case-only `shelf alias` (`react` to `React`) is killed partway, its hidden folder names the process (`<pid>`) that made it. Once that process is gone, the next `shelf remove` or `shelf prune` (without `--dry-run`) moves it back or deletes it: a killed remove's or alias change's folder moves back when its repo is still in the config and has no folder, and anything else is deleted. The one exception: if a killed alias change's folder could belong to two repos whose aliases differ only in case (both without a folder), shelf leaves it in place for you to sort out.
 
 ## Detection
 
