@@ -1,16 +1,16 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { ConfigService } from "../../domain/config/config-service";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 import type { RepoEntry } from "../../domain/config/config-schema";
 
-const dryRun = Flag.boolean("dry-run").pipe(
+const dryRun = Flag.Boolean("dry-run").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription("Show what would be removed without removing"),
 );
-const force = Flag.boolean("force").pipe(
+const force = Flag.Boolean("force").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription("Actually remove unreferenced repos"),
 );
@@ -20,9 +20,24 @@ export const pruneCommand = Command.make("prune", { dryRun, force }, (config) =>
 		const registry = yield* RegistryService;
 		const repo = yield* RepoService;
 		const configService = yield* ConfigService;
-		const referenced = yield* registry.getReferencedAliases();
+		const scan = yield* registry.scanReferences();
+		if (!config.dryRun) {
+			yield* registry.dropProjects(scan.staleProjects);
+		}
+		for (const dir of scan.staleProjects) {
+			yield* Console.log(
+				`${config.dryRun ? "Would drop" : "Dropped"} stale project from the registry: ${dir}`,
+			);
+		}
+		for (const warning of scan.warnings) {
+			yield* Console.error(`Warning: ${warning}`);
+		}
+		if (scan.anyMightBeReferenced) {
+			yield* Console.log("Not removing any repos: fix the problems above, then prune again.");
+			return;
+		}
 		const cfg = yield* configService.load();
-		const unreferenced = cfg.repos.filter((r: RepoEntry) => !referenced.has(r.alias));
+		const unreferenced = cfg.repos.filter((r: RepoEntry) => !scan.aliases.has(r.alias));
 		if (unreferenced.length === 0) {
 			yield* Console.log("No unreferenced repos found.");
 			return;

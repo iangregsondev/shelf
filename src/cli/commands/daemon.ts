@@ -1,10 +1,10 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { DaemonService } from "../../domain/daemon/daemon-service";
 
-const startForeground = Flag.boolean("foreground").pipe(
+const startForeground = Flag.Boolean("foreground").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription("Run daemon in foreground (for debugging)"),
 );
@@ -14,11 +14,7 @@ const startCommand = Command.make("start", { foreground: startForeground }, (con
 		const daemon = yield* DaemonService;
 		if (config.foreground) {
 			yield* Console.log("Running daemon in foreground (Ctrl+C to stop)...");
-			const { daemonProgram } = yield* Effect.tryPromise({
-				try: () => import("../../domain/daemon/daemon-service"),
-				catch: (e) => new Error(`Failed to load daemon program: ${e}`),
-			});
-			yield* daemonProgram;
+			yield* daemon.runForeground();
 		} else {
 			const pid = yield* daemon.start();
 			yield* Console.log(`Daemon started (PID: ${pid})`);
@@ -53,7 +49,7 @@ const statusCommand = Command.make("status", {}, () =>
 	}),
 ).pipe(Command.withDescription("Show daemon status"));
 
-const logLines = Flag.integer("lines").pipe(
+const logLines = Flag.Int("lines").pipe(
 	Flag.withDefault(50),
 	Flag.withDescription("Number of log lines to show"),
 );
@@ -69,7 +65,8 @@ const logsCommand = Command.make("logs", { lines: logLines }, (config) =>
 const restartCommand = Command.make("restart", {}, () =>
 	Effect.gen(function* () {
 		const daemon = yield* DaemonService;
-		yield* daemon.stop().pipe(Effect.catch(() => Effect.void));
+		// Only "not running" is fine; a daemon still finishing its step must not get a twin.
+		yield* daemon.stop().pipe(Effect.catchTag("DaemonNotRunningError", () => Effect.void));
 		const pid = yield* daemon.start();
 		yield* Console.log(`Daemon restarted (PID: ${pid})`);
 	}),

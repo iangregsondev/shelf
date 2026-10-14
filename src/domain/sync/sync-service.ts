@@ -1,87 +1,104 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as ServiceMap from "effect/ServiceMap";
-import { RepoEntry, ShelfConfig } from "../config/config-schema";
+import * as Context from "effect/Context";
+import { RepoEntry } from "../config/config-schema";
+import type {
+	ConfigParseError,
+	ConfigWriteError,
+	InvalidAliasError,
+} from "../config/config-errors";
 import { ConfigService } from "../config/config-service";
+import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
-import { isStale } from "./sync-utils";
 
-export class SyncService extends ServiceMap.Service<SyncService>()(
-	"shelf/domain/sync/SyncService",
-	{
-		make: Effect.gen(function* () {
-			const config = yield* ConfigService;
-			const git = yield* GitService;
+/** Why syncing one reference repo failed. */
+export type SyncError = GitOperationError | ConfigParseError | ConfigWriteError | InvalidAliasError;
 
-			const doSync = (repo: RepoEntry): Effect.Effect<void, unknown, never> =>
-				Effect.gen(function* () {
-					const repoDir = config.repoPath(repo.alias);
-					yield* git.fetch(repoDir, repo.depth);
-					if (Option.isSome(repo.pin)) {
-						const ref =
-							repo.pin.value.type === "branch"
-								? `origin/${repo.pin.value.value}`
-								: repo.pin.value.value;
-						yield* git.checkout(repoDir, ref);
-						if (repo.pin.value.type === "branch") {
-							yield* git.pull(repoDir).pipe(Effect.ignore);
-						}
-					} else {
-						const defaultBranch = yield* git.getDefaultBranch(repoDir);
-						yield* git.checkout(repoDir, `origin/${defaultBranch}`);
-					}
-					const now = new Date().toISOString();
-					const cfg = yield* config.load();
-					const updatedRepos = cfg.repos.map((r: RepoEntry) =>
-						r.alias === repo.alias ? new RepoEntry({ ...r, lastSyncedAt: Option.some(now) }) : r,
-					);
-					yield* config.save(new ShelfConfig({ ...cfg, repos: updatedRepos }));
-				});
+/** A reference repo that failed to sync, and the error it failed with. */
+export interface SyncFailure {
+	readonly alias: string;
+	readonly error: SyncError;
+}
 
-			return {
-				syncRepo: Effect.fn("SyncService.syncRepo")(function* (repo: RepoEntry) {
-					yield* doSync(repo);
-				}),
+export interface SyncAllResult {
+	/** How many reference repos the sync tried. */
+	readonly total: number;
+	readonly failures: ReadonlyArray<SyncFailure>;
+}
 
-				syncIfStale: Effect.fn("SyncService.syncIfStale")(function* (repo: RepoEntry) {
-					const cfg = yield* config.load();
-					if (!isStale(repo.lastSyncedAt, cfg.syncIntervalMinutes)) {
-						return;
-					}
-					yield* Effect.logInfo("Syncing stale repo").pipe(
-						Effect.annotateLogs({ alias: repo.alias }),
-					);
+export class SyncService extends Context.Service<SyncService>()("shelf/domain/sync/SyncService", {
+	make: Effect.gen(function* () {
+		const config = yield* ConfigService;
+		const git = yield* GitService;
+
+		// Fetches only what the pin needs, then checks it out. Branch and tag pins
+		// (and unpinned repos) fetch their ref shallowly; a commit pin fetches its
+		// commit only when missing, never with a depth, so the clone never becomes
+		// shallower than it is.
+		const syncCheckout = (
+			repoDir: string,
+			repo: RepoEntry,
+		): Effect.Effect<void, GitOperationError> =>
+			Effect.gen(function* () {
+				const depth = Option.some(Option.getOrElse(repo.depth, () => 1));
+				const syncBranch = (branch: string): Effect.Effect<void, GitOperationError> =>
+					Effect.gen(function* () {
+						const remoteRef = `refs/remotes/origin/${branch}`;
+						yield* git.fetch(repoDir, `+refs/heads/${branch}:${remoteRef}`, depth);
+						yield* git.checkout(repoDir, remoteRef);
+					});
+				if (Option.isNone(repo.pin)) {
+					yield* syncBranch(yield* git.getDefaultBranch(repoDir));
+				} else if (repo.pin.value.type === "branch") {
+					yield* syncBranch(repo.pin.value.value);
+				} else if (repo.pin.value.type === "tag") {
+					const tagRef = `refs/tags/${repo.pin.value.value}`;
+					yield* git.fetch(repoDir, `+${tagRef}:${tagRef}`, depth);
+					yield* git.checkout(repoDir, tagRef);
+				} else {
+					const commit = repo.pin.value.value;
+					yield* git.ensureCommit(repoDir, commit);
+					yield* git.checkout(repoDir, commit);
+				}
+			});
+
+		const doSync = (repo: RepoEntry): Effect.Effect<void, SyncError> =>
+			Effect.gen(function* () {
+				const repoDir = yield* config.repoPath(repo.alias);
+				yield* syncCheckout(repoDir, repo);
+				const now = new Date().toISOString();
+				// A repo removed while it synced stays removed: None saves nothing.
+				yield* config.updateRepo(
+					repo.alias,
+					(r) => new RepoEntry({ ...r, lastSyncedAt: Option.some(now) }),
+				);
+			});
+
+		return {
+			syncRepo: Effect.fn("SyncService.syncRepo")(function* (repo: RepoEntry) {
+				yield* doSync(repo);
+			}),
+
+			// Syncs every reference repo, carrying on past failures, and reports
+			// which ones failed so the caller can show them.
+			syncAll: Effect.fn("SyncService.syncAll")(function* () {
+				const cfg = yield* config.load();
+				const failures: Array<SyncFailure> = [];
+				for (const repo of cfg.repos) {
 					yield* doSync(repo).pipe(
-						Effect.catch((error: unknown) =>
-							Effect.logWarning("Sync failed, using stale content").pipe(
-								Effect.annotateLogs({
-									alias: repo.alias,
-									error: String(error),
-								}),
-							),
+						Effect.catch((error) =>
+							Effect.sync(() => {
+								failures.push({ alias: repo.alias, error });
+							}),
 						),
 					);
-				}),
-
-				syncAll: Effect.fn("SyncService.syncAll")(function* () {
-					const cfg = yield* config.load();
-					for (const repo of cfg.repos) {
-						yield* doSync(repo).pipe(
-							Effect.catch((error: unknown) =>
-								Effect.logWarning("Sync failed for repo").pipe(
-									Effect.annotateLogs({
-										alias: repo.alias,
-										error: String(error),
-									}),
-								),
-							),
-						);
-					}
-				}),
-			};
-		}),
-	},
-) {
+				}
+				const result: SyncAllResult = { total: cfg.repos.length, failures };
+				return result;
+			}),
+		};
+	}),
+}) {
 	static layer = Layer.effect(this, this.make);
 }

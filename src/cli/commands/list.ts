@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { ConfigService } from "../../domain/config/config-service";
 import type { RepoEntry } from "../../domain/config/config-schema";
@@ -25,7 +25,10 @@ export const listCommand = Command.make("list", {}, () =>
 				onSome: (s: string) => s,
 			});
 			yield* Console.log(`  ${r.alias} — ${r.url} [${pinStr}] (synced: ${syncStr})`);
-			yield* Console.log(`    → ${config.repoPath(r.alias)}`);
+			const path = yield* config
+				.repoPath(r.alias)
+				.pipe(Effect.orElseSucceed(() => "(invalid alias: rename it in config.json)"));
+			yield* Console.log(`    → ${path}`);
 		}
 	}),
 ).pipe(Command.withDescription("List all configured repositories"));

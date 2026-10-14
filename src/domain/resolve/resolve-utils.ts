@@ -1,19 +1,8 @@
-export type InputType = "url" | "ssh" | "owner-repo" | "prefixed" | "bare-name" | "path";
+import { deriveAlias, toSafeAlias } from "../repo/repo-utils";
 
-const URL_PATTERN = /^https?:\/\//;
-const SSH_PATTERN = /^git@/;
 const OWNER_REPO_PATTERN = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 const PREFIXED_PATTERN = /^(github|gitlab|bitbucket):/;
 const PATH_PATTERN = /^[./~]/;
-
-export const classifyInput = (input: string): InputType => {
-	if (URL_PATTERN.test(input)) return "url";
-	if (SSH_PATTERN.test(input)) return "ssh";
-	if (PATH_PATTERN.test(input)) return "path";
-	if (PREFIXED_PATTERN.test(input)) return "prefixed";
-	if (OWNER_REPO_PATTERN.test(input)) return "owner-repo";
-	return "bare-name";
-};
 
 export const expandOwnerRepo = (ownerRepo: string): string => `https://github.com/${ownerRepo}.git`;
 
@@ -39,7 +28,7 @@ export const expandPrefixed = (input: string): { host: string; ownerRepo: string
 export const deriveAliasFromOwnerRepo = (ownerRepo: string): string => {
 	const parts = ownerRepo.split("/");
 	const repo = parts.at(-1) ?? ownerRepo;
-	return repo.replace(/\.git$/, "");
+	return toSafeAlias(repo.replace(/\.git$/, ""));
 };
 
 /**
@@ -152,4 +141,111 @@ export const builtinRegistry: Record<string, string> = {
 	"openai-node": "https://github.com/openai/openai-node.git",
 	"openai-python": "https://github.com/openai/openai-python.git",
 	"anthropic-sdk": "https://github.com/anthropics/anthropic-sdk-typescript.git",
+};
+
+/** The GitHub API base URL: `SHELF_GITHUB_API_URL` when set, otherwise the public API. */
+export const githubApiBaseUrl = (env: Readonly<Record<string, string | undefined>>): string =>
+	(env["SHELF_GITHUB_API_URL"] || "https://api.github.com").replace(/\/+$/, "");
+
+/** The built-in registry's URL for a package name. Only the registry's own keys count, never names like `toString`. */
+export const lookupBuiltin = (name: string): string | undefined =>
+	Object.hasOwn(builtinRegistry, name) ? builtinRegistry[name] : undefined;
+
+/** What resolving an input without the network gives. */
+export type LocalResolution =
+	| {
+			readonly _tag: "Resolved";
+			readonly url: string;
+			readonly suggestedAlias: string;
+			readonly source: "direct" | "owner-repo" | "prefixed" | "registry";
+	  }
+	| { readonly _tag: "Search"; readonly name: string }
+	| { readonly _tag: "Invalid"; readonly message: string };
+
+const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
+const SCP_PATTERN = /^[\w.-]+@[\w.-]+:/;
+
+const URL_SCHEMES = new Set(["https", "http", "ssh", "git", "file", "git+ssh", "ssh+git"]);
+
+const direct = (url: string): LocalResolution => ({
+	_tag: "Resolved",
+	url,
+	suggestedAlias: deriveAlias(url),
+	source: "direct",
+});
+
+const invalid = (input: string, problem: string): LocalResolution => ({
+	_tag: "Invalid",
+	message: `"${input}" ${problem}. Try: shelf add owner/repo or shelf add <full-url>`,
+});
+
+/** Drops trailing slashes and one `.git` suffix: `owner/repo.git/` → `owner/repo`. */
+const trimRepoPath = (path: string): string => path.replace(/\/+$/, "").replace(/\.git$/, "");
+
+const BROWSER_HOSTS = new Set(["github.com", "www.github.com", "gitlab.com", "bitbucket.org"]);
+
+/**
+ * Cuts a browser link down to the repo: drops a `#fragment` or `?query`, a
+ * `/tree/...` or `/blob/...` path (GitLab's `/-/tree/...` too) and trailing slashes.
+ */
+export const stripBrowserPath = (url: string): string =>
+	url
+		.replace(/[#?].*$/, "")
+		.replace(/\/(-\/)?(tree|blob)\/.*$/, "")
+		.replace(/\/+$/, "");
+
+const resolveSchemeUrl = (input: string): LocalResolution => {
+	const scheme = input.slice(0, input.indexOf(":")).toLowerCase();
+	if (!URL_SCHEMES.has(scheme)) return invalid(input, `uses an unsupported URL scheme "${scheme}"`);
+	if (!URL.canParse(input)) return invalid(input, "is not a valid URL");
+	const { pathname, hostname, protocol } = new URL(input);
+	if (pathname.split("/").every((segment) => segment.length === 0)) {
+		return invalid(input, "has no repository path");
+	}
+	const isBrowserLink = /^https?:$/.test(protocol) && BROWSER_HOSTS.has(hostname.toLowerCase());
+	return direct(isBrowserLink ? stripBrowserPath(input) : input);
+};
+
+/**
+ * Turns whatever a user typed (a URL, an scp-style SSH address, a path, a
+ * shorthand or a package name) into a git remote, without the network.
+ * Bare names not in the built-in registry come back as `Search`.
+ */
+export const resolveLocally = (raw: string): LocalResolution => {
+	const input = raw.trim();
+	if (SCHEME_PATTERN.test(input)) return resolveSchemeUrl(input);
+	if (SCP_PATTERN.test(input)) return direct(input);
+	if (PATH_PATTERN.test(input)) return direct(input);
+
+	if (PREFIXED_PATTERN.test(input)) {
+		const { url, ownerRepo } = expandPrefixed(trimRepoPath(input));
+		return {
+			_tag: "Resolved",
+			url,
+			suggestedAlias: deriveAliasFromOwnerRepo(ownerRepo),
+			source: "prefixed",
+		};
+	}
+
+	const segments = trimRepoPath(input).split("/");
+	if (segments.length >= 3 && segments[0]?.includes(".")) {
+		const resolved = resolveSchemeUrl(`https://${input}`);
+		return resolved._tag === "Resolved" ? { ...resolved, source: "owner-repo" } : resolved;
+	}
+
+	const ownerRepo = trimRepoPath(input);
+	if (OWNER_REPO_PATTERN.test(ownerRepo)) {
+		return {
+			_tag: "Resolved",
+			url: expandOwnerRepo(ownerRepo),
+			suggestedAlias: deriveAliasFromOwnerRepo(ownerRepo),
+			source: "owner-repo",
+		};
+	}
+
+	const registryUrl = lookupBuiltin(input);
+	if (registryUrl !== undefined) {
+		return { _tag: "Resolved", url: registryUrl, suggestedAlias: input, source: "registry" };
+	}
+	return { _tag: "Search", name: input };
 };

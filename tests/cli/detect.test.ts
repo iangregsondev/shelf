@@ -2,32 +2,29 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-const CLI = join(import.meta.dir, "../../src/startup/index.ts");
-
-const runShelf = async (
-	args: string[],
-	cwd?: string,
-): Promise<{ stdout: string; stderr: string; exitCode: number; output: string }> => {
-	const proc = Bun.spawn(["bun", "run", CLI, ...args], {
-		stdout: "pipe",
-		stderr: "pipe",
-		cwd: cwd ?? process.cwd(),
-	});
-	const exitCode = await proc.exited;
-	const stdout = await new Response(proc.stdout as ReadableStream).text();
-	const stderr = await new Response(proc.stderr as ReadableStream).text();
-	return { stdout, stderr, exitCode, output: stdout + stderr };
-};
+import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 
 describe("detect command", () => {
 	let tempDir: string;
+	let shelf: ShelfSandbox;
+	const runShelf = (args: string[]) => shelf.run(args);
 
 	beforeEach(async () => {
 		tempDir = await mkdtemp(join(tmpdir(), "shelf-detect-cli-"));
+		shelf = await createShelfSandbox({
+			npm: {
+				"shelf-fixture-pkg": {
+					repository: {
+						type: "git",
+						url: "git+https://example.test/fixtures/shelf-fixture-pkg.git",
+					},
+				},
+			},
+		});
 	});
 
 	afterEach(async () => {
+		await shelf.cleanup();
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
@@ -78,14 +75,16 @@ require (
 		// Should not crash
 	});
 
-	test("detects packages not in registry from npm", async () => {
-		// Use a package that's likely NOT already shelved and IS in npm
+	test("looks up packages outside the built-in registry on npm", async () => {
 		await Bun.write(
 			join(tempDir, "package.json"),
-			JSON.stringify({ dependencies: { express: "^4.18.0" } }),
+			JSON.stringify({
+				dependencies: { "shelf-fixture-pkg": "^4.18.0", "unknown-to-npm": "^1.0.0" },
+			}),
 		);
 		const result = await runShelf(["detect", "--dir", tempDir]);
 		expect(result.exitCode).toBe(0);
-		expect(result.output).toContain("express");
+		expect(result.output).toContain("https://example.test/fixtures/shelf-fixture-pkg.git");
+		expect(result.output).not.toContain("unknown-to-npm");
 	});
 });

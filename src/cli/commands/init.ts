@@ -1,9 +1,10 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Command, Flag } from "effect/unstable/cli";
+import { Command, Flag } from "effect/cli";
 import { join } from "node:path";
 import { skillTemplate } from "../templates/skill";
+import { ConfigService } from "../../domain/config/config-service";
 import { DetectService } from "../../domain/detect/detect-service";
 import type { DetectedRepo } from "../../domain/detect/detect-schema";
 import { RepoService } from "../../domain/repo/repo-service";
@@ -23,11 +24,11 @@ export const resolveSkillDir = (agent: Option.Option<string>): string =>
 		onSome: (a) => agentPaths[a] ?? defaultSkillDir,
 	});
 
-const agent = Flag.string("agent").pipe(
+const agent = Flag.String("agent").pipe(
 	Flag.optional,
 	Flag.withDescription("Target agent: claude, opencode, or gemini (default: universal .agents/)"),
 );
-const noDetect = Flag.boolean("no-detect").pipe(
+const noDetect = Flag.Boolean("no-detect").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription("Skip dependency detection (just write skill file)"),
 );
@@ -75,7 +76,7 @@ export const initCommand = Command.make("init", { agent, noDetect }, (config) =>
 		const results = yield* Effect.forEach(
 			newRepos,
 			(d) =>
-				repo.add(d.url, Option.some(d.name), Option.none(), Option.none(), Option.none()).pipe(
+				repo.add({ url: d.url, alias: Option.some(d.name) }).pipe(
 					Effect.map((alias) => ({ alias, status: "added" as const })),
 					Effect.catch((error: unknown) =>
 						Console.log(`  Failed to add "${d.name}": ${error}`).pipe(
@@ -92,6 +93,7 @@ export const initCommand = Command.make("init", { agent, noDetect }, (config) =>
 			}
 		}
 
-		yield* Console.log("\nShelf is ready. Your agent can read repos at ~/.agents/shelf/repos/");
+		const configService = yield* ConfigService;
+		yield* Console.log(`\nShelf is ready. Your agent can read repos at ${configService.reposDir}/`);
 	}),
 ).pipe(Command.withDescription("Scaffold a shelf skill file and detect project repos"));

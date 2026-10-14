@@ -229,19 +229,16 @@ describe("ResolveService", () => {
 	});
 
 	describe("error handling", () => {
-		test("fails with ResolveError for unknown bare name via GitHub API failure", async () => {
-			// This test exercises the GitHub API fallback with a name unlikely to exist
+		test("fails with ResolveError when the GitHub API finds nothing for a bare name", async () => {
+			// tests/setup.ts points SHELF_GITHUB_API_URL at a stub that finds nothing
 			const exit = await runExitWithService(
 				Effect.gen(function* () {
 					const service = yield* ResolveService;
 					return yield* service.resolve("xyzzy-nonexistent-library-12345");
 				}),
 			);
-			if (Exit.isFailure(exit)) {
-				const error = exit.cause;
-				expect(String(error)).toContain("ResolveError");
-			}
-			// Could succeed if GitHub returns a match - that's also valid behavior
+			expect(Exit.isFailure(exit)).toBe(true);
+			expect(String(Exit.isFailure(exit) && exit.cause)).toContain("No repositories found");
 		});
 	});
 });

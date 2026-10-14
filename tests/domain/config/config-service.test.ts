@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import * as Effect from "effect/Effect";
-import { mkdtemp, rm, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -181,7 +181,8 @@ describe("ConfigService", () => {
 					yield* svc.ensureDirectories();
 				}).pipe(Effect.provide(ConfigService.layer)),
 			);
-			// Directories should exist (or be pre-existing)
+			const home = process.env["SHELF_HOME"]!;
+			expect((await stat(join(home, "repos"))).isDirectory()).toBe(true);
 		});
 
 		test("repoPath returns correct path", async () => {
@@ -190,9 +191,22 @@ describe("ConfigService", () => {
 					return yield* ConfigService;
 				}).pipe(Effect.provide(ConfigService.layer)),
 			);
-			const path = svc.repoPath("my-repo");
-			expect(path).toContain("my-repo");
-			expect(path).toContain(".agents/shelf/repos");
+			// tests/setup.ts points SHELF_HOME at a temp shelf home
+			expect(await Effect.runPromise(svc.repoPath("my-repo"))).toBe(
+				join(process.env["SHELF_HOME"]!, "repos", "my-repo"),
+			);
+		});
+
+		test("repoPath refuses an alias that is not a single safe folder name", async () => {
+			const svc = await Effect.runPromise(
+				Effect.gen(function* () {
+					return yield* ConfigService;
+				}).pipe(Effect.provide(ConfigService.layer)),
+			);
+			for (const alias of ["../outside", "a/b", ".", ""]) {
+				const exit = await Effect.runPromiseExit(svc.repoPath(alias));
+				expect(exit._tag).toBe("Failure");
+			}
 		});
 	});
 

@@ -1,12 +1,19 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
 import { join } from "node:path";
 import { ConfigService } from "../config/config-service";
-import { builtinRegistry } from "../resolve/resolve-utils";
+import { lookupBuiltin } from "../resolve/resolve-utils";
+import { deriveAlias } from "../repo/repo-utils";
 import { DetectedRepo } from "./detect-schema";
-import { parsePackageJson, parseGoMod, normalizeGitUrl, resolveGoModule } from "./detect-utils";
+import {
+	parsePackageJson,
+	parseGoMod,
+	normalizeGitUrl,
+	resolveGoModule,
+	npmRegistryBaseUrl,
+} from "./detect-utils";
 
 const readFileOrNone = (path: string): Effect.Effect<Option.Option<string>> =>
 	Effect.tryPromise({
@@ -22,7 +29,7 @@ const readFileOrNone = (path: string): Effect.Effect<Option.Option<string>> =>
 const resolveNpmPackage = (name: string): Effect.Effect<Option.Option<string>> =>
 	Effect.gen(function* () {
 		const response = yield* Effect.tryPromise({
-			try: () => fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}`),
+			try: () => fetch(`${npmRegistryBaseUrl(process.env)}/${encodeURIComponent(name)}`),
 			catch: () => "fetch-failed" as const,
 		}).pipe(Effect.catch(() => Effect.succeed(null)));
 
@@ -47,7 +54,7 @@ const resolveNpmPackage = (name: string): Effect.Effect<Option.Option<string>> =
 		return Option.some(normalizeGitUrl(repoUrl));
 	});
 
-export class DetectService extends ServiceMap.Service<DetectService>()(
+export class DetectService extends Context.Service<DetectService>()(
 	"shelf/domain/detect/DetectService",
 	{
 		make: Effect.gen(function* () {
@@ -67,14 +74,16 @@ export class DetectService extends ServiceMap.Service<DetectService>()(
 					if (Option.isSome(pkgContent)) {
 						const deps = parsePackageJson(pkgContent.value);
 						for (const dep of deps) {
-							const registryUrl = builtinRegistry[dep.name];
+							// `@scope/name` can't be a folder name; the alias is `scope-name`.
+							const alias = deriveAlias(dep.name);
+							const registryUrl = lookupBuiltin(dep.name);
 							if (registryUrl) {
 								detected.push(
 									new DetectedRepo({
-										name: dep.name,
+										name: alias,
 										url: registryUrl,
 										source: "npm",
-										alreadyShelved: shelvedAliases.has(dep.name) || shelvedUrls.has(registryUrl),
+										alreadyShelved: shelvedAliases.has(alias) || shelvedUrls.has(registryUrl),
 									}),
 								);
 								continue;
@@ -83,10 +92,10 @@ export class DetectService extends ServiceMap.Service<DetectService>()(
 							if (Option.isSome(npmUrl)) {
 								detected.push(
 									new DetectedRepo({
-										name: dep.name,
+										name: alias,
 										url: npmUrl.value,
 										source: "npm",
-										alreadyShelved: shelvedAliases.has(dep.name) || shelvedUrls.has(npmUrl.value),
+										alreadyShelved: shelvedAliases.has(alias) || shelvedUrls.has(npmUrl.value),
 									}),
 								);
 							}
@@ -101,14 +110,14 @@ export class DetectService extends ServiceMap.Service<DetectService>()(
 						for (const dep of deps) {
 							const goUrl = resolveGoModule(dep.name);
 							if (Option.isSome(goUrl)) {
+								// `.../chi/v5` is named `chi`, not `v5`.
+								const alias = deriveAlias(dep.name);
 								detected.push(
 									new DetectedRepo({
-										name: dep.name.split("/").pop() ?? dep.name,
+										name: alias,
 										url: goUrl.value,
 										source: "go",
-										alreadyShelved:
-											shelvedAliases.has(dep.name.split("/").pop() ?? dep.name) ||
-											shelvedUrls.has(goUrl.value),
+										alreadyShelved: shelvedAliases.has(alias) || shelvedUrls.has(goUrl.value),
 									}),
 								);
 							}

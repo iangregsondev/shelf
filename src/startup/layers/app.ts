@@ -12,15 +12,16 @@ import { DaemonService } from "../../domain/daemon/daemon-service";
 const ConfigLive = ConfigService.layer;
 const GitLive = GitService.layer;
 const SyncLive = SyncService.layer.pipe(Layer.provide(ConfigLive), Layer.provide(GitLive));
-const RepoLive = RepoService.layer.pipe(
-	Layer.provide(ConfigLive),
-	Layer.provide(GitLive),
-	Layer.provide(SyncLive),
-);
 const ShelffileLive = ShelffileService.layer;
 const RegistryLive = RegistryService.layer.pipe(
 	Layer.provide(ConfigLive),
 	Layer.provide(ShelffileLive),
+);
+const RepoLive = RepoService.layer.pipe(
+	Layer.provide(ConfigLive),
+	Layer.provide(GitLive),
+	Layer.provide(SyncLive),
+	Layer.provide(RegistryLive),
 );
 const ResolveLive = ResolveService.layer;
 const DetectLive = DetectService.layer.pipe(Layer.provide(ConfigLive));

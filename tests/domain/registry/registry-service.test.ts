@@ -30,10 +30,14 @@ describe("RegistryService", () => {
 			ConfigService,
 			ConfigService.of({
 				load: () => Effect.succeed(defaultConfig),
-				save: () => Effect.void,
+				update: (fn) => {
+					const result = fn(defaultConfig);
+					return Effect.isEffect(result) ? result : Effect.succeed(result);
+				},
+				updateRepo: () => Effect.succeed(Option.none()),
 				ensureDirectories: () => Effect.void,
-				repoPath: (alias: string) => join(tempDir, "repos", alias),
-				configDir: tempDir,
+				repoPath: (alias: string) => Effect.succeed(join(tempDir, "repos", alias)),
+				shelfHome: tempDir,
 				reposDir: join(tempDir, "repos"),
 				configPath: join(tempDir, "config.json"),
 			}),
@@ -105,7 +109,7 @@ describe("RegistryService", () => {
 		expect(result.manual).toEqual(["react"]);
 	});
 
-	test("getReferencedAliases returns union of shelffile aliases + manual", async () => {
+	test("scanReferences returns union of shelffile aliases + manual", async () => {
 		const projectDir = await mkdtemp(join(tmpdir(), "shelf-project-"));
 		const shelffileData: Shelffile = {
 			entries: [
@@ -124,7 +128,7 @@ describe("RegistryService", () => {
 				const svc = yield* RegistryService;
 				yield* svc.addManual("manual-repo");
 				yield* svc.registerProject(projectDir);
-				return yield* svc.getReferencedAliases();
+				return (yield* svc.scanReferences()).aliases;
 			}).pipe(Effect.provide(layer)),
 		);
 		expect(result.has("lib-a")).toBe(true);
@@ -133,7 +137,7 @@ describe("RegistryService", () => {
 		await rm(projectDir, { recursive: true, force: true });
 	});
 
-	test("getReferencedAliases gracefully handles missing shelffiles", async () => {
+	test("scanReferences gracefully handles missing shelffiles", async () => {
 		const projectDir = await mkdtemp(join(tmpdir(), "shelf-project-"));
 		const layer = buildLayer({
 			read: () => Effect.fail(new ShelffileNotFoundError({ path: "test" })),
@@ -143,7 +147,7 @@ describe("RegistryService", () => {
 				const svc = yield* RegistryService;
 				yield* svc.addManual("manual-repo");
 				yield* svc.registerProject(projectDir);
-				return yield* svc.getReferencedAliases();
+				return (yield* svc.scanReferences()).aliases;
 			}).pipe(Effect.provide(layer)),
 		);
 		expect(result.has("manual-repo")).toBe(true);

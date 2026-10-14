@@ -1,5 +1,6 @@
 import * as Option from "effect/Option";
 import { PackageDependency } from "./detect-schema";
+import { stripBrowserPath } from "../resolve/resolve-utils";
 
 export const parsePackageJson = (content: string): ReadonlyArray<PackageDependency> => {
 	try {
@@ -52,16 +53,34 @@ export const parseGoMod = (content: string): ReadonlyArray<PackageDependency> =>
 	return deps;
 };
 
+const SHORTHAND_HOSTS: Readonly<Record<string, string>> = {
+	github: "github.com",
+	gitlab: "gitlab.com",
+	bitbucket: "bitbucket.org",
+};
+
+/**
+ * Turns a package manifest's repository field into an https clone URL.
+ * Handles `git+` prefixes, `git://`, `ssh://git@` and `git@host:` forms,
+ * `github:`/`gitlab:`/`bitbucket:` and bare `owner/repo` shorthands, and
+ * browser links with a `#fragment`, `?query` or `/tree/...` path.
+ */
 export const normalizeGitUrl = (url: string): string => {
 	let normalized = url
+		.trim()
 		.replace(/^git\+/, "")
 		.replace(/^git:\/\//, "https://")
-		.replace(/^ssh:\/\/git@github\.com/, "https://github.com");
+		.replace(/^ssh:\/\/git@/, "https://")
+		.replace(/^git@([^:/]+):/, "https://$1/");
 
-	if (normalized.startsWith("github:")) {
-		const ownerRepo = normalized.slice("github:".length);
-		normalized = `https://github.com/${ownerRepo}`;
+	const shorthand = normalized.match(/^(github|gitlab|bitbucket):(.*)$/);
+	if (shorthand) {
+		normalized = `https://${SHORTHAND_HOSTS[shorthand[1] ?? "github"]}/${shorthand[2] ?? ""}`;
+	} else if (/^[\w.-]+\/[\w.-]+\/?$/.test(normalized)) {
+		normalized = `https://github.com/${normalized}`;
 	}
+
+	normalized = stripBrowserPath(normalized);
 
 	if (!normalized.endsWith(".git")) {
 		normalized = `${normalized}.git`;
@@ -79,3 +98,7 @@ export const resolveGoModule = (modulePath: string): Option.Option<string> => {
 	}
 	return Option.none();
 };
+
+/** The npm registry base URL: `SHELF_NPM_REGISTRY_URL` when set, otherwise the public registry. */
+export const npmRegistryBaseUrl = (env: Readonly<Record<string, string | undefined>>): string =>
+	(env["SHELF_NPM_REGISTRY_URL"] || "https://registry.npmjs.org").replace(/\/+$/, "");

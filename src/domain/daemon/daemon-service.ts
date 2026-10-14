@@ -2,7 +2,8 @@ import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
+import { closeSync, openSync } from "node:fs";
 import { ConfigService } from "../config/config-service";
 import { SyncService } from "../sync/sync-service";
 import { DaemonState, encodeDaemonState, decodeDaemonState } from "./daemon-schema";
@@ -10,19 +11,61 @@ import {
 	DaemonAlreadyRunningError,
 	DaemonNotRunningError,
 	DaemonStartError,
+	DaemonStillStoppingError,
 } from "./daemon-errors";
-import { daemonStatePath, daemonLogPath, generateToken } from "./daemon-utils";
+import {
+	daemonStatePath,
+	daemonLogPath,
+	generateToken,
+	daemonTokenFromArgs,
+	isDaemonCommandLine,
+} from "./daemon-utils";
+import { defaultConfig } from "../config/config-schema";
+import { parseSyncInterval } from "../config/config-utils";
+import { isProcessAlive } from "../config/state-file-store";
+import { SHELF_VERSION } from "../../version";
 
-const SHELF_VERSION = "0.2.0";
 const LOG_MAX_BYTES = 5_242_880; // 5 MB
+/** How long `start` waits for the daemon to report itself running. */
+const START_TIMEOUT_MS = 10_000;
+/**
+ * How long `stop` waits for the daemon to finish its current step. The daemon
+ * is never killed mid-step; `SHELF_DAEMON_STOP_TIMEOUT_MS` overrides the wait.
+ */
+const stopTimeoutMs = (): number => {
+	const override = Number(process.env["SHELF_DAEMON_STOP_TIMEOUT_MS"]);
+	return Number.isInteger(override) && override > 0 ? override : 30_000;
+};
+const POLL_MS = 50;
+/** The daemon process's entry point; status and stop recognise it by this file. */
+const DAEMON_ENTRY = new URL("../../startup/daemon.ts", import.meta.url).pathname;
+/** The command line of a daemon started with `token`. */
+const daemonCommand = (token: string): string[] => [
+	process.execPath,
+	DAEMON_ENTRY,
+	"--token",
+	token,
+];
 
-const isPidAlive = (pid: number): boolean => {
+/** The command line of a running process, or undefined if there is no such process. */
+const commandLineOf = (pid: number): string | undefined => {
 	try {
-		process.kill(pid, 0);
-		return true;
+		const result = Bun.spawnSync(["ps", "-ww", "-o", "command=", "-p", String(pid)], {
+			stdout: "pipe",
+			stderr: "ignore",
+		});
+		if (result.exitCode !== 0) return undefined;
+		return result.stdout.toString().trim();
 	} catch {
-		return false;
+		return undefined;
 	}
+};
+
+/** Whether `pid` is alive and is the shelf daemon started with `token`. */
+const isShelfDaemon = (pid: number, token: string): boolean => {
+	if (!isProcessAlive(pid)) return false;
+	const commandLine = commandLineOf(pid);
+	return commandLine !== undefined && isDaemonCommandLine(commandLine, token);
 };
 
 const formatUptime = (startedAt: string): string => {
@@ -38,13 +81,13 @@ const formatUptime = (startedAt: string): string => {
 	return `${seconds}s`;
 };
 
-export class DaemonService extends ServiceMap.Service<DaemonService>()(
+export class DaemonService extends Context.Service<DaemonService>()(
 	"shelf/domain/daemon/DaemonService",
 	{
 		make: Effect.gen(function* () {
 			const config = yield* ConfigService;
-			const statePath = daemonStatePath(config.configDir);
-			const logPath = daemonLogPath(config.configDir);
+			const statePath = daemonStatePath(config.shelfHome);
+			const logPath = daemonLogPath(config.shelfHome);
 
 			const readState = (): Effect.Effect<DaemonState | null> =>
 				Effect.tryPromise({
@@ -56,18 +99,6 @@ export class DaemonService extends ServiceMap.Service<DaemonService>()(
 					},
 					catch: () => null,
 				}).pipe(Effect.catch(() => Effect.succeed(null)));
-
-			const writeState = (state: DaemonState): Effect.Effect<void> =>
-				Effect.tryPromise({
-					try: async () => {
-						const encoded = encodeDaemonState(state);
-						const tmpPath = `${statePath}.tmp`;
-						await Bun.write(tmpPath, JSON.stringify(encoded, null, "\t"));
-						const { rename } = await import("node:fs/promises");
-						await rename(tmpPath, statePath);
-					},
-					catch: () => undefined,
-				}).pipe(Effect.catch(() => Effect.void));
 
 			const removeState = (): Effect.Effect<void> =>
 				Effect.tryPromise({
@@ -82,15 +113,7 @@ export class DaemonService extends ServiceMap.Service<DaemonService>()(
 				state: DaemonState | null,
 			): { alive: true; state: DaemonState } | { alive: false } => {
 				if (!state) return { alive: false };
-				if (!isPidAlive(state.pid)) return { alive: false };
-				// Re-read state to verify the token hasn't changed (guards against PID reuse)
-				const file = Bun.file(statePath);
-				try {
-					// Synchronous size check — if file disappeared, PID was reused
-					if (file.size === 0) return { alive: false };
-				} catch {
-					return { alive: false };
-				}
+				if (!isShelfDaemon(state.pid, state.token)) return { alive: false };
 				return { alive: true, state };
 			};
 
@@ -119,30 +142,90 @@ export class DaemonService extends ServiceMap.Service<DaemonService>()(
 					}).pipe(Effect.catch(() => Effect.void));
 
 					const token = generateToken();
-					const daemonEntry = new URL("../../startup/daemon.ts", import.meta.url).pathname;
-					const child = yield* Effect.tryPromise({
-						try: async () => {
-							const proc = Bun.spawn(["bun", "run", daemonEntry], {
-								stdout: Bun.file(logPath),
-								stderr: Bun.file(logPath),
-								stdin: "ignore",
-								env: { ...process.env, SHELF_DAEMON: "1", SHELF_DAEMON_TOKEN: token },
-							});
-							return proc;
+					const child = yield* Effect.try({
+						try: () => {
+							// Append, never truncate: the log survives restarts until rotated.
+							const logFd = openSync(logPath, "a");
+							try {
+								const proc = Bun.spawn(daemonCommand(token), {
+									stdio: ["ignore", logFd, logFd],
+									detached: true,
+									env: { ...process.env, SHELF_DAEMON: "1" },
+								});
+								proc.unref();
+								return proc;
+							} finally {
+								closeSync(logFd);
+							}
 						},
 						catch: (err) =>
 							new DaemonStartError({ message: `Failed to spawn daemon process: ${err}` }),
 					});
 
-					const daemonState = new DaemonState({
-						pid: child.pid,
-						token,
-						startedAt: new Date().toISOString(),
-						lastTickAt: Option.none(),
-						version: SHELF_VERSION,
+					// Return only once the daemon has recorded itself as running.
+					const deadline = Date.now() + START_TIMEOUT_MS;
+					while (true) {
+						const state = yield* readState();
+						if (state && state.token === token && isShelfDaemon(state.pid, token)) {
+							return state.pid;
+						}
+						if (child.exitCode !== null || child.signalCode !== null) {
+							return yield* Effect.fail(
+								new DaemonStartError({
+									message: `daemon exited during startup; see \`shelf daemon logs\``,
+								}),
+							);
+						}
+						if (Date.now() > deadline) {
+							child.kill("SIGKILL");
+							return yield* Effect.fail(
+								new DaemonStartError({
+									message: `daemon did not report running within ${START_TIMEOUT_MS / 1000}s; see \`shelf daemon logs\``,
+								}),
+							);
+						}
+						yield* Effect.sleep(POLL_MS);
+					}
+				}),
+
+				/**
+				 * Runs the daemon attached to this terminal: the same daemon process
+				 * `start` spawns, so status and stop recognise it, with its output
+				 * here instead of the log. Returns when the daemon exits; if this
+				 * process is interrupted (Ctrl+C), asks the daemon to stop and waits.
+				 */
+				runForeground: Effect.fn("DaemonService.runForeground")(function* () {
+					yield* config.ensureDirectories();
+					const existing = yield* readState();
+					const check = verifyDaemon(existing);
+					if (check.alive) {
+						return yield* new DaemonAlreadyRunningError({ pid: check.state.pid });
+					}
+					if (existing) {
+						yield* removeState();
+					}
+					const token = generateToken();
+					const child = yield* Effect.try({
+						try: () =>
+							Bun.spawn(daemonCommand(token), {
+								stdio: ["inherit", "inherit", "inherit"],
+								env: { ...process.env, SHELF_DAEMON: "1" },
+							}),
+						catch: (err) =>
+							new DaemonStartError({ message: `Failed to spawn daemon process: ${err}` }),
 					});
-					yield* writeState(daemonState);
-					return child.pid;
+					yield* Effect.promise(() => child.exited).pipe(
+						Effect.onInterrupt(() =>
+							Effect.promise(async () => {
+								try {
+									child.kill("SIGTERM");
+								} catch {
+									// already gone
+								}
+								await child.exited;
+							}),
+						),
+					);
 				}),
 
 				stop: Effect.fn("DaemonService.stop")(function* () {
@@ -152,25 +235,24 @@ export class DaemonService extends ServiceMap.Service<DaemonService>()(
 						if (existing) yield* removeState();
 						return yield* Effect.fail(new DaemonNotRunningError());
 					}
+					const { pid, token } = check.state;
 					try {
-						process.kill(check.state.pid, "SIGTERM");
+						process.kill(pid, "SIGTERM");
 					} catch {
 						// already dead
 					}
-					// Wait briefly for graceful shutdown
-					yield* Effect.sleep("1 second");
-					if (isPidAlive(check.state.pid)) {
-						// Re-verify token before SIGKILL to avoid killing a reused PID
-						const current = yield* readState();
-						if (current && current.token === check.state.token && isPidAlive(current.pid)) {
-							try {
-								process.kill(current.pid, "SIGKILL");
-							} catch {
-								// already dead
-							}
-						}
+					// The daemon finishes its current step, removes its state file and
+					// exits. Killing it mid-step could leave a repo half-synced, so a
+					// daemon still busy at the deadline is left running.
+					const deadline = Date.now() + stopTimeoutMs();
+					while (isProcessAlive(pid) && Date.now() < deadline) {
+						yield* Effect.sleep(POLL_MS);
 					}
-					yield* removeState();
+					if (isShelfDaemon(pid, token)) {
+						return yield* new DaemonStillStoppingError({ pid });
+					}
+					const current = yield* readState();
+					if (current && current.token === token) yield* removeState();
 				}),
 
 				status: Effect.fn("DaemonService.status")(function* () {
@@ -246,48 +328,56 @@ const writeDaemonState = (
 		catch: () => undefined,
 	}).pipe(Effect.catch(() => Effect.void));
 
-const cleanupState = (path: string): Effect.Effect<void> =>
+/** Removes the state file, unless another daemon has since recorded itself there. */
+const cleanupState = (path: string, token: string): Effect.Effect<void> =>
 	Effect.tryPromise({
 		try: async () => {
+			const file = Bun.file(path);
+			if (await file.exists()) {
+				const recorded = decodeDaemonState(await file.json());
+				if (recorded.token !== token) return;
+			}
 			const { rm } = await import("node:fs/promises");
 			await rm(path, { force: true });
 		},
 		catch: () => undefined,
 	}).pipe(Effect.catch(() => Effect.void));
 
+/** The interval to sleep between syncs; falls back to the default for a bad hand-edited value. */
+const syncInterval = (minutes: number): number =>
+	parseSyncInterval(String(minutes)) ?? defaultConfig.syncIntervalMinutes;
+
+// Runs as the daemon process. The runtime interrupts this program on SIGTERM
+// or SIGINT; each sync step is uninterruptible, so the daemon finishes the
+// step it is on, then removes its state file and exits.
 export const daemonProgram = Effect.gen(function* () {
 	const cfg = yield* ConfigService;
 	const sync = yield* SyncService;
-	const path = daemonStatePath(cfg.configDir);
-	const token = process.env["SHELF_DAEMON_TOKEN"] ?? generateToken();
-
-	const state = { running: true };
-
-	process.on("SIGTERM", () => {
-		state.running = false;
-		appendLog("Received SIGTERM, shutting down...");
-	});
-	process.on("SIGINT", () => {
-		state.running = false;
-		appendLog("Received SIGINT, shutting down...");
-	});
+	const path = daemonStatePath(cfg.shelfHome);
+	const token = daemonTokenFromArgs(process.argv) ?? generateToken();
 
 	const startedAt = new Date().toISOString();
 	appendLog("Daemon started");
 	yield* writeDaemonState(path, token, startedAt, Option.none());
 
-	while (state.running) {
+	const step = Effect.gen(function* () {
 		const config = yield* cfg.load().pipe(Effect.catch(() => Effect.succeed(null)));
 		if (!config) {
 			appendLog("Failed to load config, retrying in 60s");
-			yield* Effect.sleep(Duration.minutes(1));
-			continue;
+			return 1;
 		}
 
-		const intervalMinutes = config.syncIntervalMinutes;
+		const intervalMinutes = syncInterval(config.syncIntervalMinutes);
 		appendLog(`Starting sync cycle (interval: ${intervalMinutes}m)`);
 
 		yield* sync.syncAll().pipe(
+			Effect.tap(({ failures }) =>
+				Effect.sync(() => {
+					for (const failure of failures) {
+						appendLog(`Sync failed for "${failure.alias}": ${String(failure.error)}`);
+					}
+				}),
+			),
 			Effect.catch((error: unknown) => {
 				appendLog(`Sync cycle failed: ${error}`);
 				return Effect.void;
@@ -296,10 +386,22 @@ export const daemonProgram = Effect.gen(function* () {
 
 		appendLog("Sync cycle complete");
 		yield* writeDaemonState(path, token, startedAt, Option.some(new Date().toISOString()));
+		return intervalMinutes;
+	});
 
-		yield* Effect.sleep(Duration.minutes(intervalMinutes));
-	}
-
-	yield* cleanupState(path);
-	appendLog("Daemon stopped");
+	yield* Effect.forever(
+		Effect.gen(function* () {
+			const minutes = yield* Effect.uninterruptible(step);
+			yield* Effect.sleep(Duration.minutes(minutes));
+		}),
+	).pipe(
+		Effect.onInterrupt(() =>
+			Effect.sync(() => appendLog("Received stop signal, shutting down...")),
+		),
+		Effect.ensuring(
+			cleanupState(path, token).pipe(
+				Effect.andThen(Effect.sync(() => appendLog("Daemon stopped"))),
+			),
+		),
+	);
 });

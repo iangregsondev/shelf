@@ -1,18 +1,15 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { Command } from "effect/unstable/cli";
-import { ConfigService } from "../../domain/config/config-service";
+import { Command } from "effect/cli";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
 import { ShelffileService } from "../../domain/shelffile/shelffile-service";
 import type { RepoEntry } from "../../domain/config/config-schema";
-import { dirSize } from "../../domain/repo/repo-utils";
 
 export const statusCommand = Command.make("status", {}, () =>
 	Effect.gen(function* () {
 		const repo = yield* RepoService;
-		const configService = yield* ConfigService;
 		const registry = yield* RegistryService;
 		const shelffileService = yield* ShelffileService;
 		const repos = yield* repo.list();
@@ -44,9 +41,8 @@ export const statusCommand = Command.make("status", {}, () =>
 				onNone: () => "never",
 				onSome: (s: string) => s,
 			});
-			const repoDir = configService.repoPath(r.alias);
-			const size = yield* dirSize(repoDir).pipe(Effect.catch(() => Effect.succeed(0)));
-			const sizeMb = (size / (1024 * 1024)).toFixed(1);
+			const { sizeBytes } = yield* repo.folder(r.alias);
+			const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
 			yield* Console.log(`  ${r.alias} — ${r.url}`);
 			yield* Console.log(`    Pin: ${pinStr}  |  Synced: ${syncStr}  |  Size: ${sizeMb} MB`);
 			const refs: string[] = [];

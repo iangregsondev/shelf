@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { parsePackageJson, parseGoMod } from "../../../src/domain/detect/detect-utils";
+import {
+	parsePackageJson,
+	parseGoMod,
+	npmRegistryBaseUrl,
+} from "../../../src/domain/detect/detect-utils";
 
 describe("parsePackageJson", () => {
 	test("parses dependencies and devDependencies", () => {
@@ -82,5 +86,21 @@ go 1.21
 `;
 		const result = parseGoMod(content);
 		expect(result.length).toBe(0);
+	});
+});
+
+describe("npmRegistryBaseUrl", () => {
+	test("defaults to the public npm registry", () => {
+		expect(npmRegistryBaseUrl({})).toBe("https://registry.npmjs.org");
+	});
+
+	test("ignores an empty SHELF_NPM_REGISTRY_URL", () => {
+		expect(npmRegistryBaseUrl({ SHELF_NPM_REGISTRY_URL: "" })).toBe("https://registry.npmjs.org");
+	});
+
+	test("uses SHELF_NPM_REGISTRY_URL without a trailing slash", () => {
+		expect(npmRegistryBaseUrl({ SHELF_NPM_REGISTRY_URL: "http://127.0.0.1:4873/npm/" })).toBe(
+			"http://127.0.0.1:4873/npm",
+		);
 	});
 });

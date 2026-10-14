@@ -8,7 +8,7 @@
 ## Install
 
 ```bash
-bun install -g @rikalabs/shelf
+bun install -g @iangregsondev/shelf
 ```
 
 ## Quick Start
@@ -35,6 +35,8 @@ shelf daemon start
 ```
 
 Agents read repos directly at `~/.agents/shelf/repos/{alias}/` using their native tools.
+
+All shelf state lives in the shelf home, `~/.agents/shelf` by default. Set `SHELF_HOME` to use a different directory.
 
 ## How It Works
 
@@ -63,10 +65,14 @@ Shelf manages the lifecycle — clone, pin, sync, remove. Your agent uses its ow
 ## Development
 
 ```bash
-bun test                 # run tests
+bun run test             # run tests (offline, in temp shelf homes)
 bunx --bun tsc --noEmit  # typecheck
 ```
 
+## Credits
+
+Shelf was created by Dallen Pyrah at Rika Labs; this fork builds on the [original repository](https://github.com/Rika-Labs/shelf).
+
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

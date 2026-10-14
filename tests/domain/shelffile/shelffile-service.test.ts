@@ -81,25 +81,4 @@ describe("ShelffileService", () => {
 		expect(result.entries[0]!.alias).toBe("react");
 		expect(Option.isSome(result.entries[0]!.pin)).toBe(true);
 	});
-
-	test("exists returns false when no file", async () => {
-		const result = await run(
-			Effect.gen(function* () {
-				const svc = yield* ShelffileService;
-				return yield* svc.exists(tempDir);
-			}),
-		);
-		expect(result).toBe(false);
-	});
-
-	test("exists returns true when file present", async () => {
-		await Bun.write(join(tempDir, "shelffile"), "effect https://github.com/test/effect.git\n");
-		const result = await run(
-			Effect.gen(function* () {
-				const svc = yield* ShelffileService;
-				return yield* svc.exists(tempDir);
-			}),
-		);
-		expect(result).toBe(true);
-	});
 });

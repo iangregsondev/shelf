@@ -7,6 +7,7 @@ export const createMockDaemonLayer = (): Layer.Layer<DaemonService> => {
 		DaemonService,
 		DaemonService.of({
 			start: () => Effect.succeed(12_345 as number),
+			runForeground: () => Effect.succeed(undefined),
 			stop: () => Effect.succeed(undefined),
 			status: () => Effect.succeed({ running: false as const }),
 			logs: () => Effect.succeed("" as string),

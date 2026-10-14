@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { runMain } from "@effect/platform-bun/BunRuntime";
 import { layer as BunServicesLayer } from "@effect/platform-bun/BunServices";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 import { addCommand } from "../cli/commands/add";
 import { removeCommand } from "../cli/commands/remove";
 import { listCommand } from "../cli/commands/list";
@@ -21,6 +21,7 @@ import { detectCommand } from "../cli/commands/detect";
 import { daemonCommand } from "../cli/commands/daemon";
 import { AppLayer } from "./layers/app";
 import { formatUserError } from "../cli/error-handler";
+import { SHELF_VERSION } from "../version";
 
 const shelf = Command.make("shelf").pipe(
 	Command.withSubcommands([
@@ -43,15 +44,19 @@ const shelf = Command.make("shelf").pipe(
 	Command.withDescription("A global cache of code reference repositories for AI agents"),
 );
 
-const program = Command.run(shelf, { version: "0.2.0" });
+const program = Command.run(shelf, { version: SHELF_VERSION });
 
 program.pipe(
 	Effect.provide(Layer.mergeAll(AppLayer, BunServicesLayer)),
 	Effect.catch((error: unknown) => {
 		const message = formatUserError(error);
 		if (message !== null) {
-			console.error(message); // eslint-disable-line no-console
-			return Effect.void;
+			return Effect.sync(() => {
+				console.error(message); // eslint-disable-line no-console
+				// runMain only calls process.exit for a non-zero teardown code, so
+				// setting exitCode makes a handled error exit 1 without a stack trace.
+				process.exitCode = 1;
+			});
 		}
 		return Effect.fail(error);
 	}),

@@ -1,4 +1,7 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -7,15 +10,32 @@ import { RepoService } from "../../../src/domain/repo/repo-service";
 import { createMockConfigLayer } from "../config/helpers";
 import { createMockGitLayer } from "../git/helpers";
 import { createMockSyncLayer } from "../sync/helpers";
+import { createMockRegistryLayer } from "../registry/helpers";
+
+// `add` claims the repo folder on disk before cloning, so point repoPath at a
+// fresh temp folder per test.
+let reposDir: string;
+
+beforeEach(async () => {
+	reposDir = await mkdtemp(join(tmpdir(), "shelf-repo-service-"));
+});
+
+afterEach(async () => {
+	await rm(reposDir, { recursive: true, force: true });
+});
 
 const buildRepoLayer = (configOverrides = {}, gitOverrides = {}, syncOverrides = {}) => {
-	const configLayer = createMockConfigLayer(configOverrides);
+	const configLayer = createMockConfigLayer({
+		repoPath: (alias: string) => join(reposDir, alias),
+		...configOverrides,
+	});
 	const gitLayer = createMockGitLayer(gitOverrides);
 	const syncLayer = createMockSyncLayer(syncOverrides);
 	return RepoService.layer.pipe(
 		Layer.provide(configLayer),
 		Layer.provide(gitLayer),
 		Layer.provide(syncLayer),
+		Layer.provide(createMockRegistryLayer()),
 	);
 };
 
@@ -32,13 +52,7 @@ describe("RepoService", () => {
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.add(
-						"https://github.com/Effect-TS/effect.git",
-						Option.none(),
-						Option.none(),
-						Option.none(),
-						Option.none(),
-					);
+					return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(result).toBe("effect");
@@ -50,13 +64,10 @@ describe("RepoService", () => {
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.add(
-						"https://github.com/Effect-TS/effect.git",
-						Option.some("my-effect"),
-						Option.none(),
-						Option.none(),
-						Option.none(),
-					);
+					return yield* repo.add({
+						url: "https://github.com/Effect-TS/effect.git",
+						alias: Option.some("my-effect"),
+					});
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(result).toBe("my-effect");
@@ -81,13 +92,7 @@ describe("RepoService", () => {
 			const exit = await Effect.runPromiseExit(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.add(
-						"https://github.com/Effect-TS/effect.git",
-						Option.none(),
-						Option.none(),
-						Option.none(),
-						Option.none(),
-					);
+					return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(exit._tag).toBe("Failure");
@@ -107,13 +112,11 @@ describe("RepoService", () => {
 			await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					yield* repo.add(
-						"https://github.com/test/repo.git",
-						Option.some("test"),
-						Option.some(new RepoPin({ type: "branch", value: "develop" })),
-						Option.none(),
-						Option.none(),
-					);
+					yield* repo.add({
+						url: "https://github.com/test/repo.git",
+						alias: Option.some("test"),
+						pin: Option.some(new RepoPin({ type: "branch", value: "develop" })),
+					});
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(Option.isSome(clonedPin)).toBe(true);
@@ -144,13 +147,12 @@ describe("RepoService", () => {
 			await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					yield* repo.add(
-						"https://github.com/test/repo.git",
-						Option.some("test"),
-						Option.none(),
-						Option.some(1),
-						Option.some(["src", "packages/core"]),
-					);
+					yield* repo.add({
+						url: "https://github.com/test/repo.git",
+						alias: Option.some("test"),
+						depth: Option.some(1),
+						sparse: Option.some(["src", "packages/core"]),
+					});
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(Option.isSome(clonedDepth)).toBe(true);
@@ -168,13 +170,7 @@ describe("RepoService", () => {
 			const gitSshResult = await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.add(
-						"git@github.com:user/my-lib.git",
-						Option.none(),
-						Option.none(),
-						Option.none(),
-						Option.none(),
-					);
+					return yield* repo.add({ url: "git@github.com:user/my-lib.git" });
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(gitSshResult).toBe("my-lib");
@@ -264,7 +260,7 @@ describe("RepoService", () => {
 		});
 	});
 
-	describe("update", () => {
+	describe("sync", () => {
 		test("syncs single repo by alias", async () => {
 			let syncedRepo: string | undefined;
 			const existingRepo = new RepoEntry({
@@ -294,7 +290,7 @@ describe("RepoService", () => {
 			await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					yield* repo.update(Option.some("test-repo"));
+					yield* repo.sync(Option.some("test-repo"));
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(syncedRepo).toBe("test-repo");
@@ -308,14 +304,14 @@ describe("RepoService", () => {
 				{
 					syncAll: () => {
 						syncAllCalled = true;
-						return Effect.void;
+						return Effect.succeed({ total: 0, failures: [] });
 					},
 				},
 			);
 			await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					yield* repo.update(Option.none());
+					yield* repo.sync(Option.none());
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(syncAllCalled).toBe(true);
@@ -323,10 +319,35 @@ describe("RepoService", () => {
 	});
 
 	describe("resolveAutoPin", () => {
-		test("resolves matching tag from package.json", async () => {
+		// resolveAutoPin reads package.json from the working directory, so each
+		// test runs inside a temp dir holding its own fixture manifest. The
+		// fixture versions are deliberately unlike shelf's own dependencies.
+		let fixtureDir: string;
+		let originalCwd: string;
+
+		beforeEach(async () => {
+			originalCwd = process.cwd();
+			fixtureDir = await mkdtemp(join(tmpdir(), "shelf-autopin-"));
+			await Bun.write(
+				join(fixtureDir, "package.json"),
+				JSON.stringify({
+					dependencies: { effect: "^3.10.2" },
+					devDependencies: { typescript: "~5.4.0" },
+				}),
+			);
+			process.chdir(fixtureDir);
+		});
+
+		afterEach(async () => {
+			process.chdir(originalCwd);
+			await rm(fixtureDir, { recursive: true, force: true });
+		});
+
+		test("resolves matching tag from the project's package.json", async () => {
 			const lsRemoteOutput = [
-				"abc123\trefs/tags/v4.0.0-beta.31",
-				"def456\trefs/tags/v4.0.0-beta.31^{}",
+				"abc123\trefs/tags/v3.10.2",
+				"def456\trefs/tags/v3.10.2^{}",
+				"789abc\trefs/tags/v4.0.4",
 			].join("\n");
 			const layer = buildRepoLayer(
 				{},
@@ -337,14 +358,33 @@ describe("RepoService", () => {
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.resolveAutoPin("https://github.com/Effect-TS/effect.git");
+					return yield* repo.resolveAutoPin("https://github.com/Effect-TS/effect.git", "effect");
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(Option.isSome(result)).toBe(true);
 			if (Option.isSome(result)) {
 				expect(result.value.type).toBe("tag");
-				expect(result.value.value).toBe("v4.0.0-beta.31");
+				expect(result.value.value).toBe("v3.10.2");
 			}
+		});
+
+		test("resolves from devDependencies", async () => {
+			const layer = buildRepoLayer(
+				{},
+				{
+					lsRemoteTags: () => Effect.succeed("abc123\trefs/tags/v5.4.0"),
+				},
+			);
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const repo = yield* RepoService;
+					return yield* repo.resolveAutoPin(
+						"https://github.com/microsoft/typescript.git",
+						"typescript",
+					);
+				}).pipe(Effect.provide(layer)),
+			);
+			expect(Option.getOrUndefined(result)?.value).toBe("v5.4.0");
 		});
 
 		test("fails when package not in dependencies", async () => {
@@ -357,7 +397,10 @@ describe("RepoService", () => {
 			const exit = await Effect.runPromiseExit(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.resolveAutoPin("https://github.com/test/nonexistent-pkg.git");
+					return yield* repo.resolveAutoPin(
+						"https://github.com/test/nonexistent-pkg.git",
+						"nonexistent-pkg",
+					);
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(exit._tag).toBe("Failure");

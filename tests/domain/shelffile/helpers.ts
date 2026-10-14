@@ -12,14 +12,17 @@ export type ShelffileOverrides = {
 		dir: string,
 	) => Effect.Effect<Shelffile, ShelffileNotFoundError | ShelffileParseError>;
 	readonly write?: (dir: string, shelffile: Shelffile) => Effect.Effect<void, ShelffileParseError>;
-	readonly exists?: (dir: string) => Effect.Effect<boolean>;
+	readonly possibleAliases?: (
+		dir: string,
+	) => Effect.Effect<ReadonlySet<string>, ShelffileParseError>;
 };
 
 const defaultShelffileImpl = {
 	read: (): Effect.Effect<Shelffile, ShelffileNotFoundError | ShelffileParseError> =>
 		Effect.succeed({ entries: [] }),
 	write: (): Effect.Effect<void, ShelffileParseError> => Effect.void,
-	exists: (): Effect.Effect<boolean> => Effect.succeed(false),
+	possibleAliases: (): Effect.Effect<ReadonlySet<string>, ShelffileParseError> =>
+		Effect.succeed(new Set<string>()),
 };
 
 export const createMockShelffileLayer = (

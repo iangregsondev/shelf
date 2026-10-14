@@ -1,11 +1,15 @@
 export const stripSemverRange = (version: string): string => version.replace(/^[~^>=<]+/, "");
 
-export const candidateTags = (packageName: string, version: string): string[] => {
+// Tags auto-pin tries, most specific first: a monorepo tags each package
+// (`@scope/name@1.2.3` or `name@1.2.3`), so those beat a repo-wide `v1.2.3`.
+const candidateTags = (packageName: string, version: string): string[] => {
 	const bare = stripSemverRange(version);
-	const shortName = packageName.includes("/")
-		? (packageName.split("/").pop() ?? packageName)
-		: packageName;
-	return [`v${bare}`, `${shortName}@${bare}`, bare];
+	const shortName = packageName.split("/").pop() ?? packageName;
+	const named =
+		shortName === packageName
+			? [`${packageName}@${bare}`]
+			: [`${packageName}@${bare}`, `${shortName}@${bare}`];
+	return [...named, `v${bare}`, bare];
 };
 
 export const parseRemoteTags = (lsRemoteOutput: string): Set<string> => {

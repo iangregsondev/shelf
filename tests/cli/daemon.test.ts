@@ -1,20 +1,16 @@
-import { describe, test, expect } from "bun:test";
-import { join } from "node:path";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 
-const CLI = join(import.meta.dir, "../../src/startup/index.ts");
+let shelf: ShelfSandbox;
+const runShelf = (args: string[], cwd?: string) => shelf.run(args, { cwd });
 
-const runShelf = async (
-	args: string[],
-): Promise<{ stdout: string; stderr: string; exitCode: number; output: string }> => {
-	const proc = Bun.spawn(["bun", "run", CLI, ...args], {
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const exitCode = await proc.exited;
-	const stdout = await new Response(proc.stdout).text();
-	const stderr = await new Response(proc.stderr).text();
-	return { stdout, stderr, exitCode, output: stdout + stderr };
-};
+beforeEach(async () => {
+	shelf = await createShelfSandbox();
+});
+
+afterEach(async () => {
+	await shelf.cleanup();
+});
 
 describe("daemon command", () => {
 	test("daemon status returns successfully", async () => {
