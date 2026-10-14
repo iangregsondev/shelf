@@ -50,8 +50,12 @@ program.pipe(
 	Effect.catch((error: unknown) => {
 		const message = formatUserError(error);
 		if (message !== null) {
-			console.error(message); // eslint-disable-line no-console
-			return Effect.void;
+			return Effect.sync(() => {
+				console.error(message); // eslint-disable-line no-console
+				// runMain only calls process.exit for a non-zero teardown code, so
+				// setting exitCode makes a handled error exit 1 without a stack trace.
+				process.exitCode = 1;
+			});
 		}
 		return Effect.fail(error);
 	}),
