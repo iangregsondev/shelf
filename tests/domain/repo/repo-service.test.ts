@@ -1346,6 +1346,33 @@ describe("RepoService.clearTrash", () => {
     expect(await readdir(reposDir)).toEqual([dead]);
   });
 
+  // A case-only rename's temp folder is named after the new alias.
+  test.each([
+    ["the new spelling, once the config was saved", "React"],
+    ["the old spelling, before the config was saved", "react"],
+  ])("moves a dead case-only rename's folder back to %s", async (_label, stored) => {
+    await writeText(join(reposDir, tempName("rename", "React", deadPid(), ID), "lib.ts"), "code");
+    const layer = buildRepoLayer({ load: () => Effect.succeed(configOf(entry(stored))) });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual([stored]);
+    expect(await readText(join(reposDir, stored, "lib.ts"))).toBe("code");
+  });
+
+  test("deletes a dead rename's folder when no entry wants it", async () => {
+    await writeText(join(reposDir, tempName("rename", "React", deadPid(), ID), "lib.ts"), "code");
+    const layer = buildRepoLayer({ load: () => Effect.succeed(configOf(entry("vue"))) });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual([]);
+  });
+
+  test("keeps the folder of a rename whose process is alive", async () => {
+    const live = tempName("rename", "React", process.pid, ID);
+    await writeText(join(reposDir, live, "lib.ts"), "code");
+    const layer = buildRepoLayer({ load: () => Effect.succeed(configOf(entry("react"))) });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual([live]);
+  });
+
   test("keeps the folder of a remove whose process is alive", async () => {
     const live = tempName("removing", "lib", process.pid, ID);
     await writeText(join(reposDir, live, "lib.ts"), "code");

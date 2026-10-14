@@ -117,19 +117,18 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
         .pipe(Effect.map((full) => new RepoPin({ type: "commit", value: full })));
 
     /**
-     * Settles dead temp folders: those of adds and removes whose process is
-     * gone. A dead remove's folder moves back when its config entry is still
-     * saved and the repo folder is missing (it died before saving); every
-     * other one becomes trash. A folder that can't be moved comes back for
+     * Settles dead temp folders: those of adds, removes and case-only
+     * renames whose process is gone. A dead remove's or rename's folder
+     * moves back to the repo folder of a config entry it belongs to, when
+     * that folder is missing (it died partway); every other one becomes
+     * trash. A folder that can't be moved comes back for
      * a warning; the next remove or prune tries again. A PID from another
      * PID namespace (a repos folder shared with a container) reads as gone.
      */
     const settleDeadTempFolders = Effect.gen(function* () {
       const dead = (yield* listFolder(config.reposDir)).flatMap((name) => {
         const temp = parseTempName(name);
-        return temp !== undefined &&
-          (temp.kind === "add" || temp.kind === "removing") &&
-          !isProcessAlive(temp.pid)
+        return temp !== undefined && temp.kind !== "trash" && !isProcessAlive(temp.pid)
           ? [{ ...temp, path: join(config.reposDir, name) }]
           : [];
       });
@@ -137,24 +136,34 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
       if (dead.length === 0) {
         return left;
       }
-      // Under the config lock, so no add or remove changes entries or repo
-      // folders while a dead remove's folder is checked and moved.
+      // Under the config lock, so no add, remove or rename changes entries
+      // or repo folders while a dead folder is checked and moved.
       yield* config.update((current) =>
         Effect.gen(function* () {
           for (const temp of dead) {
-            // An alias read from a folder name may be unsafe; such a folder is only trash.
-            const repoDir = Option.getOrUndefined(
-              yield* config.repoPath(temp.alias).pipe(Effect.option),
+            // The entries this folder may belong back to: a remove's own
+            // alias, or a case-only rename's alias in either spelling (the
+            // config may hold the old one or the new one). An add's folder
+            // belongs to none: its entry is only saved once it is in place.
+            const owners = current.repos.filter((r: RepoEntry) =>
+              temp.kind === "removing"
+                ? r.alias === temp.alias
+                : temp.kind === "rename" && r.alias.toLowerCase() === temp.alias.toLowerCase(),
             );
-            const moveBack =
-              temp.kind === "removing" &&
-              repoDir !== undefined &&
-              current.repos.some((r: RepoEntry) => r.alias === temp.alias) &&
-              !(yield* pathExists(repoDir));
-            // Named from reposDir, not tempSibling(repoDir), which an unsafe alias would lack.
-            const to = moveBack
-              ? repoDir
-              : join(config.reposDir, tempName("trash", temp.alias, process.pid, randomUUID()));
+            // It moves back only into an owner whose repo folder is missing.
+            let to: string | undefined;
+            for (const owner of owners) {
+              // A hand-edited alias may be unsafe; such an entry never gets a folder.
+              const repoDir = Option.getOrUndefined(
+                yield* config.repoPath(owner.alias).pipe(Effect.option),
+              );
+              if (repoDir !== undefined && !(yield* pathExists(repoDir))) {
+                to = repoDir;
+                break;
+              }
+            }
+            // Named from reposDir, not tempSibling, which an unsafe alias would break.
+            to ??= join(config.reposDir, tempName("trash", temp.alias, process.pid, randomUUID()));
             yield* fs.rename(temp.path, to).pipe(
               Effect.catch((error) =>
                 Effect.sync(() => {

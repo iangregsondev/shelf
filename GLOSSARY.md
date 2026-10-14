@@ -35,7 +35,7 @@ The folder of a removed reference repo, renamed aside (`.shelf-trash-…`) and w
 _Avoid_: bin, garbage
 
 **Dead temp folder**:
-A hidden folder an add or a remove was working in (`.shelf-add-…`, `.shelf-removing-…`) whose process is gone, because it was killed partway. `remove` and `prune` move it back to its repo or turn it into trash.
+A hidden folder an add, a remove or a case-only alias change was working in (`.shelf-add-…`, `.shelf-removing-…`, `.shelf-rename-…`) whose process is gone, because it was killed partway. `remove` and `prune` move it back to its repo or turn it into trash.
 _Avoid_: leftover, stale folder
 
 **Shorthand**:
