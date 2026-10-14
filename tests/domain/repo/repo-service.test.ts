@@ -2,7 +2,9 @@ import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { RepoEntry, ShelfConfig, RepoPin } from "../../../src/domain/config/config-schema";
@@ -18,8 +20,8 @@ import { GitOperationError } from "../../../src/domain/git/git-errors";
 import { ConfigWriteError } from "../../../src/domain/config/config-errors";
 import { RegistryWriteError } from "../../../src/domain/registry/registry-errors";
 
-// `add` claims the repo folder on disk before cloning, so point repoPath at a
-// fresh temp folder per test.
+// `add` clones into a temp folder next to the repo folder, then moves it into
+// place, so point repoPath at a fresh temp folder per test.
 let reposDir: string;
 
 beforeEach(async () => {
@@ -125,14 +127,16 @@ describe("RepoService", () => {
           return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
         }).pipe(Effect.flip, Effect.provide(buildRepoLayer({ repoPath: () => targetDir }))),
       );
+      // The first folder add makes is the temp folder it clones into.
+      const cloneDir = (error as { path: string }).path;
+      expect(cloneDir).toMatch(/[/\\]missing-parent[/\\]\.shelf-add-effect-[0-9a-f-]{36}$/);
       expect(error).toMatchObject({
         _tag: "RepoFolderError",
-        path: targetDir,
-        message: `ENOENT: no such file or directory, mkdir '${targetDir}'`,
+        message: `ENOENT: no such file or directory, mkdir '${cloneDir}'`,
       });
     });
 
-    test("removes the folder it claimed when the clone fails", async () => {
+    test("leaves no folder behind when the clone fails", async () => {
       const error = await Effect.runPromise(
         Effect.gen(function* () {
           const repo = yield* RepoService;
@@ -151,7 +155,7 @@ describe("RepoService", () => {
         ),
       );
       expect(error._tag).toBe("GitOperationError");
-      expect(existsSync(join(reposDir, "effect"))).toBe(false);
+      expect(await readdir(reposDir)).toEqual([]);
     });
   });
 
@@ -781,7 +785,67 @@ describe("RepoService.add, more", () => {
       layer,
     );
     expect(error).toMatchObject({ _tag: "RepoAlreadyExistsError", alias: "lib" });
-    expect(existsSync(join(reposDir, "lib"))).toBe(false);
+    expect(await readdir(reposDir)).toEqual([]);
+  });
+
+  test("a remove during the clone leaves the clone alone, and the add completes", async () => {
+    const started = Effect.runSync(Deferred.make<void>());
+    const gate = Effect.runSync(Deferred.make<void>());
+    const layer = buildRepoLayer(
+      {},
+      {
+        clone: (_url: string, dir: string) =>
+          Effect.promise(() => writeText(join(dir, "lib.ts"), "code")).pipe(
+            Effect.andThen(Deferred.succeed(started, undefined)),
+            Effect.andThen(Deferred.await(gate)),
+          ),
+      },
+    );
+    const { added, removeError } = await runRepo(
+      (repo) =>
+        Effect.gen(function* () {
+          const adding = yield* Effect.forkChild(
+            repo.add({ url: "https://github.com/test/lib.git" }),
+          );
+          yield* Deferred.await(started);
+          const removeError = yield* Effect.flip(repo.remove("lib"));
+          yield* Deferred.succeed(gate, undefined);
+          return { added: yield* Fiber.join(adding), removeError };
+        }),
+      layer,
+    );
+    expect(removeError).toMatchObject({ _tag: "RepoNotFoundError", alias: "lib" });
+    expect(added).toBe("lib");
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+    expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+  });
+
+  test("a folder that appears at the alias during the clone is left alone, and the clone removed", async () => {
+    const layer = buildRepoLayer(
+      {},
+      { clone: () => Effect.promise(() => writeText(join(reposDir, "lib", "keep.txt"), "mine")) },
+    );
+    const error = await failureOf(
+      (repo) => repo.add({ url: "https://github.com/test/lib.git" }),
+      layer,
+    );
+    expect(error).toMatchObject({ _tag: "RepoAlreadyExistsError", alias: "lib" });
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+    expect(await readdir(join(reposDir, "lib"))).toEqual(["keep.txt"]);
+  });
+
+  test("fails with RepoFolderError naming the OS error when the clone can't move into place", async () => {
+    const layer = buildRepoLayer(
+      {},
+      { clone: (_url: string, dir: string) => Effect.promise(() => rm(dir, { recursive: true })) },
+    );
+    const error = await failureOf(
+      (repo) => repo.add({ url: "https://github.com/test/lib.git" }),
+      layer,
+    );
+    expect(error).toMatchObject({ _tag: "RepoFolderError", path: join(reposDir, "lib") });
+    expect((error as { message: string }).message).toContain("ENOENT");
+    expect(await readdir(reposDir)).toEqual([]);
   });
 
   test("an unsafe alias is refused before anything is cloned", async () => {

@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
 import { ConfigService } from "../config/config-service";
-import { checkAlias, errorCode, osError, osErrorMessage } from "../config/config-utils";
+import { checkAlias, osErrorMessage } from "../config/config-utils";
 import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
 import { RegistryService } from "../registry/registry-service";
@@ -135,25 +135,35 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
           return yield* new RepoAlreadyExistsError({ alias: resolvedAlias });
         }
         const targetDir = yield* config.repoPath(resolvedAlias);
-        // Claim the folder before cloning, so a failed add only ever removes
-        // a folder it created itself. The clone runs outside the config lock;
-        // only the config write takes turns with other adds.
-        yield* fs
-          .makeDirectory(targetDir)
-          .pipe(
-            Effect.mapError((error) =>
-              errorCode(osError(error)) === "EEXIST"
-                ? new RepoAlreadyExistsError({ alias: resolvedAlias })
-                : new RepoFolderError({ path: targetDir, message: osErrorMessage(error) }),
-            ),
-          );
+        // rename() silently replaces an empty folder, so refuse any folder
+        // already at the alias, before cloning and again before the rename.
+        const refuseTaken = Effect.gen(function* () {
+          if (yield* pathExists(targetDir)) {
+            return yield* new RepoAlreadyExistsError({ alias: resolvedAlias });
+          }
+        });
+        yield* refuseTaken;
+        // Clone into a temp folder, then rename it into place, so `remove`
+        // never takes a half-made clone for an orphan folder. Aliases can't
+        // start with ".", so the temp name never clashes with one. The clone
+        // runs outside the config lock; only the config write takes turns
+        // with other adds.
+        const cloneDir = join(dirname(targetDir), `.shelf-add-${resolvedAlias}-${randomUUID()}`);
+        const folderError = (path: string) => (error: unknown) =>
+          new RepoFolderError({ path, message: osErrorMessage(error) });
+        yield* fs.makeDirectory(cloneDir).pipe(Effect.mapError(folderError(cloneDir)));
+        // A failed add only ever removes the folder it made itself.
+        let madeDir = cloneDir;
         yield* Effect.gen(function* () {
-          yield* git.clone(url, targetDir, pin, depth, sparse);
+          yield* git.clone(url, cloneDir, pin, depth, sparse);
           // A commit pin is stored as its full hash, read from the fresh clone.
           const storedPin =
             Option.isSome(pin) && pin.value.type === "commit"
-              ? Option.some(yield* fullCommitPin(targetDir, pin.value.value))
+              ? Option.some(yield* fullCommitPin(cloneDir, pin.value.value))
               : pin;
+          yield* refuseTaken;
+          yield* fs.rename(cloneDir, targetDir).pipe(Effect.mapError(folderError(targetDir)));
+          madeDir = targetDir;
           const now = new Date().toISOString();
           const newRepo = new RepoEntry({
             url,
@@ -171,7 +181,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
           );
         }).pipe(
           Effect.onError(() =>
-            fs.remove(targetDir, { recursive: true, force: true }).pipe(Effect.ignore),
+            fs.remove(madeDir, { recursive: true, force: true }).pipe(Effect.ignore),
           ),
         );
         return resolvedAlias;
