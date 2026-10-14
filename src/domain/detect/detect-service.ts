@@ -4,7 +4,7 @@ import * as Option from "effect/Option";
 import * as Context from "effect/Context";
 import { join } from "node:path";
 import { ConfigService } from "../config/config-service";
-import { builtinRegistry } from "../resolve/resolve-utils";
+import { lookupBuiltin } from "../resolve/resolve-utils";
 import { DetectedRepo } from "./detect-schema";
 import {
 	parsePackageJson,
@@ -73,7 +73,7 @@ export class DetectService extends Context.Service<DetectService>()(
 					if (Option.isSome(pkgContent)) {
 						const deps = parsePackageJson(pkgContent.value);
 						for (const dep of deps) {
-							const registryUrl = builtinRegistry[dep.name];
+							const registryUrl = lookupBuiltin(dep.name);
 							if (registryUrl) {
 								detected.push(
 									new DetectedRepo({
