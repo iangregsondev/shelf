@@ -74,6 +74,22 @@ require github.com/gorilla/mux v1.8.0
     expect(result[0]!.name).toBe("github.com/gorilla/mux");
   });
 
+  test("skips blank and single-word lines inside a require block", () => {
+    const content = `module example.com/myapp
+
+require (
+
+	github.com/gin-gonic/gin v1.9.1
+	stray
+	github.com/gorilla/mux v1.8.0 // indirect
+)`;
+    const result = parseGoMod(content);
+    expect(result.map((d) => [d.name, d.version])).toEqual([
+      ["github.com/gin-gonic/gin", "v1.9.1"],
+      ["github.com/gorilla/mux", "v1.8.0"],
+    ]);
+  });
+
   test("handles empty content", () => {
     const result = parseGoMod("");
     expect(result.length).toBe(0);
