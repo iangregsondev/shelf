@@ -27,10 +27,7 @@ describe("formatUserError: known error tags", () => {
     ],
     [{ _tag: "PinResolutionError", message: "unknown ref" }, "Pin failed: unknown ref"],
     [{ _tag: "ConfigParseError", message: "bad JSON" }, "Config error: bad JSON"],
-    [
-      { _tag: "ConfigWriteError", message: "disk full" },
-      "Could not save shelf state: disk full",
-    ],
+    [{ _tag: "ConfigWriteError", message: "disk full" }, "Could not save shelf state: disk full"],
     [
       { _tag: "RepoFolderError", path: "/shelf/repos/x", message: "permission denied" },
       "Could not create the repo folder /shelf/repos/x: permission denied",
@@ -69,10 +66,7 @@ describe("formatUserError: known error tags", () => {
       { _tag: "DetectError", message: "No package.json found" },
       "Detection failed: No package.json found",
     ],
-    [
-      { _tag: "DaemonAlreadyRunningError", pid: 12_345 },
-      "Daemon is already running (PID: 12345).",
-    ],
+    [{ _tag: "DaemonAlreadyRunningError", pid: 12_345 }, "Daemon is already running (PID: 12345)."],
     [{ _tag: "DaemonNotRunningError" }, "No daemon is currently running."],
     [{ _tag: "DaemonStartError", message: "Spawn failed" }, "Failed to start daemon: Spawn failed"],
     [
@@ -92,6 +86,8 @@ describe("formatUserError: known error tags", () => {
 describe("formatUserError: anything else returns null", () => {
   test.each([
     ["an unknown tag", { _tag: "SomeRandomError" }],
+    ["a tag named after an Object.prototype method", { _tag: "toString" }],
+    ["a tag named after Object.prototype.constructor", { _tag: "constructor" }],
     ["a plain Error", new Error("plain error")],
     ["an object without _tag", { message: "no tag" }],
     ["null", null],

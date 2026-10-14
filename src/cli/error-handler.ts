@@ -38,7 +38,8 @@ export const formatUserError = (error: unknown): string | null => {
   if (error !== null && typeof error === "object" && "_tag" in error) {
     const tagged = error as Record<string, unknown>;
     const tag = String(tagged["_tag"]);
-    const formatter = errorMessages[tag];
+    // Own keys only: a tag like "toString" must not pick up Object.prototype methods.
+    const formatter = Object.hasOwn(errorMessages, tag) ? errorMessages[tag] : undefined;
     if (formatter) {
       return formatter(tagged);
     }
