@@ -48,15 +48,18 @@ jobs:
         if: steps.version.outputs.changed == 'true'
 
       # devEngines pins pnpm, so `npm publish` refuses to run (EBADDEVENGINES);
-      # `vp pm publish` forwards to pnpm publish. The .npmrc holds a reference to
-      # NPM_TOKEN, not its value. --no-git-checks because .npmrc leaves the tree dirty.
+      # `vp pm publish` forwards to pnpm publish. The auth .npmrc sits in the
+      # runner's temp folder, outside the checkout, so the tree stays clean and
+      # pnpm's git checks (clean tree, publish branch) still run. It holds a
+      # reference to NPM_TOKEN, not its value; NPM_CONFIG_USERCONFIG points pnpm at it.
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'
         run: |
-          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > .npmrc
-          vp pm publish --access public --no-git-checks
+          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
+          vp pm publish --access public
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/.npmrc
 
       - name: Create GitHub release
         if: steps.version.outputs.changed == 'true'
