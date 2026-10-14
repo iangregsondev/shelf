@@ -3,15 +3,7 @@ import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
 import { ResolvedRepo } from "./resolve-schema";
 import { ResolveError } from "./resolve-errors";
-import {
-	classifyInput,
-	expandOwnerRepo,
-	expandPrefixed,
-	deriveAliasFromOwnerRepo,
-	builtinRegistry,
-	githubApiBaseUrl,
-} from "./resolve-utils";
-import { deriveAlias } from "../repo/repo-utils";
+import { githubApiBaseUrl, resolveLocally } from "./resolve-utils";
 
 const resolveViaGitHubApi = Effect.fn("resolveViaGitHubApi")(function* (name: string) {
 	const response = yield* Effect.tryPromise({
@@ -60,62 +52,18 @@ export class ResolveService extends Context.Service<ResolveService>()(
 		make: Effect.gen(function* () {
 			return {
 				resolve: Effect.fn("ResolveService.resolve")(function* (input: string) {
-					const type = classifyInput(input);
-
-					switch (type) {
-						case "url": {
-							return new ResolvedRepo({
-								url: input,
-								suggestedAlias: deriveAlias(input),
-								source: "direct",
-							});
-						}
-
-						case "ssh":
-						case "path": {
-							return new ResolvedRepo({
-								url: input,
-								suggestedAlias: deriveAlias(input),
-								source: "direct",
-							});
-						}
-
-						case "owner-repo": {
-							const url = expandOwnerRepo(input);
-							return new ResolvedRepo({
-								url,
-								suggestedAlias: deriveAliasFromOwnerRepo(input),
-								source: "owner-repo",
-							});
-						}
-
-						case "prefixed": {
-							const { url, ownerRepo } = expandPrefixed(input);
-							return new ResolvedRepo({
-								url,
-								suggestedAlias: deriveAliasFromOwnerRepo(ownerRepo),
-								source: "prefixed",
-							});
-						}
-
-						case "bare-name": {
-							const registryUrl = builtinRegistry[input];
-							if (registryUrl) {
-								return new ResolvedRepo({
-									url: registryUrl,
-									suggestedAlias: input,
-									source: "registry",
-								});
-							}
-							return yield* resolveViaGitHubApi(input);
-						}
-
-						default: {
-							return yield* Effect.fail(
-								new ResolveError({ input, message: "Unrecognized input format" }),
-							);
-						}
+					const local = resolveLocally(input);
+					if (local._tag === "Invalid") {
+						return yield* Effect.fail(new ResolveError({ input, message: local.message }));
 					}
+					if (local._tag === "Search") {
+						return yield* resolveViaGitHubApi(local.name);
+					}
+					return new ResolvedRepo({
+						url: local.url,
+						suggestedAlias: local.suggestedAlias,
+						source: local.source,
+					});
 				}),
 			};
 		}),

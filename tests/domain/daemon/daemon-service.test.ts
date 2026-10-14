@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { DaemonService } from "../../../src/domain/daemon/daemon-service";
 import { DaemonState, encodeDaemonState } from "../../../src/domain/daemon/daemon-schema";
 import { ConfigService } from "../../../src/domain/config/config-service";
+import { defaultConfig } from "../../../src/domain/config/config-schema";
 import { stopDaemonIn } from "../../helpers/daemon";
 
 describe("DaemonService", () => {
@@ -20,7 +21,10 @@ describe("DaemonService", () => {
 			ConfigService,
 			ConfigService.of({
 				load: () => Effect.succeed({ version: 1 as const, syncIntervalMinutes: 60, repos: [] }),
-				save: () => Effect.void,
+				update: (fn) => {
+					const result = fn(defaultConfig);
+					return Effect.isEffect(result) ? result : Effect.succeed(result);
+				},
 				ensureDirectories: () => Effect.void,
 				repoPath: (alias: string) => join(tempDir, "repos", alias),
 				configDir: tempDir,

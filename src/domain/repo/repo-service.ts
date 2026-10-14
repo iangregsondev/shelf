@@ -2,14 +2,21 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
+import { mkdir, rm as removePath } from "node:fs/promises";
 import { join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
+import { ConfigParseError } from "../config/config-errors";
 import { ConfigService } from "../config/config-service";
 import { GitService } from "../git/git-service";
 import { SyncService, type SyncAllResult } from "../sync/sync-service";
 import { AutoPinResolutionError, RepoAlreadyExistsError, RepoNotFoundError } from "./repo-errors";
 import { deriveAlias } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
+
+const errorCode = (error: unknown): string | undefined =>
+	error !== null && typeof error === "object" && "code" in error
+		? String((error as { code: unknown }).code)
+		: undefined;
 
 export class RepoService extends Context.Service<RepoService>()("shelf/domain/repo/RepoService", {
 	make: Effect.gen(function* () {
@@ -28,23 +35,44 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				yield* config.ensureDirectories();
 				const resolvedAlias = Option.getOrElse(alias, () => deriveAlias(url));
 				const cfg = yield* config.load();
-				const existing = cfg.repos.find((r: RepoEntry) => r.alias === resolvedAlias);
-				if (existing) {
+				if (cfg.repos.some((r: RepoEntry) => r.alias === resolvedAlias)) {
 					return yield* new RepoAlreadyExistsError({ alias: resolvedAlias });
 				}
 				const targetDir = config.repoPath(resolvedAlias);
-				yield* git.clone(url, targetDir, pin, depth, sparse);
-				const now = new Date().toISOString();
-				const newRepo = new RepoEntry({
-					url,
-					alias: resolvedAlias,
-					pin,
-					depth,
-					sparse,
-					addedAt: now,
-					lastSyncedAt: Option.some(now),
+				// Claim the folder before cloning, so a failed add only ever removes
+				// a folder it created itself. The clone runs outside the config lock;
+				// only the config write takes turns with other adds.
+				yield* Effect.tryPromise({
+					try: () => mkdir(targetDir),
+					catch: (error) =>
+						errorCode(error) === "EEXIST"
+							? new RepoAlreadyExistsError({ alias: resolvedAlias })
+							: new ConfigParseError({ message: `Failed to create ${targetDir}` }),
 				});
-				yield* config.save(new ShelfConfig({ ...cfg, repos: [...cfg.repos, newRepo] }));
+				yield* Effect.gen(function* () {
+					yield* git.clone(url, targetDir, pin, depth, sparse);
+					const now = new Date().toISOString();
+					const newRepo = new RepoEntry({
+						url,
+						alias: resolvedAlias,
+						pin,
+						depth,
+						sparse,
+						addedAt: now,
+						lastSyncedAt: Option.some(now),
+					});
+					yield* config.update((current) =>
+						current.repos.some((r: RepoEntry) => r.alias === resolvedAlias)
+							? Effect.fail(new RepoAlreadyExistsError({ alias: resolvedAlias }))
+							: Effect.succeed(new ShelfConfig({ ...current, repos: [...current.repos, newRepo] })),
+					);
+				}).pipe(
+					Effect.onError(() =>
+						Effect.tryPromise(() => removePath(targetDir, { recursive: true, force: true })).pipe(
+							Effect.ignore,
+						),
+					),
+				);
 				return resolvedAlias;
 			}),
 
@@ -64,11 +92,12 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 					},
 					catch: () => undefined,
 				}).pipe(Effect.ignore);
-				yield* config.save(
-					new ShelfConfig({
-						...cfg,
-						repos: cfg.repos.filter((r: RepoEntry) => r.alias !== repo.alias),
-					}),
+				yield* config.update(
+					(current) =>
+						new ShelfConfig({
+							...current,
+							repos: current.repos.filter((r: RepoEntry) => r.alias !== repo.alias),
+						}),
 				);
 				return repo.alias;
 			}),

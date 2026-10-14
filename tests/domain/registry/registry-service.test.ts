@@ -30,7 +30,10 @@ describe("RegistryService", () => {
 			ConfigService,
 			ConfigService.of({
 				load: () => Effect.succeed(defaultConfig),
-				save: () => Effect.void,
+				update: (fn) => {
+					const result = fn(defaultConfig);
+					return Effect.isEffect(result) ? result : Effect.succeed(result);
+				},
 				ensureDirectories: () => Effect.void,
 				repoPath: (alias: string) => join(tempDir, "repos", alias),
 				configDir: tempDir,

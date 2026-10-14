@@ -37,7 +37,9 @@ export const configCommand = Command.make("config", { key, value }, (args) =>
 				yield* Console.log("syncIntervalMinutes must be a number");
 				return;
 			}
-			yield* configService.save(new ShelfConfig({ ...cfg, syncIntervalMinutes: num }));
+			yield* configService.update(
+				(current) => new ShelfConfig({ ...current, syncIntervalMinutes: num }),
+			);
 			yield* Console.log(`Set syncIntervalMinutes = ${num}`);
 		} else {
 			yield* Console.log(`Unknown config key: ${k}`);

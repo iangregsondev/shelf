@@ -6,6 +6,7 @@ import { ConfigService } from "../config/config-service";
 import { ShelffileService } from "../shelffile/shelffile-service";
 import { ShelfRegistry, defaultRegistry, decodeRegistry, encodeRegistry } from "./registry-schema";
 import { RegistryParseError } from "./registry-errors";
+import { withStateFileLock, writeFileAtomic } from "../config/state-file-utils";
 
 const REGISTRY_FILE = "registry.json";
 
@@ -37,61 +38,84 @@ export class RegistryService extends Context.Service<RegistryService>()(
 				});
 			});
 
-			const save = Effect.fn("RegistryService.save")(function* (
-				registry: typeof ShelfRegistry.Type,
-			) {
-				const encoded = encodeRegistry(registry);
-				yield* Effect.tryPromise({
-					try: async () => {
-						await Bun.write(registryPath, JSON.stringify(encoded, null, "\t"));
-					},
+			const save = (registry: ShelfRegistry): Effect.Effect<void, RegistryParseError> =>
+				Effect.tryPromise({
+					try: () =>
+						writeFileAtomic(registryPath, JSON.stringify(encodeRegistry(registry), null, "\t")),
 					catch: () => new RegistryParseError({ message: "Failed to write registry file" }),
 				});
-			});
+
+			/**
+			 * Reads the registry, applies `fn` and saves the result, holding the
+			 * in-process and cross-process registry locks throughout. Returns the
+			 * saved registry.
+			 */
+			const update = (
+				fn: (current: ShelfRegistry) => ShelfRegistry,
+			): Effect.Effect<ShelfRegistry, RegistryParseError> =>
+				Effect.gen(function* () {
+					const next = fn(yield* load());
+					yield* save(next);
+					return next;
+				}).pipe(
+					withStateFileLock(registryPath, (message) => new RegistryParseError({ message })),
+					Effect.withSpan("RegistryService.update"),
+				);
 
 			return {
 				load,
-				save,
+				update,
 
 				registerProject: Effect.fn("RegistryService.registerProject")(function* (dir: string) {
-					const registry = yield* load();
-					if (registry.projects.includes(dir)) return;
-					yield* save(
-						new ShelfRegistry({
-							...registry,
-							projects: [...registry.projects, dir],
-						}),
+					yield* update((registry) =>
+						registry.projects.includes(dir)
+							? registry
+							: new ShelfRegistry({ ...registry, projects: [...registry.projects, dir] }),
 					);
 				}),
 
 				unregisterProject: Effect.fn("RegistryService.unregisterProject")(function* (dir: string) {
-					const registry = yield* load();
-					yield* save(
-						new ShelfRegistry({
-							...registry,
-							projects: registry.projects.filter((p) => p !== dir),
-						}),
+					yield* update(
+						(registry) =>
+							new ShelfRegistry({
+								...registry,
+								projects: registry.projects.filter((p) => p !== dir),
+							}),
 					);
 				}),
 
 				addManual: Effect.fn("RegistryService.addManual")(function* (alias: string) {
-					const registry = yield* load();
-					if (registry.manual.includes(alias)) return;
-					yield* save(
-						new ShelfRegistry({
-							...registry,
-							manual: [...registry.manual, alias],
-						}),
+					yield* update((registry) =>
+						registry.manual.includes(alias)
+							? registry
+							: new ShelfRegistry({ ...registry, manual: [...registry.manual, alias] }),
 					);
 				}),
 
 				removeManual: Effect.fn("RegistryService.removeManual")(function* (alias: string) {
-					const registry = yield* load();
-					yield* save(
-						new ShelfRegistry({
-							...registry,
-							manual: registry.manual.filter((m) => m !== alias),
-						}),
+					yield* update(
+						(registry) =>
+							new ShelfRegistry({
+								...registry,
+								manual: registry.manual.filter((m) => m !== alias),
+							}),
+					);
+				}),
+
+				renameManual: Effect.fn("RegistryService.renameManual")(function* (
+					oldAlias: string,
+					newAlias: string,
+				) {
+					yield* update((registry) =>
+						registry.manual.includes(oldAlias)
+							? new ShelfRegistry({
+									...registry,
+									manual: [
+										...registry.manual.filter((m) => m !== oldAlias && m !== newAlias),
+										newAlias,
+									],
+								})
+							: registry,
 					);
 				}),
 
@@ -123,7 +147,14 @@ export class RegistryService extends Context.Service<RegistryService>()(
 
 					// Clean stale project paths
 					if (validProjects.length !== registry.projects.length) {
-						yield* save(new ShelfRegistry({ ...registry, projects: validProjects }));
+						const stale = new Set(registry.projects.filter((p) => !validProjects.includes(p)));
+						yield* update(
+							(current) =>
+								new ShelfRegistry({
+									...current,
+									projects: current.projects.filter((p) => !stale.has(p)),
+								}),
+						);
 					}
 
 					return aliases;
