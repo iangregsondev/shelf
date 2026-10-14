@@ -16,14 +16,6 @@ description: >
   interfaces, checking an upstream project's code, comparing implementations,
   or any task that benefits from consulting real source code in a cached
   repository — even if the user doesn't mention "shelf" by name.
-
-  If the user asks you to look something up in a codebase, check an
-  implementation, or find how something works in a library, this is the skill
-  to use.
-
-  Do NOT use for the user's own project code (use normal file tools for that),
-  web searches, documentation lookups on the internet, or package registry
-  queries.
 ---
 
 # Shelf — Code Reference Repos
@@ -38,6 +30,16 @@ web search for code questions. The code is local, complete, and version-pinned,
 so you can grep, read, and explore freely. Whenever a task involves
 understanding how a dependency, framework, or upstream project works, check
 shelf first.
+
+## When to Use
+
+If the user asks you to look something up in a codebase, check an
+implementation, or find how something works in a library, this is the skill
+to use.
+
+Do NOT use it for the user's own project code (use normal file tools for that),
+web searches, documentation lookups on the internet, or package registry
+queries.
 
 ## Quick Start
 

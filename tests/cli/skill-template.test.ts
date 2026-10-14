@@ -9,4 +9,12 @@ describe("shelf skill", () => {
 		const skillFile = await Bun.file(skillFilePath).text();
 		expect(skillTemplate).toBe(skillFile);
 	});
+
+	test("description fits the 1,024-character skill limit", async () => {
+		const skillFile = await Bun.file(skillFilePath).text();
+		const frontmatter = skillFile.split(/^---$/m)[1] ?? "";
+		const { description } = Bun.YAML.parse(frontmatter) as { description: string };
+		expect(description.length).toBeGreaterThan(0);
+		expect(description.length).toBeLessThanOrEqual(1024);
+	});
 });
