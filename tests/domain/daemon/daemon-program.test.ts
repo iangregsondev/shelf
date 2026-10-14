@@ -17,7 +17,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { daemonProgram } from "../../../src/domain/daemon/daemon-service";
 import { ConfigService } from "../../../src/domain/config/config-service";
 import { ConfigParseError } from "../../../src/domain/config/config-errors";
-import { defaultConfig, type ShelfConfig } from "../../../src/domain/config/config-schema";
+import { ShelfConfig, defaultConfig } from "../../../src/domain/config/config-schema";
 import { GitOperationError } from "../../../src/domain/git/git-errors";
 import { SyncService, type SyncAllResult } from "../../../src/domain/sync/sync-service";
 import { SHELF_VERSION } from "../../../src/version";
@@ -25,6 +25,9 @@ import { PlatformLayer } from "../../helpers/platform";
 import { readJson } from "../../helpers/files";
 
 type RecordedState = { pid: number; token: string; lastTickAt?: string; version: string };
+
+const configWith = (syncIntervalMinutes: number): ShelfConfig =>
+  new ShelfConfig({ version: 1, syncIntervalMinutes, repos: [] });
 
 describe("daemonProgram", () => {
   let home: string;
@@ -82,7 +85,7 @@ describe("daemonProgram", () => {
       Layer.succeed(
         ConfigService,
         ConfigService.of({
-          load: options.load ?? (() => Effect.succeed({ ...defaultConfig, syncIntervalMinutes: 30 })),
+          load: options.load ?? (() => Effect.succeed(configWith(30))),
           update: () => Effect.succeed(defaultConfig),
           updateRepo: () => Effect.succeed(Option.none()),
           ensureDirectories: () => Effect.void,
@@ -104,14 +107,11 @@ describe("daemonProgram", () => {
     );
 
   /** Runs `body` with the daemon program forked in the background, then interrupts it. */
-  const withDaemon = <A>(
-    options: Options,
-    body: (daemon: Fiber.Fiber<never, unknown>) => Effect.Effect<A>,
-  ): Promise<A> =>
+  const withDaemon = <A>(options: Options, body: () => Effect.Effect<A>): Promise<A> =>
     Effect.runPromise(
       Effect.gen(function* () {
         const daemon = yield* Effect.forkChild(daemonProgram);
-        const result = yield* body(daemon);
+        const result = yield* body();
         yield* Fiber.interrupt(daemon);
         return result;
       }).pipe(Effect.provide(layerFor(options))),
@@ -249,7 +249,7 @@ describe("daemonProgram", () => {
               loads += 1;
               return loads === 1
                 ? Effect.fail(new ConfigParseError({ message: "Invalid config schema" }))
-                : Effect.succeed({ ...defaultConfig, syncIntervalMinutes: 30 });
+                : Effect.succeed(configWith(30));
             }),
           syncAll: () =>
             Effect.sync(() => {
@@ -269,9 +269,8 @@ describe("daemonProgram", () => {
     });
 
     test("an invalid sync interval falls back to the default", async () => {
-      await withDaemon(
-        { load: () => Effect.succeed({ ...defaultConfig, syncIntervalMinutes: 0 }) },
-        () => waitUntil(() => hasLog(`interval: ${defaultConfig.syncIntervalMinutes}m`)),
+      await withDaemon({ load: () => Effect.succeed(configWith(0)) }, () =>
+        waitUntil(() => hasLog(`interval: ${defaultConfig.syncIntervalMinutes}m`)),
       );
     });
   });
