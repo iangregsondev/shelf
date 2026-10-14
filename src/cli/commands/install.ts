@@ -39,7 +39,7 @@ export const installCommand = Command.make("install", { dir, concurrency }, (con
 		const results = yield* Effect.forEach(
 			entries,
 			(entry) =>
-				repo.add(entry.url, Option.some(entry.alias), entry.pin, Option.none(), Option.none()).pipe(
+				repo.add({ url: entry.url, alias: Option.some(entry.alias), pin: entry.pin }).pipe(
 					Effect.map(() => ({ alias: entry.alias, status: "added" as const })),
 					Effect.catchTag("RepoAlreadyExistsError", () =>
 						Effect.succeed({ alias: entry.alias, status: "existing" as const }),

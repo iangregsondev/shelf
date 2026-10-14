@@ -59,13 +59,13 @@ export const addCommand = Command.make("add", { repo, alias, pin, depth, sparse 
 		const resolvedSparse = config.sparse.pipe(
 			Option.map((raw) => raw.split(",").map((s) => s.trim())),
 		);
-		const result = yield* repoService.add(
+		const result = yield* repoService.add({
 			url,
-			effectiveAlias,
-			resolvedPin,
-			config.depth,
-			resolvedSparse,
-		);
+			alias: effectiveAlias,
+			pin: resolvedPin,
+			depth: config.depth,
+			sparse: resolvedSparse,
+		});
 		yield* registry.addManual(result);
 		yield* Console.log(`Added repo "${result}"`);
 	}),

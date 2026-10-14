@@ -20,6 +20,16 @@ import {
 import { checkAlias, deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
 
+/** What `RepoService.add` clones; every field but `url` defaults to none. */
+export interface AddRepoOptions {
+	readonly url: string;
+	/** Defaults to an alias derived from `url`. */
+	readonly alias?: Option.Option<string>;
+	readonly pin?: Option.Option<RepoPin>;
+	readonly depth?: Option.Option<number>;
+	readonly sparse?: Option.Option<ReadonlyArray<string>>;
+}
+
 export class RepoService extends Context.Service<RepoService>()("shelf/domain/repo/RepoService", {
 	make: Effect.gen(function* () {
 		const config = yield* ConfigService;
@@ -95,13 +105,12 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				return resolved;
 			}),
 
-			add: Effect.fn("RepoService.add")(function* (
-				url: string,
-				alias: Option.Option<string>,
-				pin: Option.Option<RepoPin>,
-				depth: Option.Option<number>,
-				sparse: Option.Option<ReadonlyArray<string>>,
-			) {
+			add: Effect.fn("RepoService.add")(function* (options: AddRepoOptions) {
+				const { url } = options;
+				const alias = options.alias ?? Option.none();
+				const pin = options.pin ?? Option.none();
+				const depth = options.depth ?? Option.none();
+				const sparse = options.sparse ?? Option.none();
 				const resolvedAlias = yield* checkAlias(Option.getOrElse(alias, () => deriveAlias(url)));
 				yield* config.ensureDirectories();
 				const cfg = yield* config.load();

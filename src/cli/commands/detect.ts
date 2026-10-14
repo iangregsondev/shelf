@@ -61,7 +61,7 @@ export const detectCommand = Command.make("detect", { apply, format, dir }, (con
 			const results = yield* Effect.forEach(
 				newRepos,
 				(d) =>
-					repo.add(d.url, Option.some(d.name), Option.none(), Option.none(), Option.none()).pipe(
+					repo.add({ url: d.url, alias: Option.some(d.name) }).pipe(
 						Effect.map((alias) => ({ alias, status: "added" as const })),
 						Effect.catch((error: unknown) =>
 							Console.log(`  Failed to add "${d.name}": ${error}`).pipe(

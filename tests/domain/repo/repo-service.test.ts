@@ -50,13 +50,7 @@ describe("RepoService", () => {
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.add(
-						"https://github.com/Effect-TS/effect.git",
-						Option.none(),
-						Option.none(),
-						Option.none(),
-						Option.none(),
-					);
+					return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(result).toBe("effect");
@@ -68,13 +62,10 @@ describe("RepoService", () => {
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.add(
-						"https://github.com/Effect-TS/effect.git",
-						Option.some("my-effect"),
-						Option.none(),
-						Option.none(),
-						Option.none(),
-					);
+					return yield* repo.add({
+						url: "https://github.com/Effect-TS/effect.git",
+						alias: Option.some("my-effect"),
+					});
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(result).toBe("my-effect");
@@ -99,13 +90,7 @@ describe("RepoService", () => {
 			const exit = await Effect.runPromiseExit(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.add(
-						"https://github.com/Effect-TS/effect.git",
-						Option.none(),
-						Option.none(),
-						Option.none(),
-						Option.none(),
-					);
+					return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(exit._tag).toBe("Failure");
@@ -125,13 +110,11 @@ describe("RepoService", () => {
 			await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					yield* repo.add(
-						"https://github.com/test/repo.git",
-						Option.some("test"),
-						Option.some(new RepoPin({ type: "branch", value: "develop" })),
-						Option.none(),
-						Option.none(),
-					);
+					yield* repo.add({
+						url: "https://github.com/test/repo.git",
+						alias: Option.some("test"),
+						pin: Option.some(new RepoPin({ type: "branch", value: "develop" })),
+					});
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(Option.isSome(clonedPin)).toBe(true);
@@ -162,13 +145,12 @@ describe("RepoService", () => {
 			await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					yield* repo.add(
-						"https://github.com/test/repo.git",
-						Option.some("test"),
-						Option.none(),
-						Option.some(1),
-						Option.some(["src", "packages/core"]),
-					);
+					yield* repo.add({
+						url: "https://github.com/test/repo.git",
+						alias: Option.some("test"),
+						depth: Option.some(1),
+						sparse: Option.some(["src", "packages/core"]),
+					});
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(Option.isSome(clonedDepth)).toBe(true);
@@ -186,13 +168,7 @@ describe("RepoService", () => {
 			const gitSshResult = await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.add(
-						"git@github.com:user/my-lib.git",
-						Option.none(),
-						Option.none(),
-						Option.none(),
-						Option.none(),
-					);
+					return yield* repo.add({ url: "git@github.com:user/my-lib.git" });
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(gitSshResult).toBe("my-lib");
