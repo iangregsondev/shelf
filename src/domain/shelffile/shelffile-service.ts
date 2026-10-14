@@ -44,14 +44,6 @@ export class ShelffileService extends Context.Service<ShelffileService>()(
 						catch: () => new ShelffileParseError({ message: `Failed to write ${filePath}` }),
 					});
 				}),
-
-				exists: Effect.fn("ShelffileService.exists")(function* (dir: string) {
-					const filePath = join(dir, SHELFFILE_NAME);
-					return yield* Effect.tryPromise({
-						try: () => Bun.file(filePath).exists(),
-						catch: () => Effect.succeed(false),
-					});
-				}),
 			};
 		}),
 	},
