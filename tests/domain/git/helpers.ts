@@ -6,46 +6,46 @@ import type { GitOperationError } from "../../../src/domain/git/git-errors";
 import { GitService } from "../../../src/domain/git/git-service";
 
 export type GitOverrides = {
-	readonly clone?: (
-		url: string,
-		targetDir: string,
-		pin: Option.Option<RepoPin>,
-		depth: Option.Option<number>,
-		sparse: Option.Option<ReadonlyArray<string>>,
-	) => Effect.Effect<void, GitOperationError>;
-	readonly fetch?: (
-		repoDir: string,
-		refspec: string,
-		depth: Option.Option<number>,
-	) => Effect.Effect<void, GitOperationError>;
-	readonly hasCommit?: (repoDir: string, rev: string) => Effect.Effect<boolean>;
-	readonly checkout?: (repoDir: string, ref: string) => Effect.Effect<void, GitOperationError>;
-	readonly getDefaultBranch?: (repoDir: string) => Effect.Effect<string, GitOperationError>;
-	readonly lsRemoteTags?: (url: string) => Effect.Effect<string, GitOperationError>;
-	readonly lsRemoteRefs?: (url: string) => Effect.Effect<string, GitOperationError>;
-	readonly fetchHistory?: (repoDir: string) => Effect.Effect<void, GitOperationError>;
-	readonly ensureCommit?: (repoDir: string, hash: string) => Effect.Effect<void, GitOperationError>;
-	readonly resolveCommit?: (
-		repoDir: string,
-		hash: string,
-	) => Effect.Effect<string, GitOperationError>;
+  readonly clone?: (
+    url: string,
+    targetDir: string,
+    pin: Option.Option<RepoPin>,
+    depth: Option.Option<number>,
+    sparse: Option.Option<ReadonlyArray<string>>,
+  ) => Effect.Effect<void, GitOperationError>;
+  readonly fetch?: (
+    repoDir: string,
+    refspec: string,
+    depth: Option.Option<number>,
+  ) => Effect.Effect<void, GitOperationError>;
+  readonly hasCommit?: (repoDir: string, rev: string) => Effect.Effect<boolean>;
+  readonly checkout?: (repoDir: string, ref: string) => Effect.Effect<void, GitOperationError>;
+  readonly getDefaultBranch?: (repoDir: string) => Effect.Effect<string, GitOperationError>;
+  readonly lsRemoteTags?: (url: string) => Effect.Effect<string, GitOperationError>;
+  readonly lsRemoteRefs?: (url: string) => Effect.Effect<string, GitOperationError>;
+  readonly fetchHistory?: (repoDir: string) => Effect.Effect<void, GitOperationError>;
+  readonly ensureCommit?: (repoDir: string, hash: string) => Effect.Effect<void, GitOperationError>;
+  readonly resolveCommit?: (
+    repoDir: string,
+    hash: string,
+  ) => Effect.Effect<string, GitOperationError>;
 };
 
 const defaultGitImpl = {
-	clone: (): Effect.Effect<void, GitOperationError> => Effect.void,
-	fetch: (): Effect.Effect<void, GitOperationError> => Effect.void,
-	checkout: (): Effect.Effect<void, GitOperationError> => Effect.void,
-	hasCommit: (): Effect.Effect<boolean> => Effect.succeed(false),
-	getDefaultBranch: (): Effect.Effect<string, GitOperationError> => Effect.succeed("main"),
-	lsRemoteTags: (): Effect.Effect<string, GitOperationError> => Effect.succeed(""),
-	lsRemoteRefs: (): Effect.Effect<string, GitOperationError> => Effect.succeed(""),
-	fetchHistory: (): Effect.Effect<void, GitOperationError> => Effect.void,
-	ensureCommit: (): Effect.Effect<void, GitOperationError> => Effect.void,
-	resolveCommit: (_repoDir: string, hash: string): Effect.Effect<string, GitOperationError> =>
-		Effect.succeed(hash),
+  clone: (): Effect.Effect<void, GitOperationError> => Effect.void,
+  fetch: (): Effect.Effect<void, GitOperationError> => Effect.void,
+  checkout: (): Effect.Effect<void, GitOperationError> => Effect.void,
+  hasCommit: (): Effect.Effect<boolean> => Effect.succeed(false),
+  getDefaultBranch: (): Effect.Effect<string, GitOperationError> => Effect.succeed("main"),
+  lsRemoteTags: (): Effect.Effect<string, GitOperationError> => Effect.succeed(""),
+  lsRemoteRefs: (): Effect.Effect<string, GitOperationError> => Effect.succeed(""),
+  fetchHistory: (): Effect.Effect<void, GitOperationError> => Effect.void,
+  ensureCommit: (): Effect.Effect<void, GitOperationError> => Effect.void,
+  resolveCommit: (_repoDir: string, hash: string): Effect.Effect<string, GitOperationError> =>
+    Effect.succeed(hash),
 };
 
 export const createMockGitLayer = (overrides: GitOverrides = {}): Layer.Layer<GitService> => {
-	const impl = { ...defaultGitImpl, ...overrides };
-	return Layer.succeed(GitService, GitService.of(impl));
+  const impl = { ...defaultGitImpl, ...overrides };
+  return Layer.succeed(GitService, GitService.of(impl));
 };

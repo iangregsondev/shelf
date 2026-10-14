@@ -19,6 +19,6 @@ process.env["SHELF_NPM_REGISTRY_URL"] = services.npmUrl;
 process.env["SHELF_GITHUB_API_URL"] = services.githubUrl;
 
 afterAll(async () => {
-	await services.stop();
-	await rm(home, { recursive: true, force: true });
+  await services.stop();
+  await rm(home, { recursive: true, force: true });
 });

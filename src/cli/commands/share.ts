@@ -9,34 +9,34 @@ import { serializeShelffile } from "../../domain/shelffile/shelffile-utils";
 import type { ShelffileEntry } from "../../domain/shelffile/shelffile-schema";
 
 const filter = Flag.String("filter").pipe(
-	Flag.optional,
-	Flag.withDescription("Comma-separated aliases to include"),
+  Flag.optional,
+  Flag.withDescription("Comma-separated aliases to include"),
 );
 const stdout = Flag.Boolean("stdout").pipe(
-	Flag.withDefault(false),
-	Flag.withDescription("Print to stdout instead of writing shelffile"),
+  Flag.withDefault(false),
+  Flag.withDescription("Print to stdout instead of writing shelffile"),
 );
 
 export const shareCommand = Command.make("share", { filter, stdout }, (config) =>
-	Effect.gen(function* () {
-		const repo = yield* RepoService;
-		const shelffileService = yield* ShelffileService;
-		let repos = yield* repo.list();
-		if (Option.isSome(config.filter)) {
-			const allowed = new Set(config.filter.value.split(",").map((s) => s.trim()));
-			repos = repos.filter((r: RepoEntry) => allowed.has(r.alias));
-		}
-		const entries: ShelffileEntry[] = repos.map((r: RepoEntry) => ({
-			alias: r.alias,
-			url: r.url,
-			pin: r.pin,
-		}));
-		const shelffile = { entries };
-		if (config.stdout) {
-			yield* Console.log(serializeShelffile(shelffile).trimEnd());
-		} else {
-			yield* shelffileService.write(process.cwd(), shelffile);
-			yield* Console.log(`Wrote shelffile with ${entries.length} entries`);
-		}
-	}),
+  Effect.gen(function* () {
+    const repo = yield* RepoService;
+    const shelffileService = yield* ShelffileService;
+    let repos = yield* repo.list();
+    if (Option.isSome(config.filter)) {
+      const allowed = new Set(config.filter.value.split(",").map((s) => s.trim()));
+      repos = repos.filter((r: RepoEntry) => allowed.has(r.alias));
+    }
+    const entries: ShelffileEntry[] = repos.map((r: RepoEntry) => ({
+      alias: r.alias,
+      url: r.url,
+      pin: r.pin,
+    }));
+    const shelffile = { entries };
+    if (config.stdout) {
+      yield* Console.log(serializeShelffile(shelffile).trimEnd());
+    } else {
+      yield* shelffileService.write(process.cwd(), shelffile);
+      yield* Console.log(`Wrote shelffile with ${entries.length} entries`);
+    }
+  }),
 ).pipe(Command.withDescription("Generate a shelffile from current repos"));

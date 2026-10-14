@@ -7,6 +7,6 @@ import { daemonProgram } from "../domain/daemon/daemon-service";
 import { DaemonAppLayer } from "./layers/daemon";
 
 daemonProgram.pipe(
-	Effect.provide(DaemonAppLayer.pipe(Layer.provideMerge(NodeServicesLayer))),
-	runMain,
+  Effect.provide(DaemonAppLayer.pipe(Layer.provideMerge(NodeServicesLayer))),
+  runMain,
 );

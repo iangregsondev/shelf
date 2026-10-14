@@ -10,65 +10,65 @@ import type { Shelffile } from "./shelffile-schema";
 const SHELFFILE_NAME = "shelffile";
 
 export class ShelffileService extends Context.Service<ShelffileService>()(
-	"shelf/domain/shelffile/ShelffileService",
-	{
-		make: Effect.gen(function* () {
-			const fs = yield* FileSystem;
-			return {
-				read: Effect.fn("ShelffileService.read")(function* (dir: string) {
-					const filePath = join(dir, SHELFFILE_NAME);
-					const fileExists = yield* fs
-						.exists(filePath)
-						.pipe(Effect.mapError(() => new ShelffileNotFoundError({ path: filePath })));
-					if (!fileExists) {
-						return yield* new ShelffileNotFoundError({ path: filePath });
-					}
-					const content = yield* fs
-						.readFileString(filePath)
-						.pipe(
-							Effect.mapError(
-								() => new ShelffileParseError({ message: `Failed to read ${filePath}` }),
-							),
-						);
-					return yield* Effect.try({
-						try: () => parseShelffile(content),
-						catch: (e) => {
-							if (e instanceof ShelffileParseError) return e;
-							return new ShelffileParseError({ message: `Failed to parse ${filePath}` });
-						},
-					});
-				}),
+  "shelf/domain/shelffile/ShelffileService",
+  {
+    make: Effect.gen(function* () {
+      const fs = yield* FileSystem;
+      return {
+        read: Effect.fn("ShelffileService.read")(function* (dir: string) {
+          const filePath = join(dir, SHELFFILE_NAME);
+          const fileExists = yield* fs
+            .exists(filePath)
+            .pipe(Effect.mapError(() => new ShelffileNotFoundError({ path: filePath })));
+          if (!fileExists) {
+            return yield* new ShelffileNotFoundError({ path: filePath });
+          }
+          const content = yield* fs
+            .readFileString(filePath)
+            .pipe(
+              Effect.mapError(
+                () => new ShelffileParseError({ message: `Failed to read ${filePath}` }),
+              ),
+            );
+          return yield* Effect.try({
+            try: () => parseShelffile(content),
+            catch: (e) => {
+              if (e instanceof ShelffileParseError) return e;
+              return new ShelffileParseError({ message: `Failed to parse ${filePath}` });
+            },
+          });
+        }),
 
-				/**
-				 * Every alias the shelffile in `dir` might reference, read leniently
-				 * (see `possibleShelffileAliases`), for a shelffile that won't parse.
-				 */
-				possibleAliases: Effect.fn("ShelffileService.possibleAliases")(function* (dir: string) {
-					const filePath = join(dir, SHELFFILE_NAME);
-					const content = yield* fs
-						.readFileString(filePath)
-						.pipe(
-							Effect.mapError(
-								() => new ShelffileParseError({ message: `Failed to read ${filePath}` }),
-							),
-						);
-					return possibleShelffileAliases(content);
-				}),
+        /**
+         * Every alias the shelffile in `dir` might reference, read leniently
+         * (see `possibleShelffileAliases`), for a shelffile that won't parse.
+         */
+        possibleAliases: Effect.fn("ShelffileService.possibleAliases")(function* (dir: string) {
+          const filePath = join(dir, SHELFFILE_NAME);
+          const content = yield* fs
+            .readFileString(filePath)
+            .pipe(
+              Effect.mapError(
+                () => new ShelffileParseError({ message: `Failed to read ${filePath}` }),
+              ),
+            );
+          return possibleShelffileAliases(content);
+        }),
 
-				write: Effect.fn("ShelffileService.write")(function* (dir: string, shelffile: Shelffile) {
-					const filePath = join(dir, SHELFFILE_NAME);
-					const content = serializeShelffile(shelffile);
-					// Create the folder if it is missing, as writes always have.
-					yield* fs.makeDirectory(dirname(filePath), { recursive: true }).pipe(
-						Effect.andThen(fs.writeFileString(filePath, content)),
-						Effect.mapError(
-							() => new ShelffileParseError({ message: `Failed to write ${filePath}` }),
-						),
-					);
-				}),
-			};
-		}),
-	},
+        write: Effect.fn("ShelffileService.write")(function* (dir: string, shelffile: Shelffile) {
+          const filePath = join(dir, SHELFFILE_NAME);
+          const content = serializeShelffile(shelffile);
+          // Create the folder if it is missing, as writes always have.
+          yield* fs.makeDirectory(dirname(filePath), { recursive: true }).pipe(
+            Effect.andThen(fs.writeFileString(filePath, content)),
+            Effect.mapError(
+              () => new ShelffileParseError({ message: `Failed to write ${filePath}` }),
+            ),
+          );
+        }),
+      };
+    }),
+  },
 ) {
-	static layer = Layer.effect(this, this.make);
+  static layer = Layer.effect(this, this.make);
 }

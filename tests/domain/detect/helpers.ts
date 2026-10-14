@@ -4,16 +4,16 @@ import type { DetectedRepo } from "../../../src/domain/detect/detect-schema";
 import { DetectService } from "../../../src/domain/detect/detect-service";
 
 export type DetectOverrides = {
-	readonly detect?: (dir: string) => Effect.Effect<DetectedRepo[]>;
+  readonly detect?: (dir: string) => Effect.Effect<DetectedRepo[]>;
 };
 
 const defaultDetectImpl = {
-	detect: () => Effect.succeed([] as DetectedRepo[]),
+  detect: () => Effect.succeed([] as DetectedRepo[]),
 };
 
 export const createMockDetectLayer = (
-	overrides: DetectOverrides = {},
+  overrides: DetectOverrides = {},
 ): Layer.Layer<DetectService> => {
-	const impl = { ...defaultDetectImpl, ...overrides };
-	return Layer.succeed(DetectService, DetectService.of(impl));
+  const impl = { ...defaultDetectImpl, ...overrides };
+  return Layer.succeed(DetectService, DetectService.of(impl));
 };

@@ -4,12 +4,12 @@ import { mkdtemp, rm, mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-	defaultConfig,
-	decodeConfig,
-	encodeConfig,
-	ShelfConfig,
-	RepoPin,
-	makeRepoEntry,
+  defaultConfig,
+  decodeConfig,
+  encodeConfig,
+  ShelfConfig,
+  RepoPin,
+  makeRepoEntry,
 } from "../../../src/domain/config/config-schema";
 import * as Option from "effect/Option";
 import { ConfigService } from "../../../src/domain/config/config-service";
@@ -17,222 +17,222 @@ import { readText, writeText } from "../../helpers/files";
 import { PlatformLayer } from "../../helpers/platform";
 
 describe("ConfigService", () => {
-	let tempDir: string;
-	let configPath: string;
+  let tempDir: string;
+  let configPath: string;
 
-	beforeEach(async () => {
-		tempDir = await mkdtemp(join(tmpdir(), "shelf-config-test-"));
-		configPath = join(tempDir, "config.json");
-	});
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "shelf-config-test-"));
+    configPath = join(tempDir, "config.json");
+  });
 
-	afterEach(async () => {
-		await rm(tempDir, { recursive: true, force: true });
-	});
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
 
-	describe("defaultConfig", () => {
-		test("has correct defaults", () => {
-			expect(defaultConfig.version).toBe(1);
-			expect(defaultConfig.syncIntervalMinutes).toBe(60);
-			expect(defaultConfig.repos).toEqual([]);
-		});
-	});
+  describe("defaultConfig", () => {
+    test("has correct defaults", () => {
+      expect(defaultConfig.version).toBe(1);
+      expect(defaultConfig.syncIntervalMinutes).toBe(60);
+      expect(defaultConfig.repos).toEqual([]);
+    });
+  });
 
-	describe("encodeConfig / decodeConfig", () => {
-		test("round-trips a valid config", () => {
-			const encoded = encodeConfig(defaultConfig);
-			const decoded = decodeConfig(encoded);
-			expect(decoded.version).toBe(1);
-			expect(decoded.syncIntervalMinutes).toBe(60);
-			expect(decoded.repos).toEqual([]);
-		});
+  describe("encodeConfig / decodeConfig", () => {
+    test("round-trips a valid config", () => {
+      const encoded = encodeConfig(defaultConfig);
+      const decoded = decodeConfig(encoded);
+      expect(decoded.version).toBe(1);
+      expect(decoded.syncIntervalMinutes).toBe(60);
+      expect(decoded.repos).toEqual([]);
+    });
 
-		test("decodes valid JSON config", () => {
-			const raw = {
-				version: 1,
-				syncIntervalMinutes: 30,
-				repos: [],
-			};
-			const decoded = decodeConfig(raw);
-			expect(decoded.syncIntervalMinutes).toBe(30);
-		});
+    test("decodes valid JSON config", () => {
+      const raw = {
+        version: 1,
+        syncIntervalMinutes: 30,
+        repos: [],
+      };
+      const decoded = decodeConfig(raw);
+      expect(decoded.syncIntervalMinutes).toBe(30);
+    });
 
-		test("throws on invalid schema", () => {
-			expect(() => decodeConfig({ version: 2, repos: [] })).toThrow();
-		});
+    test("throws on invalid schema", () => {
+      expect(() => decodeConfig({ version: 2, repos: [] })).toThrow();
+    });
 
-		test("throws on corrupt data", () => {
-			expect(() => decodeConfig("not json")).toThrow();
-		});
+    test("throws on corrupt data", () => {
+      expect(() => decodeConfig("not json")).toThrow();
+    });
 
-		test("decodes config with repos", () => {
-			const raw = {
-				version: 1,
-				syncIntervalMinutes: 60,
-				repos: [
-					{
-						url: "https://github.com/test/repo.git",
-						alias: "test-repo",
-						addedAt: "2026-01-01T00:00:00Z",
-						pin: { type: "branch", value: "main" },
-						lastSyncedAt: "2026-01-01T12:00:00Z",
-					},
-				],
-			};
-			const decoded = decodeConfig(raw);
-			expect(decoded.repos.length).toBe(1);
-			expect(decoded.repos[0]!.alias).toBe("test-repo");
-			expect(Option.isSome(decoded.repos[0]!.pin)).toBe(true);
-			expect(Option.isSome(decoded.repos[0]!.lastSyncedAt)).toBe(true);
-		});
+    test("decodes config with repos", () => {
+      const raw = {
+        version: 1,
+        syncIntervalMinutes: 60,
+        repos: [
+          {
+            url: "https://github.com/test/repo.git",
+            alias: "test-repo",
+            addedAt: "2026-01-01T00:00:00Z",
+            pin: { type: "branch", value: "main" },
+            lastSyncedAt: "2026-01-01T12:00:00Z",
+          },
+        ],
+      };
+      const decoded = decodeConfig(raw);
+      expect(decoded.repos.length).toBe(1);
+      expect(decoded.repos[0]!.alias).toBe("test-repo");
+      expect(Option.isSome(decoded.repos[0]!.pin)).toBe(true);
+      expect(Option.isSome(decoded.repos[0]!.lastSyncedAt)).toBe(true);
+    });
 
-		test("round-trips config with depth and sparse fields", () => {
-			const raw = {
-				version: 1,
-				syncIntervalMinutes: 60,
-				repos: [
-					{
-						url: "https://github.com/test/repo.git",
-						alias: "test-repo",
-						addedAt: "2026-01-01T00:00:00Z",
-						depth: 1,
-						sparse: ["src", "packages/core"],
-					},
-				],
-			};
-			const decoded = decodeConfig(raw);
-			expect(decoded.repos.length).toBe(1);
-			expect(Option.isSome(decoded.repos[0]!.depth)).toBe(true);
-			if (Option.isSome(decoded.repos[0]!.depth)) {
-				expect(decoded.repos[0]!.depth.value).toBe(1);
-			}
-			expect(Option.isSome(decoded.repos[0]!.sparse)).toBe(true);
-			if (Option.isSome(decoded.repos[0]!.sparse)) {
-				expect(decoded.repos[0]!.sparse.value).toEqual(["src", "packages/core"]);
-			}
-			const reEncoded = encodeConfig(decoded);
-			const reDecoded = decodeConfig(reEncoded);
-			expect(Option.isSome(reDecoded.repos[0]!.depth)).toBe(true);
-			expect(Option.isSome(reDecoded.repos[0]!.sparse)).toBe(true);
-		});
+    test("round-trips config with depth and sparse fields", () => {
+      const raw = {
+        version: 1,
+        syncIntervalMinutes: 60,
+        repos: [
+          {
+            url: "https://github.com/test/repo.git",
+            alias: "test-repo",
+            addedAt: "2026-01-01T00:00:00Z",
+            depth: 1,
+            sparse: ["src", "packages/core"],
+          },
+        ],
+      };
+      const decoded = decodeConfig(raw);
+      expect(decoded.repos.length).toBe(1);
+      expect(Option.isSome(decoded.repos[0]!.depth)).toBe(true);
+      if (Option.isSome(decoded.repos[0]!.depth)) {
+        expect(decoded.repos[0]!.depth.value).toBe(1);
+      }
+      expect(Option.isSome(decoded.repos[0]!.sparse)).toBe(true);
+      if (Option.isSome(decoded.repos[0]!.sparse)) {
+        expect(decoded.repos[0]!.sparse.value).toEqual(["src", "packages/core"]);
+      }
+      const reEncoded = encodeConfig(decoded);
+      const reDecoded = decodeConfig(reEncoded);
+      expect(Option.isSome(reDecoded.repos[0]!.depth)).toBe(true);
+      expect(Option.isSome(reDecoded.repos[0]!.sparse)).toBe(true);
+    });
 
-		test("decodes config with repos without optional fields", () => {
-			const raw = {
-				version: 1,
-				syncIntervalMinutes: 60,
-				repos: [
-					{
-						url: "https://github.com/test/repo.git",
-						alias: "test-repo",
-						addedAt: "2026-01-01T00:00:00Z",
-					},
-				],
-			};
-			const decoded = decodeConfig(raw);
-			expect(decoded.repos.length).toBe(1);
-			expect(Option.isNone(decoded.repos[0]!.pin)).toBe(true);
-			expect(Option.isNone(decoded.repos[0]!.lastSyncedAt)).toBe(true);
-		});
-	});
+    test("decodes config with repos without optional fields", () => {
+      const raw = {
+        version: 1,
+        syncIntervalMinutes: 60,
+        repos: [
+          {
+            url: "https://github.com/test/repo.git",
+            alias: "test-repo",
+            addedAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      };
+      const decoded = decodeConfig(raw);
+      expect(decoded.repos.length).toBe(1);
+      expect(Option.isNone(decoded.repos[0]!.pin)).toBe(true);
+      expect(Option.isNone(decoded.repos[0]!.lastSyncedAt)).toBe(true);
+    });
+  });
 
-	describe("makeRepoEntry", () => {
-		test("creates a RepoEntry with pin", () => {
-			const entry = makeRepoEntry({
-				url: "https://github.com/test/repo.git",
-				alias: "test",
-				pin: Option.some(new RepoPin({ type: "branch", value: "main" })),
-				depth: Option.none(),
-				sparse: Option.none(),
-				addedAt: "2026-01-01",
-				lastSyncedAt: Option.some("2026-01-01T12:00:00Z"),
-			});
-			expect(entry.alias).toBe("test");
-			expect(Option.isSome(entry.pin)).toBe(true);
-		});
+  describe("makeRepoEntry", () => {
+    test("creates a RepoEntry with pin", () => {
+      const entry = makeRepoEntry({
+        url: "https://github.com/test/repo.git",
+        alias: "test",
+        pin: Option.some(new RepoPin({ type: "branch", value: "main" })),
+        depth: Option.none(),
+        sparse: Option.none(),
+        addedAt: "2026-01-01",
+        lastSyncedAt: Option.some("2026-01-01T12:00:00Z"),
+      });
+      expect(entry.alias).toBe("test");
+      expect(Option.isSome(entry.pin)).toBe(true);
+    });
 
-		test("creates a RepoEntry without pin", () => {
-			const entry = makeRepoEntry({
-				url: "https://github.com/test/repo.git",
-				alias: "test",
-				pin: Option.none(),
-				depth: Option.none(),
-				sparse: Option.none(),
-				addedAt: "2026-01-01",
-				lastSyncedAt: Option.none(),
-			});
-			expect(Option.isNone(entry.pin)).toBe(true);
-			expect(Option.isNone(entry.lastSyncedAt)).toBe(true);
-		});
-	});
+    test("creates a RepoEntry without pin", () => {
+      const entry = makeRepoEntry({
+        url: "https://github.com/test/repo.git",
+        alias: "test",
+        pin: Option.none(),
+        depth: Option.none(),
+        sparse: Option.none(),
+        addedAt: "2026-01-01",
+        lastSyncedAt: Option.none(),
+      });
+      expect(Option.isNone(entry.pin)).toBe(true);
+      expect(Option.isNone(entry.lastSyncedAt)).toBe(true);
+    });
+  });
 
-	describe("ConfigService integration", () => {
-		test("load returns default when no file exists", async () => {
-			const result = await Effect.runPromise(
-				Effect.gen(function* () {
-					const svc = yield* ConfigService;
-					return yield* svc.load();
-				}).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
-			);
-			expect(result.version).toBe(1);
-			expect(result.repos.length).toBeGreaterThanOrEqual(0);
-		});
+  describe("ConfigService integration", () => {
+    test("load returns default when no file exists", async () => {
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* ConfigService;
+          return yield* svc.load();
+        }).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
+      );
+      expect(result.version).toBe(1);
+      expect(result.repos.length).toBeGreaterThanOrEqual(0);
+    });
 
-		test("ensureDirectories creates directories", async () => {
-			await Effect.runPromise(
-				Effect.gen(function* () {
-					const svc = yield* ConfigService;
-					yield* svc.ensureDirectories();
-				}).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
-			);
-			const home = process.env["SHELF_HOME"]!;
-			expect((await stat(join(home, "repos"))).isDirectory()).toBe(true);
-		});
+    test("ensureDirectories creates directories", async () => {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* ConfigService;
+          yield* svc.ensureDirectories();
+        }).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
+      );
+      const home = process.env["SHELF_HOME"]!;
+      expect((await stat(join(home, "repos"))).isDirectory()).toBe(true);
+    });
 
-		test("repoPath returns correct path", async () => {
-			const svc = await Effect.runPromise(
-				Effect.gen(function* () {
-					return yield* ConfigService;
-				}).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
-			);
-			// tests/setup.ts points SHELF_HOME at a temp shelf home
-			expect(await Effect.runPromise(svc.repoPath("my-repo"))).toBe(
-				join(process.env["SHELF_HOME"]!, "repos", "my-repo"),
-			);
-		});
+    test("repoPath returns correct path", async () => {
+      const svc = await Effect.runPromise(
+        Effect.gen(function* () {
+          return yield* ConfigService;
+        }).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
+      );
+      // tests/setup.ts points SHELF_HOME at a temp shelf home
+      expect(await Effect.runPromise(svc.repoPath("my-repo"))).toBe(
+        join(process.env["SHELF_HOME"]!, "repos", "my-repo"),
+      );
+    });
 
-		test("repoPath refuses an alias that is not a single safe folder name", async () => {
-			const svc = await Effect.runPromise(
-				Effect.gen(function* () {
-					return yield* ConfigService;
-				}).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
-			);
-			for (const alias of ["../outside", "a/b", ".", ""]) {
-				const exit = await Effect.runPromiseExit(svc.repoPath(alias));
-				expect(exit._tag).toBe("Failure");
-			}
-		});
-	});
+    test("repoPath refuses an alias that is not a single safe folder name", async () => {
+      const svc = await Effect.runPromise(
+        Effect.gen(function* () {
+          return yield* ConfigService;
+        }).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
+      );
+      for (const alias of ["../outside", "a/b", ".", ""]) {
+        const exit = await Effect.runPromiseExit(svc.repoPath(alias));
+        expect(exit._tag).toBe("Failure");
+      }
+    });
+  });
 
-	describe("file operations", () => {
-		test("save writes valid JSON", async () => {
-			await mkdir(tempDir, { recursive: true });
-			const encoded = encodeConfig(defaultConfig);
-			await writeText(configPath, JSON.stringify(encoded, null, "\t"));
-			const content = await readText(configPath);
-			const parsed = JSON.parse(content);
-			expect(parsed.version).toBe(1);
-		});
+  describe("file operations", () => {
+    test("save writes valid JSON", async () => {
+      await mkdir(tempDir, { recursive: true });
+      const encoded = encodeConfig(defaultConfig);
+      await writeText(configPath, JSON.stringify(encoded, null, "\t"));
+      const content = await readText(configPath);
+      const parsed = JSON.parse(content);
+      expect(parsed.version).toBe(1);
+    });
 
-		test("save creates config with custom interval that can be reloaded", async () => {
-			const config = new ShelfConfig({
-				version: 1,
-				syncIntervalMinutes: 120,
-				repos: [],
-			});
-			const encoded = encodeConfig(config);
-			await writeText(configPath, JSON.stringify(encoded, null, "\t"));
-			const content = await readText(configPath);
-			const reloaded = decodeConfig(JSON.parse(content));
-			expect(reloaded.syncIntervalMinutes).toBe(120);
-		});
-	});
+    test("save creates config with custom interval that can be reloaded", async () => {
+      const config = new ShelfConfig({
+        version: 1,
+        syncIntervalMinutes: 120,
+        repos: [],
+      });
+      const encoded = encodeConfig(config);
+      await writeText(configPath, JSON.stringify(encoded, null, "\t"));
+      const content = await readText(configPath);
+      const reloaded = decodeConfig(JSON.parse(content));
+      expect(reloaded.syncIntervalMinutes).toBe(120);
+    });
+  });
 });

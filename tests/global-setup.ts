@@ -9,5 +9,5 @@ import { join } from "node:path";
 const root = join(import.meta.dirname, "..");
 
 export default function setup(): void {
-	execFileSync(join(root, "node_modules/.bin/vp"), ["pack"], { cwd: root, stdio: "inherit" });
+  execFileSync(join(root, "node_modules/.bin/vp"), ["pack"], { cwd: root, stdio: "inherit" });
 }

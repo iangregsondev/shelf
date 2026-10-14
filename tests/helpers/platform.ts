@@ -7,4 +7,4 @@ export const PlatformLayer = layer;
 
 /** `runGit` with the platform services provided. */
 export const runGit = (args: ReadonlyArray<string>, cwd?: string) =>
-	spawnGit(args, cwd).pipe(Effect.provide(PlatformLayer));
+  spawnGit(args, cwd).pipe(Effect.provide(PlatformLayer));
