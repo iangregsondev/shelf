@@ -23,9 +23,22 @@ const defaultConfigImpl = {
 	configPath: "/tmp/shelf-test/config.json",
 };
 
+/**
+ * A config layer whose `update` applies `fn` to `load()` and hands the result
+ * to the `save` override (a spy; the real service has no public save).
+ */
 export const createMockConfigLayer = (
 	overrides: ConfigOverrides = {},
 ): Layer.Layer<ConfigService> => {
-	const impl = { ...defaultConfigImpl, ...overrides };
-	return Layer.succeed(ConfigService, ConfigService.of(impl));
+	const { save, ...impl } = { ...defaultConfigImpl, ...overrides };
+	const update = <E = never>(
+		fn: (current: ShelfConfig) => ShelfConfig | Effect.Effect<ShelfConfig, E>,
+	): Effect.Effect<ShelfConfig, ConfigParseError | E> =>
+		Effect.gen(function* () {
+			const result = fn(yield* impl.load());
+			const next = Effect.isEffect(result) ? yield* result : result;
+			yield* save(next);
+			return next;
+		});
+	return Layer.succeed(ConfigService, ConfigService.of({ ...impl, update }));
 };

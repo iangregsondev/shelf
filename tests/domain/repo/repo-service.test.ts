@@ -11,8 +11,23 @@ import { createMockConfigLayer } from "../config/helpers";
 import { createMockGitLayer } from "../git/helpers";
 import { createMockSyncLayer } from "../sync/helpers";
 
+// `add` claims the repo folder on disk before cloning, so point repoPath at a
+// fresh temp folder per test.
+let reposDir: string;
+
+beforeEach(async () => {
+	reposDir = await mkdtemp(join(tmpdir(), "shelf-repo-service-"));
+});
+
+afterEach(async () => {
+	await rm(reposDir, { recursive: true, force: true });
+});
+
 const buildRepoLayer = (configOverrides = {}, gitOverrides = {}, syncOverrides = {}) => {
-	const configLayer = createMockConfigLayer(configOverrides);
+	const configLayer = createMockConfigLayer({
+		repoPath: (alias: string) => join(reposDir, alias),
+		...configOverrides,
+	});
 	const gitLayer = createMockGitLayer(gitOverrides);
 	const syncLayer = createMockSyncLayer(syncOverrides);
 	return RepoService.layer.pipe(

@@ -30,11 +30,17 @@ export class SyncService extends Context.Service<SyncService>()("shelf/domain/sy
 					yield* git.checkout(repoDir, `origin/${defaultBranch}`);
 				}
 				const now = new Date().toISOString();
-				const cfg = yield* config.load();
-				const updatedRepos = cfg.repos.map((r: RepoEntry) =>
-					r.alias === repo.alias ? new RepoEntry({ ...r, lastSyncedAt: Option.some(now) }) : r,
+				yield* config.update(
+					(cfg) =>
+						new ShelfConfig({
+							...cfg,
+							repos: cfg.repos.map((r: RepoEntry) =>
+								r.alias === repo.alias
+									? new RepoEntry({ ...r, lastSyncedAt: Option.some(now) })
+									: r,
+							),
+						}),
 				);
-				yield* config.save(new ShelfConfig({ ...cfg, repos: updatedRepos }));
 			});
 
 		return {

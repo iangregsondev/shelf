@@ -33,16 +33,17 @@ export const aliasCommand = Command.make("alias", { oldAlias, newAlias }, (confi
 			catch: () => undefined,
 		}).pipe(Effect.ignore);
 		// Update config
-		const updatedRepos = cfg.repos.map((r: RepoEntry) =>
-			r.alias === config.oldAlias ? new RepoEntry({ ...r, alias: config.newAlias }) : r,
+		yield* configService.update(
+			(current) =>
+				new ShelfConfig({
+					...current,
+					repos: current.repos.map((r: RepoEntry) =>
+						r.alias === config.oldAlias ? new RepoEntry({ ...r, alias: config.newAlias }) : r,
+					),
+				}),
 		);
-		yield* configService.save(new ShelfConfig({ ...cfg, repos: updatedRepos }));
 		// Update registry manual list
-		const reg = yield* registry.load();
-		if (reg.manual.includes(config.oldAlias)) {
-			yield* registry.removeManual(config.oldAlias);
-			yield* registry.addManual(config.newAlias);
-		}
+		yield* registry.renameManual(config.oldAlias, config.newAlias);
 		yield* Console.log(`Renamed "${config.oldAlias}" → "${config.newAlias}"`);
 	}),
 ).pipe(Command.withDescription("Rename a repo alias"));
