@@ -19,7 +19,7 @@ import {
   RepoFolderError,
   RepoNotFoundError,
 } from "./repo-errors";
-import { deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
+import { declaredVersion, deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
 import { dirSize, listFolder, pathExists } from "./repo-store";
 
@@ -269,16 +269,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
           try: () => JSON.parse(pkgText) as Record<string, unknown> | null,
           catch: noPackageJson,
         });
-        // Only a version string the manifest itself declares counts: not a
-        // number, and not an inherited name like `constructor`.
-        const declared = (field: string): unknown => {
-          const deps: unknown = pkgJson?.[field];
-          return typeof deps === "object" && deps !== null && Object.hasOwn(deps, packageName)
-            ? (deps as Record<string, unknown>)[packageName]
-            : undefined;
-        };
-        const dep = declared("dependencies") ?? declared("devDependencies");
-        const version = typeof dep === "string" ? dep : undefined;
+        const version = declaredVersion(pkgJson, packageName);
         if (!version) {
           return yield* new AutoPinResolutionError({
             message: `Package "${packageName}" not found in dependencies or devDependencies`,

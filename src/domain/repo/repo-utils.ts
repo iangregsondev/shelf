@@ -97,3 +97,22 @@ export const pinFromRemoteRefs = (name: string, lsRemoteOutput: string): RepoPin
   if (refs.has(`refs/heads/${name}`)) return new RepoPin({ type: "branch", value: name });
   return undefined;
 };
+
+/**
+ * The version string a parsed package.json declares for `packageName`, from
+ * `dependencies`, else `devDependencies`. Only a string the manifest itself
+ * declares counts: not a number, and not an inherited name like `constructor`.
+ */
+export const declaredVersion = (
+  manifest: Record<string, unknown> | null,
+  packageName: string,
+): string | undefined => {
+  const declared = (field: string): unknown => {
+    const deps: unknown = manifest?.[field];
+    return typeof deps === "object" && deps !== null && Object.hasOwn(deps, packageName)
+      ? (deps as Record<string, unknown>)[packageName]
+      : undefined;
+  };
+  const dep = declared("dependencies") ?? declared("devDependencies");
+  return typeof dep === "string" ? dep : undefined;
+};
