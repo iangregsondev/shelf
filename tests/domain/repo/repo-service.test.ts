@@ -513,6 +513,30 @@ describe("RepoService", () => {
       expect(Option.getOrUndefined(result)?.value).toBe("v5.4.0");
     });
 
+    // A package.json that doesn't hold a version string for the package is a
+    // typed AutoPinResolutionError, never a crash.
+    test.each([
+      ["a package.json of null", "null", "effect"],
+      ["a version that isn't a string", JSON.stringify({ dependencies: { effect: 5 } }), "effect"],
+      [
+        "a package named like an Object built-in",
+        JSON.stringify({ dependencies: {} }),
+        "constructor",
+      ],
+    ])("fails with AutoPinResolutionError for %s", async (_name, manifest, packageName) => {
+      await writeText(join(fixtureDir, "package.json"), manifest);
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.resolveAutoPin("https://github.com/x/y.git", packageName);
+        }).pipe(Effect.flip, Effect.provide(buildRepoLayer())),
+      );
+      expect(error).toMatchObject({
+        _tag: "AutoPinResolutionError",
+        message: `Package "${packageName}" not found in dependencies or devDependencies`,
+      });
+    });
+
     test("fails when package not in dependencies", async () => {
       const layer = buildRepoLayer(
         {},
