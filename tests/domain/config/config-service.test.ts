@@ -15,6 +15,7 @@ import * as Option from "effect/Option";
 import { ConfigService } from "../../../src/domain/config/config-service";
 import { readJson, readText, writeText } from "../../helpers/files";
 import { PlatformLayer } from "../../helpers/platform";
+import { runningAsRoot } from "../../helpers/process";
 
 describe("ConfigService", () => {
   let tempDir: string;
@@ -329,13 +330,16 @@ describe("ConfigService on a shelf home of its own", () => {
       expect(error.message).toBe("Failed to read config file");
     });
 
-    test("fails with ConfigParseError when it can't check for the config", async () => {
-      const svc = await serviceAt(home);
-      await chmod(home, 0o000);
-      const error = await Effect.runPromise(Effect.flip(svc.load()));
-      expect(error._tag).toBe("ConfigParseError");
-      expect(error.message).toBe("Failed to check config file");
-    });
+    test.skipIf(runningAsRoot)(
+      "fails with ConfigParseError when it can't check for the config",
+      async () => {
+        const svc = await serviceAt(home);
+        await chmod(home, 0o000);
+        const error = await Effect.runPromise(Effect.flip(svc.load()));
+        expect(error._tag).toBe("ConfigParseError");
+        expect(error.message).toBe("Failed to check config file");
+      },
+    );
 
     test("fails with ConfigParseError when the JSON does not match the schema", async () => {
       await writeFile(configFile, JSON.stringify({ version: 2, repos: [] }));
@@ -405,20 +409,23 @@ describe("ConfigService on a shelf home of its own", () => {
       expect(await readText(configFile)).toBe("{not json");
     });
 
-    test("fails with ConfigWriteError when the config can't be written", async () => {
-      const svc = await serviceAt(home);
-      const error = await Effect.runPromise(
-        Effect.flip(
-          svc.update((current) =>
-            Effect.promise(() => chmod(home, 0o500)).pipe(Effect.as(current)),
+    test.skipIf(runningAsRoot)(
+      "fails with ConfigWriteError when the config can't be written",
+      async () => {
+        const svc = await serviceAt(home);
+        const error = await Effect.runPromise(
+          Effect.flip(
+            svc.update((current) =>
+              Effect.promise(() => chmod(home, 0o500)).pipe(Effect.as(current)),
+            ),
           ),
-        ),
-      );
-      expect(error._tag).toBe("ConfigWriteError");
-      expect(error.message).toBe("Failed to write config file");
-      await chmod(home, 0o700);
-      expect(await readdir(home)).not.toContain("config.json");
-    });
+        );
+        expect(error._tag).toBe("ConfigWriteError");
+        expect(error.message).toBe("Failed to write config file");
+        await chmod(home, 0o700);
+        expect(await readdir(home)).not.toContain("config.json");
+      },
+    );
 
     test("fails with ConfigWriteError when the config can't be locked", async () => {
       await mkdir(`${configFile}.lock`);

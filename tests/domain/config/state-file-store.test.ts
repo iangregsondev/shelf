@@ -20,6 +20,7 @@ import {
   withStateFileLock,
   writeFileAtomic,
 } from "../../../src/domain/config/state-file-store";
+import { runningAsRoot } from "../../helpers/process";
 
 class LockError {
   readonly _tag = "LockError";
@@ -231,11 +232,14 @@ describe("state file store on disk", () => {
       expect(JSON.stringify(exit)).toContain("LockError");
     });
 
-    test("fails through onError when the lock file can't be created", async () => {
-      await chmod(dir, 0o500);
-      const exit = await runExit(Effect.succeed("ran"));
-      expect(JSON.stringify(exit)).toContain(`Failed to lock ${lockPath}: EACCES`);
-    });
+    test.skipIf(runningAsRoot)(
+      "fails through onError when the lock file can't be created",
+      async () => {
+        await chmod(dir, 0o500);
+        const exit = await runExit(Effect.succeed("ran"));
+        expect(JSON.stringify(exit)).toContain(`Failed to lock ${lockPath}: EACCES`);
+      },
+    );
 
     test("fails through onError when the existing lock can't be read", async () => {
       await mkdir(lockPath);
@@ -243,13 +247,16 @@ describe("state file store on disk", () => {
       expect(JSON.stringify(exit)).toContain(`Failed to lock ${lockPath}: EISDIR`);
     });
 
-    test("fails through onError when a stale lock can't be taken over", async () => {
-      await writeFile(lockPath, String(deadPid()));
-      await chmod(dir, 0o500);
-      const exit = await runExit(Effect.succeed("ran"));
-      expect(JSON.stringify(exit)).toContain(`Failed to lock ${lockPath}: EACCES`);
-      await chmod(dir, 0o700);
-      expect(await exists(lockPath)).toBe(true);
-    });
+    test.skipIf(runningAsRoot)(
+      "fails through onError when a stale lock can't be taken over",
+      async () => {
+        await writeFile(lockPath, String(deadPid()));
+        await chmod(dir, 0o500);
+        const exit = await runExit(Effect.succeed("ran"));
+        expect(JSON.stringify(exit)).toContain(`Failed to lock ${lockPath}: EACCES`);
+        await chmod(dir, 0o700);
+        expect(await exists(lockPath)).toBe(true);
+      },
+    );
   });
 });

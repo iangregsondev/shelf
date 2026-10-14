@@ -50,3 +50,6 @@ export const run = (argv: ReadonlyArray<string>, options: RunOptions = {}): Prom
       });
     });
   });
+
+/** True when the tests run as root. Root ignores file permissions, so tests that chmod a path to make it fail skip then. */
+export const runningAsRoot = process.getuid?.() === 0;

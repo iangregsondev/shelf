@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileIfExists, readJsonIfExists } from "../../../src/domain/config/file-store";
 import { PlatformLayer } from "../../helpers/platform";
+import { runningAsRoot } from "../../helpers/process";
 
 const withFs = <A, E>(use: (fs: FileSystem) => Effect.Effect<A, E>) =>
   Effect.runPromise(
@@ -50,21 +51,24 @@ describe("file store", () => {
       expect(error.path).toBe(join(dir, "folder"));
     });
 
-    test("fails at the check stage when it can't tell whether the file is there", async () => {
-      const locked = join(dir, "locked");
-      await mkdir(locked);
-      await chmod(locked, 0o000);
-      try {
-        const error = await withFs((fs) =>
-          readFileIfExists(fs, join(locked, "state.json")).pipe(Effect.flip),
-        );
-        expect(error._tag).toBe("StoredFileReadError");
-        expect(error.stage).toBe("check");
-        expect(error.path).toBe(join(locked, "state.json"));
-      } finally {
-        await chmod(locked, 0o700);
-      }
-    });
+    test.skipIf(runningAsRoot)(
+      "fails at the check stage when it can't tell whether the file is there",
+      async () => {
+        const locked = join(dir, "locked");
+        await mkdir(locked);
+        await chmod(locked, 0o000);
+        try {
+          const error = await withFs((fs) =>
+            readFileIfExists(fs, join(locked, "state.json")).pipe(Effect.flip),
+          );
+          expect(error._tag).toBe("StoredFileReadError");
+          expect(error.stage).toBe("check");
+          expect(error.path).toBe(join(locked, "state.json"));
+        } finally {
+          await chmod(locked, 0o700);
+        }
+      },
+    );
 
     test("gives an empty file as empty text", async () => {
       await writeFile(join(dir, "empty.txt"), "");

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createRemote, type Remote } from "../helpers/git-remote";
 import { readJson, readText, writeText } from "../helpers/files";
+import { runningAsRoot } from "../helpers/process";
 
 let shelf: ShelfSandbox;
 let tempDir: string;
@@ -123,26 +124,29 @@ describe("prune", () => {
     expect(result.output).toContain("No unreferenced repos found.");
   });
 
-  test("deletes nothing when a project's shelffile can't be read at all, and warns", async () => {
-    const locked = await makeProject("locked", `lib-locked ${remote.url}\n`);
-    const emptied = await makeProject("emptied", `lib-orphan ${remote.url}\n`);
-    expect((await shelf.run(["install", "--dir", locked])).exitCode).toBe(0);
-    expect((await shelf.run(["install", "--dir", emptied])).exitCode).toBe(0);
-    await writeText(join(emptied, "shelffile"), "");
-    await chmod(join(locked, "shelffile"), 0o000);
+  test.skipIf(runningAsRoot)(
+    "deletes nothing when a project's shelffile can't be read at all, and warns",
+    async () => {
+      const locked = await makeProject("locked", `lib-locked ${remote.url}\n`);
+      const emptied = await makeProject("emptied", `lib-orphan ${remote.url}\n`);
+      expect((await shelf.run(["install", "--dir", locked])).exitCode).toBe(0);
+      expect((await shelf.run(["install", "--dir", emptied])).exitCode).toBe(0);
+      await writeText(join(emptied, "shelffile"), "");
+      await chmod(join(locked, "shelffile"), 0o000);
 
-    try {
-      const result = await shelf.run(["prune", "--force"]);
+      try {
+        const result = await shelf.run(["prune", "--force"]);
 
-      expect(result.exitCode).toBe(0);
-      expect(result.stderr).toContain(join(locked, "shelffile"));
-      expect(await repoExists("lib-locked")).toBe(true);
-      expect(result.output).toContain("Not removing any repos");
-      expect(await repoExists("lib-orphan")).toBe(true);
-    } finally {
-      await chmod(join(locked, "shelffile"), 0o644);
-    }
-  });
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toContain(join(locked, "shelffile"));
+        expect(await repoExists("lib-locked")).toBe(true);
+        expect(result.output).toContain("Not removing any repos");
+        expect(await repoExists("lib-orphan")).toBe(true);
+      } finally {
+        await chmod(join(locked, "shelffile"), 0o644);
+      }
+    },
+  );
 });
 
 describe("install --dir", () => {

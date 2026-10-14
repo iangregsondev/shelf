@@ -26,6 +26,7 @@ import { waitUntil } from "../../helpers/wait";
 import { PlatformLayer } from "../../helpers/platform";
 import { SHELF_VERSION } from "../../../src/version";
 import { readJson } from "../../helpers/files";
+import { runningAsRoot } from "../../helpers/process";
 
 /** The daemon entry point the test run built into the repo's `dist` (see tests/global-setup.ts). */
 const BUILT_DAEMON_ENTRY = join(import.meta.dirname, "../../../dist/daemon.mjs");
@@ -248,13 +249,16 @@ describe("DaemonService", () => {
       expect(existsSync(statePath())).toBe(false);
     });
 
-    test("reports stale state even when it can't remove the state file", async () => {
-      await writeStaleState();
-      await chmod(tempDir, 0o555);
-      const result = await runOk((daemon) => daemon.status());
-      expect(result).toEqual({ running: false, wasStale: true });
-      expect(existsSync(statePath())).toBe(true);
-    });
+    test.skipIf(runningAsRoot)(
+      "reports stale state even when it can't remove the state file",
+      async () => {
+        await writeStaleState();
+        await chmod(tempDir, 0o555);
+        const result = await runOk((daemon) => daemon.status());
+        expect(result).toEqual({ running: false, wasStale: true });
+        expect(existsSync(statePath())).toBe(true);
+      },
+    );
 
     test("treats a live process that isn't the recorded daemon as stale", async () => {
       // This test runner is alive, but it is not a shelf daemon.
