@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import { statSync, readdirSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { RepoPin } from "../config/config-schema";
 import { InvalidAliasError } from "./repo-errors";
@@ -129,7 +129,7 @@ export const dirSize = (dirPath: string): Effect.Effect<number> =>
 					if (entry.isDirectory()) {
 						stack.push(fullPath);
 					} else {
-						total += statSync(fullPath).size;
+						total += lstatSync(fullPath).size;
 					}
 				}
 			}
