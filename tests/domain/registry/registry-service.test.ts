@@ -64,19 +64,6 @@ describe("RegistryService", () => {
     expect(result.projects).toEqual(["/tmp/project-a", "/tmp/project-b"]);
   });
 
-  test("unregisterProject removes project path", async () => {
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* RegistryService;
-        yield* svc.registerProject("/tmp/project-a");
-        yield* svc.registerProject("/tmp/project-b");
-        yield* svc.unregisterProject("/tmp/project-a");
-        return yield* svc.load();
-      }).pipe(Effect.provide(buildLayer())),
-    );
-    expect(result.projects).toEqual(["/tmp/project-b"]);
-  });
-
   test("addManual adds alias (deduped)", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {

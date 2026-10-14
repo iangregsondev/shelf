@@ -118,16 +118,6 @@ export class RegistryService extends Context.Service<RegistryService>()(
           });
         }),
 
-        unregisterProject: Effect.fn("RegistryService.unregisterProject")(function* (dir: string) {
-          yield* update(
-            (registry) =>
-              new ShelfRegistry({
-                ...registry,
-                projects: registry.projects.filter((p) => p !== dir),
-              }),
-          );
-        }),
-
         addManual: Effect.fn("RegistryService.addManual")(function* (alias: string) {
           yield* update((registry) =>
             registry.manual.includes(alias)

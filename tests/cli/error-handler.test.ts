@@ -27,6 +27,14 @@ describe("formatUserError: known error tags", () => {
     ],
     [{ _tag: "PinResolutionError", message: "unknown ref" }, "Pin failed: unknown ref"],
     [{ _tag: "ConfigParseError", message: "bad JSON" }, "Config error: bad JSON"],
+    [
+      {
+        _tag: "ConfigParseError",
+        reason: "invalid-json",
+        message: "config.json is not valid JSON: Unexpected end of JSON input",
+      },
+      "config.json is not valid JSON: Unexpected end of JSON input",
+    ],
     [{ _tag: "ConfigWriteError", message: "disk full" }, "Could not save shelf state: disk full"],
     [
       { _tag: "RepoFolderError", path: "/shelf/repos/x", message: "permission denied" },
@@ -43,10 +51,6 @@ describe("formatUserError: known error tags", () => {
     [
       { _tag: "InstallFailedError", failed: 1, total: 3 },
       "Install failed: 1 of 3 repos could not be added.",
-    ],
-    [
-      { _tag: "ConfigNotFoundError", path: "/shelf/config.json" },
-      "Config not found: /shelf/config.json",
     ],
     [
       { _tag: "ShelffileNotFoundError", path: "/project/shelffile" },
@@ -104,6 +108,7 @@ describe("formatUserError: known error tags", () => {
 describe("formatUserError: anything else returns null", () => {
   test.each([
     ["an unknown tag", { _tag: "SomeRandomError" }],
+    ["the removed ConfigNotFoundError tag", { _tag: "ConfigNotFoundError", path: "/x" }],
     ["a tag named after an Object.prototype method", { _tag: "toString" }],
     ["a tag named after Object.prototype.constructor", { _tag: "constructor" }],
     ["a plain Error", new Error("plain error")],

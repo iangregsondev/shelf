@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { join } from "node:path";
+import { writeFile } from "node:fs/promises";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createBareRepo } from "../helpers/temp-repo";
 import { readJson } from "../helpers/files";
@@ -36,6 +37,14 @@ describe("shelf config", () => {
     } finally {
       await repo.cleanup();
     }
+  });
+
+  test("reports a config.json with a JSON syntax error as not valid JSON, not a read failure", async () => {
+    await writeFile(join(shelf.home, "config.json"), "{not json");
+    const result = await shelf.run(["config"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toMatch(/config\.json is not valid JSON: \S/);
+    expect(result.stderr).not.toContain("Failed to read config file");
   });
 
   test("with the version key prints the config version", async () => {
