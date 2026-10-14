@@ -9,7 +9,7 @@ const collectText = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<str
 
 export const runGit = (
 	args: ReadonlyArray<string>,
-	cwd?: string | undefined,
+	cwd?: string,
 ): Effect.Effect<string, GitOperationError, ChildProcessSpawner> => {
 	const command = `git ${args.join(" ")}`;
 	return Effect.gen(function* () {

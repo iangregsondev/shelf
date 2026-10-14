@@ -50,24 +50,22 @@ const resolveViaGitHubApi = Effect.fn("resolveViaGitHubApi")(function* (name: st
 export class ResolveService extends Context.Service<ResolveService>()(
 	"shelf/domain/resolve/ResolveService",
 	{
-		make: Effect.gen(function* () {
-			return {
-				resolve: Effect.fn("ResolveService.resolve")(function* (input: string) {
-					const local = resolveLocally(input);
-					if (local._tag === "Invalid") {
-						return yield* Effect.fail(new ResolveError({ input, message: local.message }));
-					}
-					if (local._tag === "Search") {
-						return yield* resolveViaGitHubApi(local.name);
-					}
-					return new ResolvedRepo({
-						url: local.url,
-						suggestedAlias: local.suggestedAlias,
-						source: local.source,
-					});
-				}),
-			};
-		}),
+		make: Effect.sync(() => ({
+			resolve: Effect.fn("ResolveService.resolve")(function* (input: string) {
+				const local = resolveLocally(input);
+				if (local._tag === "Invalid") {
+					return yield* Effect.fail(new ResolveError({ input, message: local.message }));
+				}
+				if (local._tag === "Search") {
+					return yield* resolveViaGitHubApi(local.name);
+				}
+				return new ResolvedRepo({
+					url: local.url,
+					suggestedAlias: local.suggestedAlias,
+					source: local.source,
+				});
+			}),
+		})),
 	},
 ) {
 	static layer = Layer.effect(this, this.make);

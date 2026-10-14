@@ -45,10 +45,10 @@ queries.
 
 1. Run \`shelf list\` to see which repos are available and their local paths.
 2. Use your native tools on those paths:
-   * **Search**: \`Grep\` or \`rg\` on \`~/.agents/shelf/repos/{alias}/\`
-   * **Read files**: \`Read\` on any file in the repo
-   * **Find files**: \`Glob\` with patterns like \`~/.agents/shelf/repos/{alias}/**/*.ts\`
-   * **Explore structure**: \`ls ~/.agents/shelf/repos/{alias}/src/\`
+   - **Search**: \`Grep\` or \`rg\` on \`~/.agents/shelf/repos/{alias}/\`
+   - **Read files**: \`Read\` on any file in the repo
+   - **Find files**: \`Glob\` with patterns like \`~/.agents/shelf/repos/{alias}/**/*.ts\`
+   - **Explore structure**: \`ls ~/.agents/shelf/repos/{alias}/src/\`
 
 ## Workflow
 
@@ -61,23 +61,23 @@ When the user asks about code in a reference repository:
 
 ## Management Commands
 
-| Command | Purpose |
-|---------|---------|
-| \`shelf list\` | Show repos with local paths |
-| \`shelf update [alias]\` | Sync one or all repos |
+| Command                                       | Purpose                                       |
+| --------------------------------------------- | --------------------------------------------- |
+| \`shelf list\`                                  | Show repos with local paths                   |
+| \`shelf update [alias]\`                        | Sync one or all repos                         |
 | \`shelf add <repo> [--alias name] [--pin ref]\` | Add a repo (accepts name, owner/repo, or URL) |
-| \`shelf remove <alias>\` | Remove a repo |
-| \`shelf detect [--apply]\` | Detect repos from project dependencies |
-| \`shelf install [--dir path]\` | Install repos from a shelffile |
-| \`shelf share [--filter aliases] [--stdout]\` | Generate a shelffile from current repos |
-| \`shelf prune [--dry-run] [--force]\` | Remove unreferenced repos |
-| \`shelf status\` | Show detailed status of all repos |
-| \`shelf info <alias>\` | Show detailed info for a single repo |
-| \`shelf pin <alias> <ref>\` | Pin a repo to a branch, tag, or commit |
-| \`shelf alias <old> <new>\` | Rename a repo alias |
-| \`shelf daemon start\` | Start background sync daemon |
-| \`shelf daemon stop\` | Stop the daemon |
-| \`shelf daemon status\` | Show daemon status |
+| \`shelf remove <alias>\`                        | Remove a repo                                 |
+| \`shelf detect [--apply]\`                      | Detect repos from project dependencies        |
+| \`shelf install [--dir path]\`                  | Install repos from a shelffile                |
+| \`shelf share [--filter aliases] [--stdout]\`   | Generate a shelffile from current repos       |
+| \`shelf prune [--dry-run] [--force]\`           | Remove unreferenced repos                     |
+| \`shelf status\`                                | Show detailed status of all repos             |
+| \`shelf info <alias>\`                          | Show detailed info for a single repo          |
+| \`shelf pin <alias> <ref>\`                     | Pin a repo to a branch, tag, or commit        |
+| \`shelf alias <old> <new>\`                     | Rename a repo alias                           |
+| \`shelf daemon start\`                          | Start background sync daemon                  |
+| \`shelf daemon stop\`                           | Stop the daemon                               |
+| \`shelf daemon status\`                         | Show daemon status                            |
 
 ## Adding Repos
 
@@ -103,7 +103,7 @@ Run \`shelf install\` in a project directory to clone all repos from its shelffi
 
 ## Tips
 
-* **Pin versions for reproducibility.** If the user's project depends on React 19, pin the reference repo to \`v19.0.0\` so the code you read matches what they're actually using.
-* **Update before deep dives.** If you're about to do extensive research in a repo, run \`shelf update {alias}\` first to make sure you're reading the latest code (unless pinned).
-* **Combine with project code.** You can cross-reference between the user's project files and shelf repos to trace how dependencies are used — e.g., find a function signature in the shelf repo, then grep the user's project for call sites.
+- **Pin versions for reproducibility.** If the user's project depends on React 19, pin the reference repo to \`v19.0.0\` so the code you read matches what they're actually using.
+- **Update before deep dives.** If you're about to do extensive research in a repo, run \`shelf update {alias}\` first to make sure you're reading the latest code (unless pinned).
+- **Combine with project code.** You can cross-reference between the user's project files and shelf repos to trace how dependencies are used — e.g., find a function signature in the shelf repo, then grep the user's project for call sites.
 `;

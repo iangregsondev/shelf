@@ -44,7 +44,7 @@ export const initCommand = Command.make("init", { agent, noDetect }, (config) =>
 		const fs = yield* FileSystem;
 		yield* fs.makeDirectory(skillDir, { recursive: true }).pipe(
 			Effect.andThen(fs.writeFileString(skillPath, skillTemplate)),
-			Effect.mapError((error) => new Error(`Failed to write skill file: ${error}`)),
+			Effect.mapError((error) => new Error(`Failed to write skill file: ${String(error)}`)),
 		);
 		yield* Console.log(`Created ${skillPath}`);
 
@@ -77,7 +77,7 @@ export const initCommand = Command.make("init", { agent, noDetect }, (config) =>
 				repo.add({ url: d.url, alias: Option.some(d.name) }).pipe(
 					Effect.map((alias) => ({ alias, status: "added" as const })),
 					Effect.catch((error: unknown) =>
-						Console.log(`  Failed to add "${d.name}": ${error}`).pipe(
+						Console.log(`  Failed to add "${d.name}": ${String(error)}`).pipe(
 							Effect.map(() => ({ alias: d.name, status: "failed" as const })),
 						),
 					),

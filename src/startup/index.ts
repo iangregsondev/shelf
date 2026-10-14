@@ -52,7 +52,7 @@ program.pipe(
 		const message = formatUserError(error);
 		if (message !== null) {
 			return Effect.sync(() => {
-				console.error(message); // eslint-disable-line no-console
+				console.error(message);
 				// runMain only calls process.exit for a non-zero teardown code, so
 				// setting exitCode makes a handled error exit 1 without a stack trace.
 				process.exitCode = 1;

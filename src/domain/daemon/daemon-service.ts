@@ -179,7 +179,7 @@ export class DaemonService extends Context.Service<DaemonService>()(
 
 					const token = generateToken();
 					const spawnError = (err: unknown): DaemonStartError =>
-						new DaemonStartError({ message: `Failed to spawn daemon process: ${err}` });
+						new DaemonStartError({ message: `Failed to spawn daemon process: ${String(err)}` });
 					return yield* Effect.scoped(
 						Effect.gen(function* () {
 							const child = yield* spawner
@@ -251,7 +251,7 @@ export class DaemonService extends Context.Service<DaemonService>()(
 								.pipe(
 									Effect.mapError(
 										(err) =>
-											new DaemonStartError({ message: `Failed to spawn daemon process: ${err}` }),
+											new DaemonStartError({ message: `Failed to spawn daemon process: ${String(err)}` }),
 									),
 								);
 							// On interrupt, SIGTERM the daemon and wait for it to finish its step.
@@ -331,7 +331,7 @@ export class DaemonService extends Context.Service<DaemonService>()(
 
 const appendLog = (message: string): void => {
 	const timestamp = new Date().toISOString();
-	// eslint-disable-next-line no-console -- daemon logs to stdout which is redirected to log file
+	// The daemon logs to stdout, which is redirected to the log file.
 	console.log(`[${timestamp}] ${message}`);
 };
 
@@ -406,7 +406,7 @@ export const daemonProgram = Effect.gen(function* () {
 				}),
 			),
 			Effect.catch((error: unknown) => {
-				appendLog(`Sync cycle failed: ${error}`);
+				appendLog(`Sync cycle failed: ${String(error)}`);
 				return Effect.void;
 			}),
 		);

@@ -14,7 +14,7 @@ export class GitService extends Context.Service<GitService>()("shelf/domain/git/
 		const spawner = yield* ChildProcessSpawner;
 		const runGit = (
 			args: ReadonlyArray<string>,
-			cwd?: string | undefined,
+			cwd?: string,
 		): Effect.Effect<string, GitOperationError> =>
 			spawnGit(args, cwd).pipe(Effect.provideService(ChildProcessSpawner, spawner));
 

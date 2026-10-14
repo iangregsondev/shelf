@@ -64,7 +64,7 @@ export const detectCommand = Command.make("detect", { apply, format, dir }, (con
 					repo.add({ url: d.url, alias: Option.some(d.name) }).pipe(
 						Effect.map((alias) => ({ alias, status: "added" as const })),
 						Effect.catch((error: unknown) =>
-							Console.log(`  Failed to add "${d.name}": ${error}`).pipe(
+							Console.log(`  Failed to add "${d.name}": ${String(error)}`).pipe(
 								Effect.map(() => ({ alias: d.name, status: "failed" as const })),
 							),
 						),
