@@ -71,7 +71,9 @@ const isLockStale = async (lockPath: string): Promise<boolean> => {
     const info = await stat(lockPath);
     return Date.now() - info.mtimeMs > EMPTY_LOCK_STALE_MS;
   } catch (error) {
+    /* v8 ignore next -- only when another process removes the lock between our read and stat */
     if (errorCode(error) === "ENOENT") return true;
+    /* v8 ignore next -- stat failing just after a read of the same file succeeded */
     throw error;
   }
 };
@@ -86,6 +88,7 @@ const takeOverStaleLock = async (lockPath: string): Promise<void> => {
   try {
     await rename(lockPath, claimed);
   } catch (error) {
+    /* v8 ignore next -- only when another process takes over the same stale lock first */
     if (errorCode(error) === "ENOENT") return;
     throw error;
   }

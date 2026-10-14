@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import * as Effect from "effect/Effect";
-import { mkdtemp, rm, mkdir, stat } from "node:fs/promises";
+import { chmod, mkdtemp, rm, mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -13,7 +13,7 @@ import {
 } from "../../../src/domain/config/config-schema";
 import * as Option from "effect/Option";
 import { ConfigService } from "../../../src/domain/config/config-service";
-import { readText, writeText } from "../../helpers/files";
+import { readJson, readText, writeText } from "../../helpers/files";
 import { PlatformLayer } from "../../helpers/platform";
 
 describe("ConfigService", () => {
@@ -233,6 +233,321 @@ describe("ConfigService", () => {
       const content = await readText(configPath);
       const reloaded = decodeConfig(JSON.parse(content));
       expect(reloaded.syncIntervalMinutes).toBe(120);
+    });
+  });
+});
+
+describe("ConfigService on a shelf home of its own", () => {
+  let home: string;
+  let configFile: string;
+
+  /** Builds the real service with SHELF_HOME pointed at `shelfHome`. */
+  const serviceAt = async (shelfHome: string) => {
+    const previous = process.env["SHELF_HOME"];
+    process.env["SHELF_HOME"] = shelfHome;
+    try {
+      return await Effect.runPromise(
+        Effect.gen(function* () {
+          return yield* ConfigService;
+        }).pipe(Effect.provide(ConfigService.layer), Effect.provide(PlatformLayer)),
+      );
+    } finally {
+      process.env["SHELF_HOME"] = previous;
+    }
+  };
+
+  const repo = (alias: string, url = `https://github.com/test/${alias}.git`) =>
+    makeRepoEntry({
+      url,
+      alias,
+      pin: Option.none(),
+      depth: Option.none(),
+      sparse: Option.none(),
+      addedAt: "2026-01-01T00:00:00Z",
+      lastSyncedAt: Option.none(),
+    });
+
+  const writeConfig = (config: ShelfConfig) =>
+    writeText(configFile, JSON.stringify(encodeConfig(config)));
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "shelf-config-home-"));
+    configFile = join(home, "config.json");
+  });
+
+  afterEach(async () => {
+    await chmod(home, 0o700).catch(() => undefined);
+    await rm(home, { recursive: true, force: true });
+  });
+
+  describe("paths", () => {
+    test("come from SHELF_HOME", async () => {
+      const svc = await serviceAt(home);
+      expect(svc.shelfHome).toBe(home);
+      expect(svc.reposDir).toBe(join(home, "repos"));
+      expect(svc.configPath).toBe(configFile);
+    });
+
+    test("resolve a relative SHELF_HOME against the working directory", async () => {
+      const svc = await serviceAt("relative-shelf");
+      expect(svc.shelfHome).toBe(join(process.cwd(), "relative-shelf"));
+    });
+  });
+
+  describe("load", () => {
+    test("gives the stored config", async () => {
+      await writeConfig(
+        new ShelfConfig({ version: 1, syncIntervalMinutes: 15, repos: [repo("react")] }),
+      );
+      const config = await Effect.runPromise((await serviceAt(home)).load());
+      expect(config.syncIntervalMinutes).toBe(15);
+      expect(config.repos.map((r) => r.alias)).toEqual(["react"]);
+    });
+
+    test("gives the defaults when no config file exists", async () => {
+      const config = await Effect.runPromise((await serviceAt(home)).load());
+      expect(config).toEqual(defaultConfig);
+    });
+
+    test("fails with ConfigParseError on malformed JSON", async () => {
+      await writeFile(configFile, "{not json");
+      const error = await Effect.runPromise(Effect.flip((await serviceAt(home)).load()));
+      expect(error._tag).toBe("ConfigParseError");
+      expect(error.message).toBe("Failed to read config file");
+    });
+
+    test("fails with ConfigParseError on an empty file", async () => {
+      await writeFile(configFile, "");
+      const error = await Effect.runPromise(Effect.flip((await serviceAt(home)).load()));
+      expect(error.message).toBe("Failed to read config file");
+    });
+
+    test("fails with ConfigParseError when the config can't be read", async () => {
+      await mkdir(configFile);
+      const error = await Effect.runPromise(Effect.flip((await serviceAt(home)).load()));
+      expect(error._tag).toBe("ConfigParseError");
+      expect(error.message).toBe("Failed to read config file");
+    });
+
+    test("fails with ConfigParseError when it can't check for the config", async () => {
+      const svc = await serviceAt(home);
+      await chmod(home, 0o000);
+      const error = await Effect.runPromise(Effect.flip(svc.load()));
+      expect(error._tag).toBe("ConfigParseError");
+      expect(error.message).toBe("Failed to check config file");
+    });
+
+    test("fails with ConfigParseError when the JSON does not match the schema", async () => {
+      await writeFile(configFile, JSON.stringify({ version: 2, repos: [] }));
+      const error = await Effect.runPromise(Effect.flip((await serviceAt(home)).load()));
+      expect(error._tag).toBe("ConfigParseError");
+      expect(error.message).toBe("Invalid config schema");
+    });
+  });
+
+  describe("update", () => {
+    test("saves and gives the result of applying fn to the stored config", async () => {
+      const svc = await serviceAt(home);
+      const saved = await Effect.runPromise(
+        svc.update(
+          (current) =>
+            new ShelfConfig({ version: 1, syncIntervalMinutes: 5, repos: current.repos }),
+        ),
+      );
+      expect(saved.syncIntervalMinutes).toBe(5);
+      expect(await readJson(configFile)).toEqual({
+        version: 1,
+        syncIntervalMinutes: 5,
+        repos: [],
+      });
+      expect(await readText(configFile)).toContain('\n\t"syncIntervalMinutes": 5');
+      expect((await Effect.runPromise(svc.load())).syncIntervalMinutes).toBe(5);
+      expect(await readdir(home)).toEqual(["config.json"]);
+    });
+
+    test("accepts an fn that gives an effect", async () => {
+      const svc = await serviceAt(home);
+      const saved = await Effect.runPromise(
+        svc.update(() =>
+          Effect.succeed(
+            new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos: [repo("effect")] }),
+          ),
+        ),
+      );
+      expect(saved.repos.map((r) => r.alias)).toEqual(["effect"]);
+      expect((await Effect.runPromise(svc.load())).repos.map((r) => r.alias)).toEqual(["effect"]);
+    });
+
+    test("saves nothing when fn fails, and passes the failure on", async () => {
+      await writeConfig(new ShelfConfig({ version: 1, syncIntervalMinutes: 30, repos: [] }));
+      const before = await readText(configFile);
+      const svc = await serviceAt(home);
+      const error = await Effect.runPromise(Effect.flip(svc.update(() => Effect.fail("abort"))));
+      expect(error).toBe("abort");
+      expect(await readText(configFile)).toBe(before);
+      expect(await readdir(home)).toEqual(["config.json"]);
+    });
+
+    test("saves nothing when the stored config is invalid", async () => {
+      await writeFile(configFile, "{not json");
+      const svc = await serviceAt(home);
+      let called = false;
+      const error = await Effect.runPromise(
+        Effect.flip(
+          svc.update((current) => {
+            called = true;
+            return current;
+          }),
+        ),
+      );
+      expect(error._tag).toBe("ConfigParseError");
+      expect(called).toBe(false);
+      expect(await readText(configFile)).toBe("{not json");
+    });
+
+    test("fails with ConfigWriteError when the config can't be written", async () => {
+      const svc = await serviceAt(home);
+      const error = await Effect.runPromise(
+        Effect.flip(
+          svc.update((current) =>
+            Effect.promise(() => chmod(home, 0o500)).pipe(Effect.as(current)),
+          ),
+        ),
+      );
+      expect(error._tag).toBe("ConfigWriteError");
+      expect(error.message).toBe("Failed to write config file");
+      await chmod(home, 0o700);
+      expect(await readdir(home)).not.toContain("config.json");
+    });
+
+    test("fails with ConfigWriteError when the config can't be locked", async () => {
+      await mkdir(`${configFile}.lock`);
+      const svc = await serviceAt(home);
+      const error = await Effect.runPromise(Effect.flip(svc.update((current) => current)));
+      expect(error._tag).toBe("ConfigWriteError");
+      expect(error.message).toContain(`Failed to lock ${configFile}.lock: `);
+    });
+
+    test("applies concurrent updates one after another, losing none", async () => {
+      const svc = await serviceAt(home);
+      const addRepo = (alias: string) =>
+        svc.update((current) =>
+          Effect.sleep("5 millis").pipe(
+            Effect.as(
+              new ShelfConfig({
+                version: 1,
+                syncIntervalMinutes: 60,
+                repos: [...current.repos, repo(alias)],
+              }),
+            ),
+          ),
+        );
+      await Effect.runPromise(
+        Effect.all([addRepo("a"), addRepo("b"), addRepo("c"), addRepo("d")], {
+          concurrency: "unbounded",
+        }),
+      );
+      const aliases = (await Effect.runPromise(svc.load())).repos.map((r) => r.alias);
+      expect([...aliases].sort()).toEqual(["a", "b", "c", "d"]);
+    });
+  });
+
+  describe("updateRepo", () => {
+    const twoRepos = new ShelfConfig({
+      version: 1,
+      syncIntervalMinutes: 60,
+      repos: [repo("react"), repo("vue")],
+    });
+
+    test("saves and gives the repo fn returns, leaving the others alone", async () => {
+      await writeConfig(twoRepos);
+      const svc = await serviceAt(home);
+      const result = await Effect.runPromise(
+        svc.updateRepo("vue", (r) => repo(r.alias, "https://example.com/vue.git")),
+      );
+      expect(Option.map(result, (r) => r.url)).toEqual(Option.some("https://example.com/vue.git"));
+      const stored = await Effect.runPromise(svc.load());
+      expect(stored.repos.map((r) => [r.alias, r.url])).toEqual([
+        ["react", "https://github.com/test/react.git"],
+        ["vue", "https://example.com/vue.git"],
+      ]);
+    });
+
+    test("hands fn the whole config and accepts an effect", async () => {
+      await writeConfig(twoRepos);
+      const svc = await serviceAt(home);
+      let seen: ReadonlyArray<string> = [];
+      const result = await Effect.runPromise(
+        svc.updateRepo("react", (r, current) => {
+          seen = current.repos.map((x) => x.alias);
+          return Effect.succeed(
+            makeRepoEntry({
+              url: r.url,
+              alias: r.alias,
+              pin: r.pin,
+              depth: r.depth,
+              sparse: r.sparse,
+              addedAt: r.addedAt,
+              lastSyncedAt: Option.some("now"),
+            }),
+          );
+        }),
+      );
+      expect(seen).toEqual(["react", "vue"]);
+      expect(Option.flatMap(result, (r) => r.lastSyncedAt)).toEqual(Option.some("now"));
+    });
+
+    test("gives None and saves nothing when no repo has the alias", async () => {
+      await writeConfig(twoRepos);
+      const before = await readText(configFile);
+      const svc = await serviceAt(home);
+      let called = false;
+      const result = await Effect.runPromise(
+        svc.updateRepo("svelte", (r) => {
+          called = true;
+          return r;
+        }),
+      );
+      expect(result).toEqual(Option.none());
+      expect(called).toBe(false);
+      expect(await readText(configFile)).toBe(before);
+    });
+
+    test("saves nothing when fn fails, and passes the failure on", async () => {
+      await writeConfig(twoRepos);
+      const before = await readText(configFile);
+      const svc = await serviceAt(home);
+      const error = await Effect.runPromise(
+        Effect.flip(svc.updateRepo("react", () => Effect.fail("abort"))),
+      );
+      expect(error).toBe("abort");
+      expect(await readText(configFile)).toBe(before);
+    });
+
+    test("fails with ConfigParseError when the stored config is invalid", async () => {
+      await writeFile(configFile, JSON.stringify({ version: 1 }));
+      const svc = await serviceAt(home);
+      const error = await Effect.runPromise(Effect.flip(svc.updateRepo("react", (r) => r)));
+      expect(error._tag).toBe("ConfigParseError");
+    });
+  });
+
+  describe("ensureDirectories", () => {
+    test("creates the shelf home and its repos folder", async () => {
+      const shelfHome = join(home, "nested", "shelf");
+      const svc = await serviceAt(shelfHome);
+      await Effect.runPromise(svc.ensureDirectories());
+      expect((await stat(join(shelfHome, "repos"))).isDirectory()).toBe(true);
+      // A second run finds them already there.
+      await Effect.runPromise(svc.ensureDirectories());
+    });
+
+    test("fails with ConfigWriteError when the folders can't be created", async () => {
+      await writeFile(join(home, "file"), "");
+      const svc = await serviceAt(join(home, "file", "shelf"));
+      const error = await Effect.runPromise(Effect.flip(svc.ensureDirectories()));
+      expect(error._tag).toBe("ConfigWriteError");
+      expect(error.message).toBe("Failed to create shelf directories");
     });
   });
 });
