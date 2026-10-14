@@ -349,7 +349,10 @@ describe("ConfigService on a shelf home of its own", () => {
     test("saves and gives the result of applying fn to the stored config", async () => {
       const svc = await serviceAt(home);
       const saved = await Effect.runPromise(
-        svc.update((current) => new ShelfConfig({ ...current, syncIntervalMinutes: 5 })),
+        svc.update(
+          (current) =>
+            new ShelfConfig({ version: 1, syncIntervalMinutes: 5, repos: current.repos }),
+        ),
       );
       expect(saved.syncIntervalMinutes).toBe(5);
       expect(await readJson(configFile)).toEqual({
@@ -365,8 +368,10 @@ describe("ConfigService on a shelf home of its own", () => {
     test("accepts an fn that gives an effect", async () => {
       const svc = await serviceAt(home);
       const saved = await Effect.runPromise(
-        svc.update((current) =>
-          Effect.succeed(new ShelfConfig({ ...current, repos: [repo("effect")] })),
+        svc.update(() =>
+          Effect.succeed(
+            new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos: [repo("effect")] }),
+          ),
         ),
       );
       expect(saved.repos.map((r) => r.alias)).toEqual(["effect"]);
@@ -428,7 +433,13 @@ describe("ConfigService on a shelf home of its own", () => {
       const addRepo = (alias: string) =>
         svc.update((current) =>
           Effect.sleep("5 millis").pipe(
-            Effect.as(new ShelfConfig({ ...current, repos: [...current.repos, repo(alias)] })),
+            Effect.as(
+              new ShelfConfig({
+                version: 1,
+                syncIntervalMinutes: 60,
+                repos: [...current.repos, repo(alias)],
+              }),
+            ),
           ),
         );
       await Effect.runPromise(
@@ -452,7 +463,7 @@ describe("ConfigService on a shelf home of its own", () => {
       await writeConfig(twoRepos);
       const svc = await serviceAt(home);
       const result = await Effect.runPromise(
-        svc.updateRepo("vue", (r) => makeRepoEntry({ ...r, url: "https://example.com/vue.git" })),
+        svc.updateRepo("vue", (r) => repo(r.alias, "https://example.com/vue.git")),
       );
       expect(Option.map(result, (r) => r.url)).toEqual(Option.some("https://example.com/vue.git"));
       const stored = await Effect.runPromise(svc.load());
@@ -469,7 +480,17 @@ describe("ConfigService on a shelf home of its own", () => {
       const result = await Effect.runPromise(
         svc.updateRepo("react", (r, current) => {
           seen = current.repos.map((x) => x.alias);
-          return Effect.succeed(makeRepoEntry({ ...r, lastSyncedAt: Option.some("now") }));
+          return Effect.succeed(
+            makeRepoEntry({
+              url: r.url,
+              alias: r.alias,
+              pin: r.pin,
+              depth: r.depth,
+              sparse: r.sparse,
+              addedAt: r.addedAt,
+              lastSyncedAt: Option.some("now"),
+            }),
+          );
         }),
       );
       expect(seen).toEqual(["react", "vue"]);
