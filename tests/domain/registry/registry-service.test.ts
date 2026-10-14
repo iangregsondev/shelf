@@ -7,8 +7,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { RegistryService } from "../../../src/domain/registry/registry-service";
-import { ConfigService } from "../../../src/domain/config/config-service";
-import { defaultConfig } from "../../../src/domain/config/config-schema";
+import { createMockConfigLayer } from "../config/helpers";
 import { ShelfRegistry } from "../../../src/domain/registry/registry-schema";
 import { createMockShelffileLayer } from "../shelffile/helpers";
 import {
@@ -32,22 +31,7 @@ describe("RegistryService", () => {
   });
 
   const buildLayer = (shelffileOverrides: ShelffileOverrides = {}) => {
-    const configLayer = Layer.succeed(
-      ConfigService,
-      ConfigService.of({
-        load: () => Effect.succeed(defaultConfig),
-        update: (fn) => {
-          const result = fn(defaultConfig);
-          return Effect.isEffect(result) ? result : Effect.succeed(result);
-        },
-        updateRepo: () => Effect.succeed(Option.none()),
-        ensureDirectories: () => Effect.void,
-        repoPath: (alias: string) => Effect.succeed(join(tempDir, "repos", alias)),
-        shelfHome: tempDir,
-        reposDir: join(tempDir, "repos"),
-        configPath: join(tempDir, "config.json"),
-      }),
-    );
+    const configLayer = createMockConfigLayer({ shelfHome: tempDir });
     const shelffileLayer = createMockShelffileLayer(shelffileOverrides);
     return RegistryService.layer.pipe(
       Layer.provide(configLayer),
@@ -196,24 +180,7 @@ describe("RegistryService edge cases", () => {
 
   const buildLayer = (shelffileOverrides: ShelffileOverrides = {}, shelfHome = tempDir) =>
     RegistryService.layer.pipe(
-      Layer.provide(
-        Layer.succeed(
-          ConfigService,
-          ConfigService.of({
-            load: () => Effect.succeed(defaultConfig),
-            update: (fn) => {
-              const result = fn(defaultConfig);
-              return Effect.isEffect(result) ? result : Effect.succeed(result);
-            },
-            updateRepo: () => Effect.succeed(Option.none()),
-            ensureDirectories: () => Effect.void,
-            repoPath: (alias: string) => Effect.succeed(join(shelfHome, "repos", alias)),
-            shelfHome,
-            reposDir: join(shelfHome, "repos"),
-            configPath: join(shelfHome, "config.json"),
-          }),
-        ),
-      ),
+      Layer.provide(createMockConfigLayer({ shelfHome })),
       Layer.provide(createMockShelffileLayer(shelffileOverrides)),
       Layer.provide(PlatformLayer),
     );

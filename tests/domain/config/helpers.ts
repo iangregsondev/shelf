@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -11,18 +12,20 @@ export type ConfigOverrides = {
   readonly save?: (config: typeof ShelfConfig.Type) => Effect.Effect<void, ConfigWriteError>;
   readonly ensureDirectories?: () => Effect.Effect<void, ConfigWriteError>;
   readonly repoPath?: (alias: string) => string;
+  /** The shelf home; `reposDir`, `configPath` and the default `repoPath` sit inside it. */
+  readonly shelfHome?: string;
 };
 
-const defaultConfigImpl = {
+const defaultConfigImpl = (shelfHome: string) => ({
   load: (): Effect.Effect<typeof ShelfConfig.Type, ConfigParseError> =>
     Effect.succeed(defaultConfig),
   save: (): Effect.Effect<void, ConfigWriteError> => Effect.void,
   ensureDirectories: (): Effect.Effect<void, ConfigWriteError> => Effect.void,
-  repoPath: (alias: string): string => `/tmp/shelf-test/repos/${alias}`,
-  shelfHome: "/tmp/shelf-test",
-  reposDir: "/tmp/shelf-test/repos",
-  configPath: "/tmp/shelf-test/config.json",
-};
+  repoPath: (alias: string): string => join(shelfHome, "repos", alias),
+  shelfHome,
+  reposDir: join(shelfHome, "repos"),
+  configPath: join(shelfHome, "config.json"),
+});
 
 /**
  * A config layer whose `update` applies `fn` to `load()` and hands the result
@@ -31,7 +34,10 @@ const defaultConfigImpl = {
 export const createMockConfigLayer = (
   overrides: ConfigOverrides = {},
 ): Layer.Layer<ConfigService> => {
-  const { save, repoPath, ...impl } = { ...defaultConfigImpl, ...overrides };
+  const { save, repoPath, ...impl } = {
+    ...defaultConfigImpl(overrides.shelfHome ?? "/tmp/shelf-test"),
+    ...overrides,
+  };
   const update = <E = never>(
     fn: (current: ShelfConfig) => ShelfConfig | Effect.Effect<ShelfConfig, E>,
   ): Effect.Effect<ShelfConfig, ConfigParseError | ConfigWriteError | E> =>

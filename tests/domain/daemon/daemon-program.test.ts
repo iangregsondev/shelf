@@ -7,7 +7,6 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import { TestClock } from "effect/testing";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -15,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { daemonProgram } from "../../../src/domain/daemon/daemon-service";
-import { ConfigService } from "../../../src/domain/config/config-service";
+import { createMockConfigLayer } from "../config/helpers";
 import { ConfigParseError } from "../../../src/domain/config/config-errors";
 import { ShelfConfig, defaultConfig } from "../../../src/domain/config/config-schema";
 import { GitOperationError } from "../../../src/domain/git/git-errors";
@@ -82,19 +81,10 @@ describe("daemonProgram", () => {
 
   const layerFor = (options: Options) =>
     Layer.mergeAll(
-      Layer.succeed(
-        ConfigService,
-        ConfigService.of({
-          load: options.load ?? (() => Effect.succeed(configWith(30))),
-          update: () => Effect.succeed(defaultConfig),
-          updateRepo: () => Effect.succeed(Option.none()),
-          ensureDirectories: () => Effect.void,
-          repoPath: (alias: string) => Effect.succeed(join(home, "repos", alias)),
-          shelfHome: options.shelfHome ?? home,
-          reposDir: join(home, "repos"),
-          configPath: join(home, "config.json"),
-        }),
-      ),
+      createMockConfigLayer({
+        load: options.load ?? (() => Effect.succeed(configWith(30))),
+        shelfHome: options.shelfHome ?? home,
+      }),
       Layer.succeed(
         SyncService,
         SyncService.of({

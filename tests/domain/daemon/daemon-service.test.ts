@@ -21,8 +21,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { DaemonEntry, DaemonService } from "../../../src/domain/daemon/daemon-service";
 import { DaemonState, encodeDaemonState } from "../../../src/domain/daemon/daemon-schema";
-import { ConfigService } from "../../../src/domain/config/config-service";
-import { defaultConfig } from "../../../src/domain/config/config-schema";
+import { createMockConfigLayer } from "../config/helpers";
 import { stopDaemonIn } from "../../helpers/daemon";
 import { PlatformLayer } from "../../helpers/platform";
 import { SHELF_VERSION } from "../../../src/version";
@@ -88,23 +87,7 @@ describe("DaemonService", () => {
   let tempDir: string;
   let startedPids: number[] = [];
 
-  const configLayer = () =>
-    Layer.succeed(
-      ConfigService,
-      ConfigService.of({
-        load: () => Effect.succeed({ version: 1 as const, syncIntervalMinutes: 60, repos: [] }),
-        update: (fn) => {
-          const result = fn(defaultConfig);
-          return Effect.isEffect(result) ? result : Effect.succeed(result);
-        },
-        updateRepo: () => Effect.succeed(Option.none()),
-        ensureDirectories: () => Effect.void,
-        repoPath: (alias: string) => Effect.succeed(join(tempDir, "repos", alias)),
-        shelfHome: tempDir,
-        reposDir: join(tempDir, "repos"),
-        configPath: join(tempDir, "config.json"),
-      }),
-    );
+  const configLayer = () => createMockConfigLayer({ shelfHome: tempDir });
 
   const createTestLayer = (options: LayerOptions = {}) => {
     const { spawner } = options;
