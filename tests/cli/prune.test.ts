@@ -86,7 +86,7 @@ describe("prune", () => {
 		expect(await repoExists("lib-orphan")).toBe(false);
 	});
 
-	test("drops a relative project path an older shelf recorded, deleting nothing that run", async () => {
+	test("keeps a relative project path an older shelf recorded, and deletes nothing, every run", async () => {
 		const project = await makeProject("project", `lib-a ${remote.url}\n`);
 		expect((await shelf.run(["install", "--dir", project])).exitCode).toBe(0);
 		await Bun.write(
@@ -94,12 +94,32 @@ describe("prune", () => {
 			JSON.stringify({ projects: ["project"], manual: [] }),
 		);
 
-		const result = await shelf.run(["prune", "--force"], { cwd: tempDir });
+		for (let run = 0; run < 2; run++) {
+			const result = await shelf.run(["prune", "--force"], { cwd: tempDir });
 
+			expect(result.exitCode).toBe(0);
+			expect(result.stderr).toContain('"project"');
+			expect(result.output).toContain("Not removing any repos");
+			expect(await repoExists("lib-a")).toBe(true);
+			expect((await readRegistry()).projects).toEqual(["project"]);
+		}
+	});
+
+	test("re-installing from the project replaces its relative path, and prune works again", async () => {
+		const project = await makeProject("project", `lib-a ${remote.url}\n`);
+		expect((await shelf.run(["install", "--dir", project])).exitCode).toBe(0);
+		await Bun.write(
+			join(shelf.home, "registry.json"),
+			JSON.stringify({ projects: ["project"], manual: [] }),
+		);
+
+		const reinstall = await shelf.run(["install", "--dir", "project"], { cwd: tempDir });
+		expect(reinstall.exitCode).toBe(0);
+		expect((await readRegistry()).projects).toEqual([await realpath(project)]);
+
+		const result = await shelf.run(["prune", "--force"], { cwd: tempDir });
 		expect(result.exitCode).toBe(0);
-		expect(result.stderr).toContain('"project"');
-		expect(await repoExists("lib-a")).toBe(true);
-		expect((await readRegistry()).projects).toEqual([]);
+		expect(result.output).toContain("No unreferenced repos found.");
 	});
 
 	test("deletes nothing when a project's shelffile can't be read at all, and warns", async () => {

@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Context from "effect/Context";
 import { stat } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { ConfigService } from "../config/config-service";
 import { errorCode } from "../config/config-utils";
 import { ShelffileService } from "../shelffile/shelffile-service";
@@ -22,8 +22,8 @@ export interface ReferenceScan {
 	 */
 	readonly anyMightBeReferenced: boolean;
 	/**
-	 * Registry entries to drop: the folder no longer exists, or the path is
-	 * relative (recorded by an older shelf) so it can't be located.
+	 * Registry entries to drop: the folder no longer exists. A relative path
+	 * (recorded by an older shelf) is never dropped, since it can't be checked.
 	 */
 	readonly staleProjects: ReadonlyArray<string>;
 	/** Problems reading projects, one line each. */
@@ -100,12 +100,18 @@ export class RegistryService extends Context.Service<RegistryService>()(
 				load,
 				update,
 
+				/**
+				 * Records the absolute project folder `dir`, replacing any relative
+				 * entry an older shelf recorded for it (one that resolves to `dir`
+				 * from this working directory).
+				 */
 				registerProject: Effect.fn("RegistryService.registerProject")(function* (dir: string) {
-					yield* update((registry) =>
-						registry.projects.includes(dir)
-							? registry
-							: new ShelfRegistry({ ...registry, projects: [...registry.projects, dir] }),
-					);
+					const cwd = process.cwd();
+					yield* update((registry) => {
+						const kept = registry.projects.filter((p) => isAbsolute(p) || resolve(cwd, p) !== dir);
+						const projects = kept.includes(dir) ? kept : [...kept, dir];
+						return new ShelfRegistry({ ...registry, projects });
+					});
 				}),
 
 				unregisterProject: Effect.fn("RegistryService.unregisterProject")(function* (dir: string) {
@@ -166,10 +172,10 @@ export class RegistryService extends Context.Service<RegistryService>()(
 
 					for (const projectDir of registry.projects) {
 						if (!isAbsolute(projectDir)) {
-							staleProjects.push(projectDir);
+							// Keep it, and keep every repo, until a re-install replaces it.
 							anyMightBeReferenced = true;
 							warnings.push(
-								`Registry entry "${projectDir}" is a relative path from an older shelf and can't be located; prune drops it. Run \`shelf install\` in that project again to keep its repos.`,
+								`Registry entry "${projectDir}" is a relative path from an older shelf and can't be located. Run \`shelf install --dir ${projectDir}\` from the folder you first ran it in (or delete the entry from registry.json).`,
 							);
 							continue;
 						}
