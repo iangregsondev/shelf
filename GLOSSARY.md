@@ -31,7 +31,7 @@ A folder in the repos folder named like an alias but with no config entry; it bl
 _Avoid_: stray folder, leftover
 
 **Trash**:
-The folder of a removed reference repo, renamed aside (`.shelf-trash-…`) and waiting to be deleted; `remove` and `prune` delete it.
+The folder of a removed reference repo, renamed aside (`.shelf-trash-…`) and waiting to be deleted; `remove` and `prune` delete it. A killed add's or remove's leftover folder becomes trash too, unless a killed remove's folder can move back.
 _Avoid_: bin, garbage
 
 **Shorthand**:

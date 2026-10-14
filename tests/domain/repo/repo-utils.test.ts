@@ -8,7 +8,9 @@ import {
   describeLastSynced,
   describePin,
   parsePin,
+  parseTempName,
   pinFromRemoteRefs,
+  tempName,
 } from "../../../src/domain/repo/repo-utils";
 
 describe("deriveAlias", () => {
@@ -240,5 +242,31 @@ describe("describeLastSynced", () => {
     expect(describeLastSynced(Option.some("2026-01-01T00:00:00.000Z"))).toBe(
       "2026-01-01T00:00:00.000Z",
     );
+  });
+});
+
+describe("temp folder names", () => {
+  const id = "0b7c5d3e-1f2a-4b6c-8d9e-0a1b2c3d4e5f";
+
+  test("name the kind, the alias, the owning process and an id", () => {
+    expect(tempName("add", "my-lib", 4321, id)).toBe(`.shelf-add-my-lib-4321-${id}`);
+  });
+
+  test.each(["add", "rename", "removing", "trash"] as const)("read back a %s name", (kind) => {
+    expect(parseTempName(tempName(kind, "my-lib-2", 4321, id))).toEqual({
+      kind,
+      alias: "my-lib-2",
+      pid: 4321,
+    });
+  });
+
+  test.each([
+    ["a repo folder", "lib"],
+    ["an unknown kind", `.shelf-copy-lib-4321-${id}`],
+    ["a name with no process", `.shelf-add-lib-${id}`],
+    ["a name with no id", ".shelf-add-lib-4321"],
+    ["a name with no alias", `.shelf-add--4321-${id}`],
+  ])("are not read from %s", (_label, name) => {
+    expect(parseTempName(name)).toBeUndefined();
   });
 });

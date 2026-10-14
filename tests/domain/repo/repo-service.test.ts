@@ -9,12 +9,14 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { RepoEntry, ShelfConfig, RepoPin } from "../../../src/domain/config/config-schema";
 import { RepoService } from "../../../src/domain/repo/repo-service";
+import { tempName } from "../../../src/domain/repo/repo-utils";
 import { createMockConfigLayer } from "../config/helpers";
 import { createMockGitLayer } from "../git/helpers";
 import { createMockSyncLayer } from "../sync/helpers";
 import { createMockRegistryLayer } from "../registry/helpers";
-import { writeText } from "../../helpers/files";
+import { readText, writeText } from "../../helpers/files";
 import { PlatformLayer } from "../../helpers/platform";
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { GitOperationError } from "../../../src/domain/git/git-errors";
 import { ConfigWriteError } from "../../../src/domain/config/config-errors";
@@ -129,7 +131,7 @@ describe("RepoService", () => {
       );
       // The first folder add makes is the temp folder it clones into.
       const cloneDir = (error as { path: string }).path;
-      expect(cloneDir).toMatch(/[/\\]missing-parent[/\\]\.shelf-add-effect-[0-9a-f-]{36}$/);
+      expect(cloneDir).toMatch(/[/\\]missing-parent[/\\]\.shelf-add-effect-\d+-[0-9a-f-]{36}$/);
       expect(error).toMatchObject({
         _tag: "RepoFolderError",
         message: `ENOENT: no such file or directory, mkdir '${cloneDir}'`,
@@ -573,6 +575,12 @@ const entry = (alias: string, pin: Option.Option<RepoPin> = Option.none()) =>
     sparse: Option.none(),
     lastSyncedAt: Option.none(),
   });
+
+/** An id for temp folder names in tests. */
+const ID = "0b7c5d3e-1f2a-4b6c-8d9e-0a1b2c3d4e5f";
+
+/** The PID of a process that has already exited. */
+const deadPid = (): number => spawnSync(process.execPath, ["-e", ""]).pid;
 
 const configOf = (...repos: ReadonlyArray<RepoEntry>) =>
   new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos });
@@ -1185,7 +1193,7 @@ describe("RepoService.remove, orphans and failures", () => {
     try {
       const removed = await runRepo((repo) => repo.remove("lib"), layer);
       left = await readdir(reposDir);
-      expect(left).toEqual([expect.stringMatching(/^\.shelf-trash-lib-[0-9a-f-]{36}$/)]);
+      expect(left).toEqual([expect.stringMatching(/^\.shelf-trash-lib-\d+-[0-9a-f-]{36}$/)]);
       expect(removed).toEqual({
         alias: "lib",
         orphan: false,
@@ -1244,14 +1252,15 @@ describe("RepoService.remove, orphans and failures", () => {
   test("clears trash left by an earlier remove", async () => {
     await writeText(join(reposDir, "lib", "lib.ts"), "code");
     await writeText(join(reposDir, ".shelf-trash-old-1234", "old.ts"), "old");
-    await writeText(join(reposDir, ".shelf-add-new-5678", "new.ts"), "new");
+    const running = tempName("add", "new", process.pid, ID);
+    await writeText(join(reposDir, running, "new.ts"), "new");
     const removed = await runRepo(
       (repo) => repo.remove("lib"),
       buildRepoLayer({ load: () => Effect.succeed(configOf(entry("lib"))) }),
     );
     expect(removed).toEqual({ alias: "lib", orphan: false, trashLeft: [] });
-    // Only trash goes: an add's temp folder may be a clone still running.
-    expect(await readdir(reposDir)).toEqual([".shelf-add-new-5678"]);
+    // Only trash goes: this add's process is alive, so its clone may still be running.
+    expect(await readdir(reposDir)).toEqual([running]);
   });
 });
 
@@ -1263,6 +1272,64 @@ describe("RepoService.clearTrash", () => {
     const left = await runRepo((repo) => repo.clearTrash(), buildRepoLayer());
     expect(left).toEqual([]);
     expect(await readdir(reposDir)).toEqual(["lib"]);
+  });
+
+  test("deletes the folder of an add whose process is gone, and keeps a live one's", async () => {
+    const dead = tempName("add", "lib", deadPid(), ID);
+    const live = tempName("add", "other", process.pid, ID);
+    await writeText(join(reposDir, dead, "lib.ts"), "code");
+    await writeText(join(reposDir, live, "other.ts"), "code");
+    const left = await runRepo((repo) => repo.clearTrash(), buildRepoLayer());
+    expect(left).toEqual([]);
+    expect(await readdir(reposDir)).toEqual([live]);
+  });
+
+  test("moves a dead remove's folder back when its entry is still saved and its folder missing", async () => {
+    await writeText(join(reposDir, tempName("removing", "lib", deadPid(), ID), "lib.ts"), "code");
+    let saved = false;
+    const layer = buildRepoLayer({
+      load: () => Effect.succeed(configOf(entry("lib"))),
+      save: () => {
+        saved = true;
+        return Effect.void;
+      },
+    });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+    expect(await readText(join(reposDir, "lib", "lib.ts"))).toBe("code");
+    expect(saved).toBe(false);
+  });
+
+  test("deletes a dead remove's folder when its entry is gone", async () => {
+    await writeText(join(reposDir, tempName("removing", "lib", deadPid(), ID), "lib.ts"), "code");
+    const layer = buildRepoLayer({ load: () => Effect.succeed(configOf(entry("other"))) });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual([]);
+  });
+
+  test("deletes a dead remove's folder when the repo folder is already back in place", async () => {
+    await writeText(join(reposDir, tempName("removing", "lib", deadPid(), ID), "old.ts"), "old");
+    await writeText(join(reposDir, "lib", "lib.ts"), "new");
+    const layer = buildRepoLayer({ load: () => Effect.succeed(configOf(entry("lib"))) });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+    expect(await readdir(join(reposDir, "lib"))).toEqual(["lib.ts"]);
+  });
+
+  test("never moves a dead remove's folder to an unsafe alias read from its name", async () => {
+    await writeText(join(reposDir, tempName("removing", "..", deadPid(), ID), "x.ts"), "x");
+    const layer = buildRepoLayer({ load: () => Effect.succeed(configOf(entry(".."))) });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual([]);
+    expect(await readdir(shelfHome)).toEqual(["repos"]);
+  });
+
+  test("keeps the folder of a remove whose process is alive", async () => {
+    const live = tempName("removing", "lib", process.pid, ID);
+    await writeText(join(reposDir, live, "lib.ts"), "code");
+    const layer = buildRepoLayer({ load: () => Effect.succeed(configOf(entry("lib"))) });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual([live]);
   });
 
   test("finds nothing to clear when the repos folder is missing", async () => {
