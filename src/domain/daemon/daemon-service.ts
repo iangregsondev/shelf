@@ -11,6 +11,7 @@ import {
 	DaemonAlreadyRunningError,
 	DaemonNotRunningError,
 	DaemonStartError,
+	DaemonStillStoppingError,
 } from "./daemon-errors";
 import {
 	daemonStatePath,
@@ -27,8 +28,14 @@ import { SHELF_VERSION } from "../../version";
 const LOG_MAX_BYTES = 5_242_880; // 5 MB
 /** How long `start` waits for the daemon to report itself running. */
 const START_TIMEOUT_MS = 10_000;
-/** How long `stop` waits for the daemon to finish its current step before SIGKILL. */
-const STOP_TIMEOUT_MS = 30_000;
+/**
+ * How long `stop` waits for the daemon to finish its current step. The daemon
+ * is never killed mid-step; `SHELF_DAEMON_STOP_TIMEOUT_MS` overrides the wait.
+ */
+const stopTimeoutMs = (): number => {
+	const override = Number(process.env["SHELF_DAEMON_STOP_TIMEOUT_MS"]);
+	return Number.isInteger(override) && override > 0 ? override : 30_000;
+};
 const POLL_MS = 50;
 
 /** The command line of a running process, or undefined if there is no such process. */
@@ -186,17 +193,15 @@ export class DaemonService extends Context.Service<DaemonService>()(
 					} catch {
 						// already dead
 					}
-					// The daemon finishes its current step, removes its state file and exits.
-					const deadline = Date.now() + STOP_TIMEOUT_MS;
+					// The daemon finishes its current step, removes its state file and
+					// exits. Killing it mid-step could leave a repo half-synced, so a
+					// daemon still busy at the deadline is left running.
+					const deadline = Date.now() + stopTimeoutMs();
 					while (isProcessAlive(pid) && Date.now() < deadline) {
 						yield* Effect.sleep(POLL_MS);
 					}
 					if (isShelfDaemon(pid, token)) {
-						try {
-							process.kill(pid, "SIGKILL");
-						} catch {
-							// already dead
-						}
+						return yield* new DaemonStillStoppingError({ pid });
 					}
 					const current = yield* readState();
 					if (current && current.token === token) yield* removeState();

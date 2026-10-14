@@ -64,6 +64,8 @@ All shelf state lives in the shelf home: `$SHELF_HOME` if set (a relative path r
 - Daemon state and log: `<shelf home>/daemon.json`, `<shelf home>/daemon.log`
 - Shelffile: `./shelffile` (per-project)
 
+`shelf daemon stop` waits up to 30s for the daemon to finish its current step; `SHELF_DAEMON_STOP_TIMEOUT_MS` overrides that wait (tests use it).
+
 External services: the npm registry and GitHub API base URLs read `SHELF_NPM_REGISTRY_URL` and `SHELF_GITHUB_API_URL`, falling back to `https://registry.npmjs.org` and `https://api.github.com`.
 
 ## Agent skills

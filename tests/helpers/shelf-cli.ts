@@ -30,7 +30,14 @@ export interface ShelfSandbox {
 	readonly cleanup: () => Promise<void>;
 }
 
-export const createShelfSandbox = async (stubs: StubResponses = {}): Promise<ShelfSandbox> => {
+/** The CLI entry point, for tests that spawn it themselves (say, to run it in the background). */
+export const SHELF_CLI = CLI;
+
+export const createShelfSandbox = async (
+	stubs: StubResponses = {},
+	/** Extra environment for every CLI run (and any daemon it starts), such as a PATH with shims. */
+	extraEnv: Readonly<Record<string, string>> = {},
+): Promise<ShelfSandbox> => {
 	const home = await mkdtemp(join(tmpdir(), "shelf-home-"));
 	const services = startStubServices(stubs);
 	const env: Record<string, string> = {
@@ -38,6 +45,7 @@ export const createShelfSandbox = async (stubs: StubResponses = {}): Promise<She
 		SHELF_HOME: home,
 		SHELF_NPM_REGISTRY_URL: services.npmUrl,
 		SHELF_GITHUB_API_URL: services.githubUrl,
+		...extraEnv,
 	};
 
 	const run = async (

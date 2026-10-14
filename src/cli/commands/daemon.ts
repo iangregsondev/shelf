@@ -69,7 +69,8 @@ const logsCommand = Command.make("logs", { lines: logLines }, (config) =>
 const restartCommand = Command.make("restart", {}, () =>
 	Effect.gen(function* () {
 		const daemon = yield* DaemonService;
-		yield* daemon.stop().pipe(Effect.catch(() => Effect.void));
+		// Only "not running" is fine; a daemon still finishing its step must not get a twin.
+		yield* daemon.stop().pipe(Effect.catchTag("DaemonNotRunningError", () => Effect.void));
 		const pid = yield* daemon.start();
 		yield* Console.log(`Daemon restarted (PID: ${pid})`);
 	}),

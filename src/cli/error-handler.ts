@@ -30,6 +30,8 @@ const errorMessages: Record<string, (error: Record<string, unknown>) => string> 
 	DaemonAlreadyRunningError: (e) => `Daemon is already running (PID: ${String(e["pid"])}).`,
 	DaemonNotRunningError: () => `No daemon is currently running.`,
 	DaemonStartError: (e) => `Failed to start daemon: ${String(e["message"])}`,
+	DaemonStillStoppingError: (e) =>
+		`The daemon (PID: ${String(e["pid"])}) is still finishing its current step; it stops once that step is done. Run \`shelf daemon status\` to check.`,
 };
 
 export const formatUserError = (error: unknown): string | null => {

@@ -13,3 +13,9 @@ export class DaemonNotRunningError extends Schema.TaggedError<DaemonNotRunningEr
 export class DaemonStartError extends Schema.TaggedError<DaemonStartError>()("DaemonStartError", {
 	message: Schema.String,
 }) {}
+
+/** `stop` asked the daemon to stop, but it is still finishing its current step. */
+export class DaemonStillStoppingError extends Schema.TaggedError<DaemonStillStoppingError>()(
+	"DaemonStillStoppingError",
+	{ pid: Schema.Number },
+) {}
