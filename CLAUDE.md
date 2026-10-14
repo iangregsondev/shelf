@@ -7,9 +7,10 @@ Shelf is a standalone CLI that maintains a global, always-up-to-date cache of co
 ## Commands
 
 - `bun run src/startup/index.ts` — run shelf CLI
-- `bun test` — run all tests (bun's native test runner)
-- `bun test --coverage` — run with coverage
-- `bunx --bun tsc --noEmit` — typecheck
+- `bun run test` — run all tests with `HOME` pointed at a fresh temp dir. Never run bare `bun test`: until the shelf home override lands, tests write to the real `~/.agents/shelf`
+- `HOME=$(mktemp -d) bun test --coverage` — run with coverage
+- `bun run check` — format check, lint and typecheck
+- `bunx --bun tsc --noEmit` — typecheck only
 
 ## Architecture
 
@@ -41,8 +42,8 @@ Dependency direction: `command → service → storage boundary`. Reverse import
 - `Effect.catchTag` still works for tagged error handling
 - Import CLI from `effect/cli` (`Command`, `Flag`, `Argument`); constructors are PascalCase: `Flag.String`, `Flag.Boolean`, `Flag.Int`, `Argument.String`
 - Import BunRuntime from `@effect/platform-bun/BunRuntime`
-
 - Versions are pinned exactly and `bun.lock` is committed; bump `effect` and `@effect/platform-bun` together
+
 ## Testing
 
 - Tests mirror source in `tests/domain/{domain}/`

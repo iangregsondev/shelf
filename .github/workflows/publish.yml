@@ -36,7 +36,7 @@ jobs:
       - run: bunx --bun tsc --noEmit
         if: steps.version.outputs.changed == 'true'
 
-      - run: bun test
+      - run: bun run test
         if: steps.version.outputs.changed == 'true'
 
       - name: Publish to npm

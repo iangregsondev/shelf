@@ -63,7 +63,7 @@ Shelf manages the lifecycle — clone, pin, sync, remove. Your agent uses its ow
 ## Development
 
 ```bash
-bun test                 # run tests
+bun run test             # run tests (HOME points at a temp dir)
 bunx --bun tsc --noEmit  # typecheck
 ```
 
