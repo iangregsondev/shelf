@@ -7,6 +7,18 @@ import { ConfigService } from "../config/config-service";
 import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
 
+/** A reference repo that failed to sync, and the error it failed with. */
+export interface SyncFailure {
+	readonly alias: string;
+	readonly error: unknown;
+}
+
+export interface SyncAllResult {
+	/** How many reference repos the sync tried. */
+	readonly total: number;
+	readonly failures: ReadonlyArray<SyncFailure>;
+}
+
 export class SyncService extends Context.Service<SyncService>()("shelf/domain/sync/SyncService", {
 	make: Effect.gen(function* () {
 		const config = yield* ConfigService;
@@ -62,20 +74,22 @@ export class SyncService extends Context.Service<SyncService>()("shelf/domain/sy
 				yield* doSync(repo);
 			}),
 
+			// Syncs every reference repo, carrying on past failures, and reports
+			// which ones failed so the caller can show them.
 			syncAll: Effect.fn("SyncService.syncAll")(function* () {
 				const cfg = yield* config.load();
+				const failures: Array<SyncFailure> = [];
 				for (const repo of cfg.repos) {
 					yield* doSync(repo).pipe(
 						Effect.catch((error: unknown) =>
-							Effect.logWarning("Sync failed for repo").pipe(
-								Effect.annotateLogs({
-									alias: repo.alias,
-									error: String(error),
-								}),
-							),
+							Effect.sync(() => {
+								failures.push({ alias: repo.alias, error });
+							}),
 						),
 					);
 				}
+				const result: SyncAllResult = { total: cfg.repos.length, failures };
+				return result;
 			}),
 		};
 	}),

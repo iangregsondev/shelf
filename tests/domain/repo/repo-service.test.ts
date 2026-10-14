@@ -311,7 +311,7 @@ describe("RepoService", () => {
 				{
 					syncAll: () => {
 						syncAllCalled = true;
-						return Effect.void;
+						return Effect.succeed({ total: 0, failures: [] });
 					},
 				},
 			);
