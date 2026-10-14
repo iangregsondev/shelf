@@ -16,9 +16,15 @@ let otherPids: number[] = [];
 const statePath = () => join(shelf.home, "daemon.json");
 const logPath = () => join(shelf.home, "daemon.log");
 
-const readState = async (): Promise<{ pid: number; token: string } | undefined> => {
+interface RecordedState {
+  readonly pid: number;
+  readonly token: string;
+  readonly lastTickAt?: string;
+}
+
+const readState = async (): Promise<RecordedState | undefined> => {
   try {
-    return (await readJson(statePath())) as { pid: number; token: string };
+    return (await readJson(statePath())) as RecordedState;
   } catch {
     return undefined;
   }
@@ -113,7 +119,10 @@ describe("daemon start --foreground", () => {
       env: shelf.env,
     });
     otherPids.push(foreground.pid!);
-    expect(await waitFor(async () => (await readState()) !== undefined)).toBe(true);
+    // The daemon records itself, runs its first sync cycle at once and then
+    // records lastTickAt. Wait for that second write, so the state compared
+    // below is not still about to change under the test.
+    expect(await waitFor(async () => (await readState())?.lastTickAt !== undefined)).toBe(true);
     const state = await readState();
     otherPids.push(state!.pid);
 
