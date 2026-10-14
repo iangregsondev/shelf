@@ -2,7 +2,8 @@
 // config entry, a stale lock is taken over, and a failed add cleans up.
 
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
@@ -50,5 +51,47 @@ describe("safe writes to shelf state", () => {
 		expect(result.output).toContain("6 added");
 
 		expect((await listedAliases()).sort()).toEqual([...names].sort());
+	});
+
+	test("CLI processes adding at the same time all end up in config", async () => {
+		const names = ["alpha", "beta", "gamma", "delta"];
+		const dirs = await Promise.all(names.map(bareRepo));
+
+		const results = await Promise.all(
+			names.map((name, i) => shelf.run(["add", dirs[i]!, "--alias", name])),
+		);
+		for (const result of results) {
+			expect(result.output).toContain("Added repo");
+		}
+
+		expect((await listedAliases()).sort()).toEqual([...names].sort());
+		expect(existsSync(join(shelf.home, "config.json.lock"))).toBe(false);
+	});
+
+	test("a lock file left by a dead process is taken over", async () => {
+		const dead = Bun.spawn(["true"]);
+		await dead.exited;
+		await mkdir(shelf.home, { recursive: true });
+		await writeFile(join(shelf.home, "config.json.lock"), String(dead.pid));
+
+		const result = await shelf.run(["add", await bareRepo("orphan"), "--alias", "orphan"]);
+		expect(result.output).toContain('Added repo "orphan"');
+
+		expect(await listedAliases()).toEqual(["orphan"]);
+		expect(existsSync(join(shelf.home, "config.json.lock"))).toBe(false);
+	});
+
+	test("a failed add removes the folder it created, so a retry succeeds", async () => {
+		const dir = await bareRepo("retry");
+		// Clones fine, then fails checking out a commit the repo doesn't have.
+		const missingCommit = "deadbeef".repeat(5);
+
+		const failed = await shelf.run(["add", dir, "--alias", "retry", "--pin", missingCommit]);
+		expect(failed.output).not.toContain("Added repo");
+		expect(existsSync(join(shelf.home, "repos", "retry"))).toBe(false);
+
+		const retry = await shelf.run(["add", dir, "--alias", "retry"]);
+		expect(retry.output).toContain('Added repo "retry"');
+		expect(await listedAliases()).toEqual(["retry"]);
 	});
 });
