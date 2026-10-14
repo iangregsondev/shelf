@@ -380,7 +380,7 @@ describe("RepoService", () => {
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.resolveAutoPin("https://github.com/Effect-TS/effect.git");
+					return yield* repo.resolveAutoPin("https://github.com/Effect-TS/effect.git", "effect");
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(Option.isSome(result)).toBe(true);
@@ -400,7 +400,10 @@ describe("RepoService", () => {
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.resolveAutoPin("https://github.com/microsoft/typescript.git");
+					return yield* repo.resolveAutoPin(
+						"https://github.com/microsoft/typescript.git",
+						"typescript",
+					);
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(Option.getOrUndefined(result)?.value).toBe("v5.4.0");
@@ -416,7 +419,10 @@ describe("RepoService", () => {
 			const exit = await Effect.runPromiseExit(
 				Effect.gen(function* () {
 					const repo = yield* RepoService;
-					return yield* repo.resolveAutoPin("https://github.com/test/nonexistent-pkg.git");
+					return yield* repo.resolveAutoPin(
+						"https://github.com/test/nonexistent-pkg.git",
+						"nonexistent-pkg",
+					);
 				}).pipe(Effect.provide(layer)),
 			);
 			expect(exit._tag).toBe("Failure");

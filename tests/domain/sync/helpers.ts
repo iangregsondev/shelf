@@ -5,13 +5,11 @@ import { SyncService } from "../../../src/domain/sync/sync-service";
 
 export type SyncOverrides = {
 	readonly syncRepo?: (repo: RepoEntry) => Effect.Effect<void>;
-	readonly syncIfStale?: (repo: RepoEntry) => Effect.Effect<void>;
 	readonly syncAll?: () => Effect.Effect<void>;
 };
 
 const defaultSyncImpl = {
 	syncRepo: (): Effect.Effect<void> => Effect.void,
-	syncIfStale: (): Effect.Effect<void> => Effect.void,
 	syncAll: (): Effect.Effect<void> => Effect.void,
 };
 

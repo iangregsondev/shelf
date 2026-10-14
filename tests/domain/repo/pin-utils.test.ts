@@ -1,7 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import {
 	stripSemverRange,
-	candidateTags,
 	parseRemoteTags,
 	findMatchingTag,
 } from "../../../src/domain/repo/pin-utils";
@@ -26,18 +25,6 @@ describe("pin-utils", () => {
 
 		test("handles prerelease versions", () => {
 			expect(stripSemverRange("^4.0.0-beta.31")).toBe("4.0.0-beta.31");
-		});
-	});
-
-	describe("candidateTags", () => {
-		test("generates candidates in priority order", () => {
-			const tags = candidateTags("effect", "4.0.0-beta.31");
-			expect(tags).toEqual(["v4.0.0-beta.31", "effect@4.0.0-beta.31", "4.0.0-beta.31"]);
-		});
-
-		test("handles scoped packages", () => {
-			const tags = candidateTags("@effect/platform-bun", "4.0.0-beta.31");
-			expect(tags).toEqual(["v4.0.0-beta.31", "platform-bun@4.0.0-beta.31", "4.0.0-beta.31"]);
 		});
 	});
 
@@ -68,24 +55,84 @@ describe("pin-utils", () => {
 	});
 
 	describe("findMatchingTag", () => {
-		test("matches v-prefixed tag first", () => {
-			const tags = new Set(["v1.0.0", "effect@1.0.0", "1.0.0"]);
-			expect(findMatchingTag("effect", "1.0.0", tags)).toBe("v1.0.0");
-		});
+		// Each row: the package the user named, the version their project
+		// declares, the remote's tags, and the tag auto-pin should choose.
+		const cases: ReadonlyArray<{
+			name: string;
+			packageName: string;
+			version: string;
+			tags: ReadonlyArray<string>;
+			expected: string | null;
+		}> = [
+			{
+				name: "scoped package matches its full scoped tag",
+				packageName: "@effect/platform",
+				version: "0.69.2",
+				tags: ["effect@3.10.2", "@effect/platform@0.69.2", "@effect/sql@0.69.2"],
+				expected: "@effect/platform@0.69.2",
+			},
+			{
+				name: "scoped package falls back to its unscoped name tag",
+				packageName: "@scope/widget",
+				version: "1.2.3",
+				tags: ["widget@1.2.3", "other@1.2.3"],
+				expected: "widget@1.2.3",
+			},
+			{
+				name: "plain package matches name@version",
+				packageName: "effect",
+				version: "3.10.2",
+				tags: ["@effect/platform@3.10.2", "effect@3.10.2"],
+				expected: "effect@3.10.2",
+			},
+			{
+				name: "package-specific tag beats a repo-wide v tag",
+				packageName: "@effect/platform",
+				version: "1.0.0",
+				tags: ["v1.0.0", "@effect/platform@1.0.0"],
+				expected: "@effect/platform@1.0.0",
+			},
+			{
+				name: "falls back to v-prefixed tag",
+				packageName: "typescript",
+				version: "5.4.0",
+				tags: ["v5.4.0", "5.4.0"],
+				expected: "v5.4.0",
+			},
+			{
+				name: "falls back to bare version tag",
+				packageName: "@scope/widget",
+				version: "1.2.3",
+				tags: ["1.2.3"],
+				expected: "1.2.3",
+			},
+			{
+				name: "prerelease version matches exactly",
+				packageName: "@effect/platform-bun",
+				version: "4.0.0-beta.31",
+				tags: ["@effect/platform-bun@4.0.0-beta.3", "@effect/platform-bun@4.0.0-beta.31"],
+				expected: "@effect/platform-bun@4.0.0-beta.31",
+			},
+			{
+				name: "another package's tag never matches",
+				packageName: "@effect/platform",
+				version: "0.69.2",
+				tags: ["@effect/sql@0.69.2", "effect@0.69.2"],
+				expected: null,
+			},
+			{
+				name: "no tag for the version",
+				packageName: "effect",
+				version: "1.0.0",
+				tags: ["v2.0.0", "effect@2.0.0"],
+				expected: null,
+			},
+		];
 
-		test("falls back to package@version format", () => {
-			const tags = new Set(["effect@1.0.0", "1.0.0"]);
-			expect(findMatchingTag("effect", "1.0.0", tags)).toBe("effect@1.0.0");
-		});
-
-		test("falls back to bare version", () => {
-			const tags = new Set(["1.0.0"]);
-			expect(findMatchingTag("effect", "1.0.0", tags)).toBe("1.0.0");
-		});
-
-		test("returns null when no match", () => {
-			const tags = new Set(["v2.0.0"]);
-			expect(findMatchingTag("effect", "1.0.0", tags)).toBe(null);
-		});
+		for (const c of cases) {
+			test(c.name, () => {
+				expect(findMatchingTag(c.packageName, c.version, new Set(c.tags))).toBe(c.expected);
+			});
+		}
 	});
 });

@@ -26,3 +26,17 @@ export const runGit = (
 				message: error instanceof Error ? error.message : String(error),
 			}),
 	});
+
+/**
+ * Reads the default branch from `git ls-remote --symref <remote> HEAD`
+ * output, whose first line is `ref: refs/heads/<branch>\tHEAD`.
+ */
+export const parseSymrefHead = (output: string): string | undefined => {
+	for (const line of output.split("\n")) {
+		const match = /^ref: refs\/heads\/(.+)\tHEAD$/.exec(line.trim());
+		if (match) {
+			return match[1];
+		}
+	}
+	return undefined;
+};

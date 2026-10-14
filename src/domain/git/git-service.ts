@@ -3,8 +3,11 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
 import type { RepoPin } from "../config/config-schema";
-import { runGit } from "./git-utils";
+import { GitOperationError } from "./git-errors";
+import { parseSymrefHead, runGit } from "./git-utils";
 
+// Every git call puts `--` before URLs, refspecs and paths, so input that
+// starts with `-` is never read as an option.
 export class GitService extends Context.Service<GitService>()("shelf/domain/git/GitService", {
 	make: Effect.gen(function* () {
 		return {
@@ -36,47 +39,66 @@ export class GitService extends Context.Service<GitService>()("shelf/domain/git/
 				if (Option.isSome(sparse)) {
 					args.push("--no-checkout");
 				}
-				args.push(url, targetDir);
+				args.push("--", url, targetDir);
 				yield* runGit(args);
 				if (Option.isSome(sparse)) {
 					yield* runGit(["sparse-checkout", "init", "--cone"], targetDir);
-					yield* runGit(["sparse-checkout", "set", ...sparse.value], targetDir);
+					yield* runGit(["sparse-checkout", "set", "--", ...sparse.value], targetDir);
 					yield* runGit(["checkout"], targetDir);
 				}
 				if (Option.isSome(pin) && pin.value.type === "commit") {
-					yield* runGit(["checkout", pin.value.value], targetDir);
+					yield* runGit(["checkout", "--detach", pin.value.value, "--"], targetDir);
 				}
 			}),
 
+			/**
+			 * Fetches one refspec from `origin`. With a depth the fetch is shallow;
+			 * without one it never makes the clone shallower.
+			 */
 			fetch: Effect.fn("GitService.fetch")(function* (
 				repoDir: string,
+				refspec: string,
 				depth: Option.Option<number>,
 			) {
-				const args = ["fetch", "--all", "--prune"];
-				// Default to depth 1 on fetch — keep repo lightweight
+				const args = ["fetch", "--no-tags"];
 				if (Option.isSome(depth)) {
 					args.push("--depth", String(depth.value));
-				} else {
-					args.push("--depth", "1");
 				}
+				args.push("--", "origin", refspec);
 				yield* runGit(args, repoDir);
 			}),
 
+			/** Whether `rev` names a commit already in the local clone. */
+			hasCommit: Effect.fn("GitService.hasCommit")(function* (repoDir: string, rev: string) {
+				return yield* runGit(
+					["rev-parse", "--verify", "--quiet", "--end-of-options", `${rev}^{commit}`],
+					repoDir,
+				).pipe(
+					Effect.as(true),
+					Effect.catchTag("GitOperationError", () => Effect.succeed(false)),
+				);
+			}),
+
+			/** Checks out `ref` as a detached HEAD. */
 			checkout: Effect.fn("GitService.checkout")(function* (repoDir: string, ref: string) {
-				yield* runGit(["checkout", ref], repoDir);
+				yield* runGit(["checkout", "--detach", ref, "--"], repoDir);
 			}),
 
-			pull: Effect.fn("GitService.pull")(function* (repoDir: string) {
-				yield* runGit(["pull", "--ff-only"], repoDir);
-			}),
-
+			/** The branch `origin`'s HEAD points at, asked of the remote itself. */
 			getDefaultBranch: Effect.fn("GitService.getDefaultBranch")(function* (repoDir: string) {
-				const ref = yield* runGit(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], repoDir);
-				return ref.replace("origin/", "");
+				const output = yield* runGit(["ls-remote", "--symref", "--", "origin", "HEAD"], repoDir);
+				const branch = parseSymrefHead(output);
+				if (branch === undefined) {
+					return yield* new GitOperationError({
+						command: "git ls-remote --symref -- origin HEAD",
+						message: "the remote did not report a default branch",
+					});
+				}
+				return branch;
 			}),
 
 			lsRemoteTags: Effect.fn("GitService.lsRemoteTags")(function* (url: string) {
-				return yield* runGit(["ls-remote", "--tags", url]);
+				return yield* runGit(["ls-remote", "--tags", "--", url]);
 			}),
 		};
 	}),

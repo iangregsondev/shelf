@@ -73,4 +73,20 @@ describe("normalizeGitUrl", () => {
 			"https://github.com/org/repo.git",
 		);
 	});
+
+	test.each([
+		["org/repo", "https://github.com/org/repo.git"],
+		["gitlab:group/repo", "https://gitlab.com/group/repo.git"],
+		["bitbucket:team/repo", "https://bitbucket.org/team/repo.git"],
+		["https://github.com/org/repo#readme", "https://github.com/org/repo.git"],
+		["git+https://github.com/org/repo.git#main", "https://github.com/org/repo.git"],
+		["https://github.com/org/repo/tree/main/packages/core", "https://github.com/org/repo.git"],
+		["https://github.com/org/repo/blob/main/README.md", "https://github.com/org/repo.git"],
+		["https://gitlab.com/group/repo/-/tree/main", "https://gitlab.com/group/repo.git"],
+		["https://github.com/org/repo/", "https://github.com/org/repo.git"],
+		["git+ssh://git@github.com/org/repo.git", "https://github.com/org/repo.git"],
+		["git@github.com:org/repo.git", "https://github.com/org/repo.git"],
+	])("normalizes %s", (input, expected) => {
+		expect(normalizeGitUrl(input)).toBe(expected);
+	});
 });

@@ -15,10 +15,11 @@ export type GitOverrides = {
 	) => Effect.Effect<void, GitOperationError>;
 	readonly fetch?: (
 		repoDir: string,
+		refspec: string,
 		depth: Option.Option<number>,
 	) => Effect.Effect<void, GitOperationError>;
+	readonly hasCommit?: (repoDir: string, rev: string) => Effect.Effect<boolean>;
 	readonly checkout?: (repoDir: string, ref: string) => Effect.Effect<void, GitOperationError>;
-	readonly pull?: (repoDir: string) => Effect.Effect<void, GitOperationError>;
 	readonly getDefaultBranch?: (repoDir: string) => Effect.Effect<string, GitOperationError>;
 	readonly lsRemoteTags?: (url: string) => Effect.Effect<string, GitOperationError>;
 };
@@ -27,7 +28,7 @@ const defaultGitImpl = {
 	clone: (): Effect.Effect<void, GitOperationError> => Effect.void,
 	fetch: (): Effect.Effect<void, GitOperationError> => Effect.void,
 	checkout: (): Effect.Effect<void, GitOperationError> => Effect.void,
-	pull: (): Effect.Effect<void, GitOperationError> => Effect.void,
+	hasCommit: (): Effect.Effect<boolean> => Effect.succeed(false),
 	getDefaultBranch: (): Effect.Effect<string, GitOperationError> => Effect.succeed("main"),
 	lsRemoteTags: (): Effect.Effect<string, GitOperationError> => Effect.succeed(""),
 };

@@ -28,6 +28,7 @@ export type RepoOverrides = {
 	) => Effect.Effect<undefined, ConfigParseError | GitOperationError | RepoNotFoundError>;
 	readonly resolveAutoPin?: (
 		url: string,
+		packageName: string,
 	) => Effect.Effect<Option.Option<RepoPin>, AutoPinResolutionError | GitOperationError>;
 };
 

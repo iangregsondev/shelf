@@ -12,8 +12,8 @@ import {
 	DaemonStartError,
 } from "./daemon-errors";
 import { daemonStatePath, daemonLogPath, generateToken } from "./daemon-utils";
+import { SHELF_VERSION } from "../../version";
 
-const SHELF_VERSION = "0.2.0";
 const LOG_MAX_BYTES = 5_242_880; // 5 MB
 
 const isPidAlive = (pid: number): boolean => {
