@@ -78,8 +78,10 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 				return cfg.repos;
 			}),
 
-			resolveAutoPin: Effect.fn("RepoService.resolveAutoPin")(function* (url: string) {
-				const packageName = deriveAlias(url);
+			resolveAutoPin: Effect.fn("RepoService.resolveAutoPin")(function* (
+				url: string,
+				packageName: string,
+			) {
 				const pkgJson = yield* Effect.tryPromise({
 					try: async () => {
 						const file = Bun.file(join(process.cwd(), "package.json"));

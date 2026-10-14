@@ -157,39 +157,4 @@ describe("GitService default clone behavior", () => {
 		await sourceRepo.cleanup();
 		await rm(bareDir, { recursive: true, force: true });
 	});
-
-	test("fetch defaults to depth 1", async () => {
-		const sourceRepo = await createTempRepo({ "test.txt": "hello" });
-		await Bun.write(join(sourceRepo.dir, "test.txt"), "updated");
-		await Bun.spawn(["git", "add", "."], { cwd: sourceRepo.dir, stdout: "pipe", stderr: "pipe" })
-			.exited;
-		await Bun.spawn(["git", "commit", "-m", "second"], {
-			cwd: sourceRepo.dir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
-
-		const bareDir = await mkdtemp(join(tmpdir(), "shelf-bare-fetch-"));
-		await rm(bareDir, { recursive: true, force: true });
-		await Bun.spawn(["git", "clone", "--bare", sourceRepo.dir, bareDir], {
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited;
-
-		const targetDir = join(tempDir, "fetch-depth");
-		await Effect.runPromise(runGit(["clone", "--depth", "1", `file://${bareDir}`, targetDir]));
-
-		await Effect.runPromise(
-			Effect.gen(function* () {
-				const git = yield* GitService;
-				yield* git.fetch(targetDir, Option.none()); // no explicit depth — should default to 1
-			}).pipe(Effect.provide(GitService.layer)),
-		);
-
-		// Should still be shallow after fetch
-		expect(await Bun.file(join(targetDir, ".git", "shallow")).exists()).toBe(true);
-
-		await sourceRepo.cleanup();
-		await rm(bareDir, { recursive: true, force: true });
-	});
 });

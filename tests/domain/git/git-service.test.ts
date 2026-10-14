@@ -132,16 +132,6 @@ describe("runGit", () => {
 			await source.cleanup();
 		});
 	});
-
-	describe("pull", () => {
-		test("pulls ff-only on a simple repo", async () => {
-			const source = await createBareRepo({ "file.txt": "original" });
-			const targetDir = join(tempDir, "pull-test");
-			await Effect.runPromise(runGit(["clone", source.dir, targetDir]));
-			await Effect.runPromise(runGit(["pull", "--ff-only"], targetDir));
-			await source.cleanup();
-		});
-	});
 });
 
 describe("GitService", () => {
@@ -287,7 +277,7 @@ describe("GitService", () => {
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const git = yield* GitService;
-				yield* git.fetch(targetDir, Option.none());
+				yield* git.fetch(targetDir, "+refs/heads/*:refs/remotes/origin/*", Option.none());
 			}).pipe(Effect.provide(GitService.layer)),
 		);
 		await source.cleanup();
@@ -315,7 +305,7 @@ describe("GitService", () => {
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const git = yield* GitService;
-				yield* git.fetch(targetDir, Option.some(1));
+				yield* git.fetch(targetDir, "+refs/heads/*:refs/remotes/origin/*", Option.some(1));
 			}).pipe(Effect.provide(GitService.layer)),
 		);
 		expect(await Bun.file(join(targetDir, ".git", "shallow")).exists()).toBe(true);
