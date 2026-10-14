@@ -47,6 +47,14 @@ describe("resolveLocally", () => {
       expect(result._tag).toBe("Invalid");
       expect(result._tag === "Invalid" && result.message).toContain(message);
     });
+
+    test("an invalid host shorthand is quoted as typed, not with the https:// added", () => {
+      expect(resolveLocally("bad host.com/org/repo")).toEqual({
+        _tag: "Invalid",
+        message:
+          '"bad host.com/org/repo" is not a valid URL. Try: shelf add owner/repo or shelf add <full-url>',
+      });
+    });
   });
 
   describe("expands shorthands", () => {

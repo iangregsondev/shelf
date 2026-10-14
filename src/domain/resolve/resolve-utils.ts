@@ -194,13 +194,14 @@ export const stripBrowserPath = (url: string): string =>
     .replace(/\/(-\/)?(tree|blob)\/.*$/, "")
     .replace(/\/+$/, "");
 
-const resolveSchemeUrl = (input: string): LocalResolution => {
+/** Resolves a URL with a scheme; `typed` is what the user typed, quoted in error messages. */
+const resolveSchemeUrl = (input: string, typed = input): LocalResolution => {
   const scheme = input.slice(0, input.indexOf(":")).toLowerCase();
-  if (!URL_SCHEMES.has(scheme)) return invalid(input, `uses an unsupported URL scheme "${scheme}"`);
-  if (!URL.canParse(input)) return invalid(input, "is not a valid URL");
+  if (!URL_SCHEMES.has(scheme)) return invalid(typed, `uses an unsupported URL scheme "${scheme}"`);
+  if (!URL.canParse(input)) return invalid(typed, "is not a valid URL");
   const { pathname, hostname, protocol } = new URL(input);
   if (pathname.split("/").every((segment) => segment.length === 0)) {
-    return invalid(input, "has no repository path");
+    return invalid(typed, "has no repository path");
   }
   const isBrowserLink = /^https?:$/.test(protocol) && BROWSER_HOSTS.has(hostname.toLowerCase());
   return direct(isBrowserLink ? stripBrowserPath(input) : input);
@@ -229,7 +230,7 @@ export const resolveLocally = (raw: string): LocalResolution => {
 
   const segments = trimRepoPath(input).split("/");
   if (segments.length >= 3 && segments[0]?.includes(".")) {
-    const resolved = resolveSchemeUrl(`https://${input}`);
+    const resolved = resolveSchemeUrl(`https://${input}`, input);
     return resolved._tag === "Resolved" ? { ...resolved, source: "owner-repo" } : resolved;
   }
 
