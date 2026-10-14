@@ -244,3 +244,20 @@ describe("shelffile-utils", () => {
 		});
 	});
 });
+
+describe("shelffile alias validation", () => {
+	test.each([["../evil"], [".."], ["."], ["a/b"], ["-x"], ["a".repeat(101)]])(
+		"rejects the alias %p with its line number",
+		(alias) => {
+			expect(() => parseShelffileLine(`${alias} https://github.com/a/b.git`, 3)).toThrow(
+				`Line 3: invalid alias "${alias}"`,
+			);
+		},
+	);
+
+	test("a bad alias anywhere fails the whole shelffile", () => {
+		expect(() =>
+			parseShelffile("good https://github.com/a/good.git\n../bad https://github.com/a/bad.git\n"),
+		).toThrow(ShelffileParseError);
+	});
+});

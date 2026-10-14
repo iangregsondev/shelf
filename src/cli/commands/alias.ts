@@ -1,9 +1,16 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import { Argument, Command } from "effect/cli";
+import { existsSync } from "node:fs";
+import { rename } from "node:fs/promises";
 import { ConfigService } from "../../domain/config/config-service";
 import { RegistryService } from "../../domain/registry/registry-service";
-import { RepoNotFoundError, RepoAlreadyExistsError } from "../../domain/repo/repo-errors";
+import {
+	AliasRenameError,
+	RepoNotFoundError,
+	RepoAlreadyExistsError,
+} from "../../domain/repo/repo-errors";
+import { checkAlias } from "../../domain/repo/repo-utils";
 import { RepoEntry, ShelfConfig } from "../../domain/config/config-schema";
 
 const oldAlias = Argument.String("old");
@@ -13,37 +20,52 @@ export const aliasCommand = Command.make("alias", { oldAlias, newAlias }, (confi
 	Effect.gen(function* () {
 		const configService = yield* ConfigService;
 		const registry = yield* RegistryService;
+		const from = config.oldAlias;
+		const to = yield* checkAlias(config.newAlias);
 		const cfg = yield* configService.load();
-		const repo = cfg.repos.find((r: RepoEntry) => r.alias === config.oldAlias);
-		if (!repo) {
-			return yield* new RepoNotFoundError({ alias: config.oldAlias });
+		if (!cfg.repos.some((r: RepoEntry) => r.alias === from)) {
+			return yield* new RepoNotFoundError({ alias: from });
 		}
-		const conflict = cfg.repos.find((r: RepoEntry) => r.alias === config.newAlias);
-		if (conflict) {
-			return yield* new RepoAlreadyExistsError({ alias: config.newAlias });
+		if (cfg.repos.some((r: RepoEntry) => r.alias === to)) {
+			return yield* new RepoAlreadyExistsError({ alias: to });
 		}
-		// Rename directory on disk
-		const oldPath = configService.repoPath(config.oldAlias);
-		const newPath = configService.repoPath(config.newAlias);
+		const oldPath = configService.repoPath(from);
+		const newPath = configService.repoPath(to);
+		// rename() silently replaces an empty folder, so refuse any folder already there.
+		if (existsSync(newPath)) {
+			return yield* new AliasRenameError({
+				from,
+				to,
+				message: `a folder already exists at ${newPath}`,
+			});
+		}
 		yield* Effect.tryPromise({
-			try: async () => {
-				const { rename } = await import("node:fs/promises");
-				await rename(oldPath, newPath);
-			},
-			catch: () => undefined,
-		}).pipe(Effect.ignore);
-		// Update config
-		yield* configService.update(
-			(current) =>
-				new ShelfConfig({
-					...current,
-					repos: current.repos.map((r: RepoEntry) =>
-						r.alias === config.oldAlias ? new RepoEntry({ ...r, alias: config.newAlias }) : r,
-					),
+			try: () => rename(oldPath, newPath),
+			catch: (error) =>
+				new AliasRenameError({
+					from,
+					to,
+					message: error instanceof Error ? error.message : String(error),
 				}),
-		);
-		// Update registry manual list
-		yield* registry.renameManual(config.oldAlias, config.newAlias);
-		yield* Console.log(`Renamed "${config.oldAlias}" → "${config.newAlias}"`);
+		});
+		// Move the folder back if the config can't follow, so the two never disagree.
+		yield* configService
+			.update((current) =>
+				current.repos.some((r: RepoEntry) => r.alias === to)
+					? Effect.fail(new RepoAlreadyExistsError({ alias: to }))
+					: Effect.succeed(
+							new ShelfConfig({
+								...current,
+								repos: current.repos.map((r: RepoEntry) =>
+									r.alias === from ? new RepoEntry({ ...r, alias: to }) : r,
+								),
+							}),
+						),
+			)
+			.pipe(
+				Effect.onError(() => Effect.tryPromise(() => rename(newPath, oldPath)).pipe(Effect.ignore)),
+			);
+		yield* registry.renameManual(from, to);
+		yield* Console.log(`Renamed "${from}" → "${to}"`);
 	}),
 ).pipe(Command.withDescription("Rename a repo alias"));

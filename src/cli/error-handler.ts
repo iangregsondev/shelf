@@ -2,7 +2,12 @@ const errorMessages: Record<string, (error: Record<string, unknown>) => string> 
 	RepoNotFoundError: (e) =>
 		`Repo "${String(e["alias"])}" not found. Run \`shelf list\` to see available repos.`,
 	RepoAlreadyExistsError: (e) => `Repo "${String(e["alias"])}" already exists.`,
+	InvalidAliasError: (e) => `Invalid alias "${String(e["alias"])}": ${String(e["message"])}.`,
+	AliasRenameError: (e) =>
+		`Could not rename "${String(e["from"])}" to "${String(e["to"])}": ${String(e["message"])}. Nothing was changed.`,
 	GitOperationError: (e) => `Git error: ${String(e["message"])}`,
+	UpdateFailedError: (e) =>
+		`Update failed: ${String(e["failed"])} of ${String(e["total"])} repos could not be synced.`,
 	AutoPinResolutionError: (e) => `Auto-pin failed: ${String(e["message"])}`,
 	PinResolutionError: (e) => `Pin failed: ${String(e["message"])}`,
 	ConfigParseError: (e) => `Config error: ${String(e["message"])}`,
