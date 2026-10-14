@@ -11,7 +11,11 @@ export const removeCommand = Command.make("remove", { aliasOrUrl }, (config) =>
     const repo = yield* RepoService;
     const registry = yield* RegistryService;
     const removed = yield* repo.remove(config.aliasOrUrl);
-    yield* registry.removeManual(removed);
-    yield* Console.log(`Removed repo "${removed}"`);
+    yield* registry.removeManual(removed.alias);
+    yield* Console.log(
+      removed.orphan
+        ? `Removed orphan folder for "${removed.alias}" (it had no config entry).`
+        : `Removed repo "${removed.alias}"`,
+    );
   }),
 ).pipe(Command.withDescription("Remove a repository from shelf"));

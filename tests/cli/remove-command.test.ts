@@ -2,7 +2,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
@@ -57,6 +57,32 @@ describe("shelf remove", () => {
     expect(existsSync(join(shelf.home, "repos", "lib"))).toBe(false);
     expect(await storedAliases()).toEqual(["keep"]);
     expect(await manualAliases()).toEqual(["keep"]);
+  });
+
+  test("an orphan folder with no config entry is removed and reported", async () => {
+    await mkdir(join(shelf.home, "repos", "ghost"));
+
+    const result = await shelf.run(["remove", "ghost"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('Removed orphan folder for "ghost" (it had no config entry).');
+    expect(existsSync(join(shelf.home, "repos", "ghost"))).toBe(false);
+    expect(await storedAliases()).toEqual(["lib", "keep"]);
+  });
+
+  test("a folder that can't be deleted fails and keeps the config entry", async () => {
+    const dir = join(shelf.home, "repos", "lib");
+    await chmod(dir, 0o555);
+    try {
+      const result = await shelf.run(["remove", "lib"]);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.output).toContain("EACCES");
+    } finally {
+      await chmod(dir, 0o755);
+    }
+    expect(await storedAliases()).toEqual(["lib", "keep"]);
+    expect(await manualAliases()).toEqual(["lib", "keep"]);
   });
 
   test("an unknown repo fails with exit 1 and removes nothing", async () => {

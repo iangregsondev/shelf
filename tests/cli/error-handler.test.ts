@@ -9,6 +9,15 @@ describe("formatUserError: known error tags", () => {
     ],
     [{ _tag: "RepoAlreadyExistsError", alias: "effect" }, 'Repo "effect" already exists.'],
     [
+      {
+        _tag: "RepoRemoveError",
+        alias: "lib",
+        path: "/x/repos/lib",
+        message: "EACCES: permission denied",
+      },
+      "Could not delete the repo folder /x/repos/lib: EACCES: permission denied. Its config entry was kept.",
+    ],
+    [
       { _tag: "InvalidAliasError", alias: "../x", message: "must not contain slashes" },
       'Invalid alias "../x": must not contain slashes.',
     ],

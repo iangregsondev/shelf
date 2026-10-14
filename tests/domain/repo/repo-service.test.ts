@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
@@ -16,6 +16,7 @@ import { PlatformLayer } from "../../helpers/platform";
 import { existsSync } from "node:fs";
 import { GitOperationError } from "../../../src/domain/git/git-errors";
 import { ConfigWriteError } from "../../../src/domain/config/config-errors";
+import { RegistryWriteError } from "../../../src/domain/registry/registry-errors";
 
 // `add` claims the repo folder on disk before cloning, so point repoPath at a
 // fresh temp folder per test.
@@ -331,7 +332,7 @@ describe("RepoService", () => {
           return yield* repo.remove("test-repo");
         }).pipe(Effect.provide(layer)),
       );
-      expect(result).toBe("test-repo");
+      expect(result).toEqual({ alias: "test-repo", orphan: false });
       expect(savedConfig?.repos.length).toBe(0);
     });
 
@@ -814,8 +815,8 @@ describe("RepoService.remove, more", () => {
         return Effect.void;
       },
     });
-    const alias = await runRepo((repo) => repo.remove("https://github.com/test/lib.git"), layer);
-    expect(alias).toBe("lib");
+    const removed = await runRepo((repo) => repo.remove("https://github.com/test/lib.git"), layer);
+    expect(removed).toEqual({ alias: "lib", orphan: false });
     expect(existsSync(join(reposDir, "lib"))).toBe(false);
     expect(saved!.repos.map((r) => r.alias)).toEqual(["other"]);
   });
@@ -1039,5 +1040,152 @@ describe("RepoService.sync, more", () => {
     );
     await runRepo((repo) => repo.sync(Option.some("lib")), layer);
     expect(synced).toEqual([pin]);
+  });
+});
+
+describe("RepoService.remove, orphans and failures", () => {
+  test("an alias with no config entry but a folder on disk removes the orphan folder", async () => {
+    await writeText(join(reposDir, "ghost", "a.txt"), "x");
+    let saved = false;
+    const layer = buildRepoLayer({
+      load: () => Effect.succeed(configOf(entry("other"))),
+      save: () => {
+        saved = true;
+        return Effect.void;
+      },
+    });
+    const removed = await runRepo((repo) => repo.remove("ghost"), layer);
+    expect(removed).toEqual({ alias: "ghost", orphan: true });
+    expect(existsSync(join(reposDir, "ghost"))).toBe(false);
+    expect(saved).toBe(false);
+  });
+
+  test("a repo with a config entry is reported as not an orphan", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    const removed = await runRepo(
+      (repo) => repo.remove("lib"),
+      buildRepoLayer({ load: () => Effect.succeed(configOf(entry("lib"))) }),
+    );
+    expect(removed).toEqual({ alias: "lib", orphan: false });
+  });
+
+  test("a URL with no config entry fails with RepoNotFoundError", async () => {
+    const error = await failureOf(
+      (repo) => repo.remove("https://github.com/test/nope.git"),
+      buildRepoLayer(),
+    );
+    expect(error).toMatchObject({
+      _tag: "RepoNotFoundError",
+      alias: "https://github.com/test/nope.git",
+    });
+  });
+
+  test("a failed folder delete fails with RepoRemoveError and keeps the config entry", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    let saved = false;
+    const layer = buildRepoLayer({
+      load: () => Effect.succeed(configOf(entry("lib"))),
+      save: () => {
+        saved = true;
+        return Effect.void;
+      },
+    });
+    await chmod(join(reposDir, "lib"), 0o555);
+    try {
+      const error = await failureOf((repo) => repo.remove("lib"), layer);
+      expect(error).toMatchObject({ _tag: "RepoRemoveError", path: join(reposDir, "lib") });
+      expect((error as { message: string }).message).toContain("EACCES");
+    } finally {
+      await chmod(join(reposDir, "lib"), 0o755);
+    }
+    expect(saved).toBe(false);
+    expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+  });
+});
+
+describe("RepoService.rename, case changes and rollback", () => {
+  /** A config mock that keeps what it saves, so a rollback can be seen. */
+  const statefulConfig = (initial: ShelfConfig) => {
+    const state = { current: initial };
+    return {
+      state,
+      overrides: {
+        load: () => Effect.succeed(state.current),
+        save: (c: ShelfConfig) => {
+          state.current = c;
+          return Effect.void;
+        },
+      },
+    };
+  };
+
+  const layerWith = (
+    configOverrides: object,
+    renameManual: (from: string, to: string) => Effect.Effect<void, unknown>,
+  ) =>
+    RepoService.layer.pipe(
+      Layer.provide(
+        createMockConfigLayer({
+          repoPath: (alias: string) => join(reposDir, alias),
+          ...configOverrides,
+        }),
+      ),
+      Layer.provide(createMockGitLayer()),
+      Layer.provide(createMockSyncLayer()),
+      Layer.provide(createMockRegistryLayer({ renameManual } as never)),
+      Layer.provide(PlatformLayer),
+    );
+
+  test("a case-only rename renames the folder and the config entry", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    const { state, overrides } = statefulConfig(configOf(entry("lib")));
+    await runRepo(
+      (repo) => repo.rename("lib", "Lib"),
+      layerWith(overrides, () => Effect.void),
+    );
+    expect(await readdir(reposDir)).toEqual(["Lib"]);
+    expect(existsSync(join(reposDir, "Lib", "lib.ts"))).toBe(true);
+    expect(state.current.repos.map((r) => r.alias)).toEqual(["Lib"]);
+  });
+
+  test("a case-only rename moves the folder back when the config can't follow", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    const error = await failureOf(
+      (repo) => repo.rename("lib", "Lib"),
+      layerWith(
+        {
+          load: () => Effect.succeed(configOf(entry("lib"))),
+          save: () => Effect.fail(new ConfigWriteError({ message: "disk full" })),
+        },
+        () => Effect.void,
+      ),
+    );
+    expect(error._tag).toBe("ConfigWriteError");
+    expect(await readdir(reposDir)).toEqual(["lib"]);
+  });
+
+  test("rolls back the folder and the config entry when the registry rename fails", async () => {
+    await writeText(join(reposDir, "lib", "lib.ts"), "code");
+    const { state, overrides } = statefulConfig(configOf(entry("lib")));
+    const error = await failureOf(
+      (repo) => repo.rename("lib", "renamed"),
+      layerWith(overrides, () => Effect.fail(new RegistryWriteError({ message: "locked" }))),
+    );
+    expect(error).toMatchObject({ _tag: "RegistryWriteError" });
+    expect(state.current.repos.map((r) => r.alias)).toEqual(["lib"]);
+    expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+    expect(existsSync(join(reposDir, "renamed"))).toBe(false);
+  });
+});
+
+describe("RepoService.size", () => {
+  test("is the total bytes of the repo folder", async () => {
+    await writeText(join(reposDir, "lib", "a.txt"), "12345");
+    await writeText(join(reposDir, "lib", "src", "b.ts"), "123");
+    expect(await runRepo((repo) => repo.size("lib"), buildRepoLayer())).toBe(8);
+  });
+
+  test("is 0 for a missing repo folder", async () => {
+    expect(await runRepo((repo) => repo.size("lib"), buildRepoLayer())).toBe(0);
   });
 });

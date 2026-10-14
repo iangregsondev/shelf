@@ -2,6 +2,8 @@ const errorMessages: Record<string, (error: Record<string, unknown>) => string> 
   RepoNotFoundError: (e) =>
     `Repo "${String(e["alias"])}" not found. Run \`shelf list\` to see available repos.`,
   RepoAlreadyExistsError: (e) => `Repo "${String(e["alias"])}" already exists.`,
+  RepoRemoveError: (e) =>
+    `Could not delete the repo folder ${String(e["path"])}: ${String(e["message"])}. Its config entry was kept.`,
   InvalidAliasError: (e) => `Invalid alias "${String(e["alias"])}": ${String(e["message"])}.`,
   AliasRenameError: (e) =>
     `Could not rename "${String(e["from"])}" to "${String(e["to"])}": ${String(e["message"])}. Nothing was changed.`,

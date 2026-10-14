@@ -12,7 +12,8 @@ export type RepoOverrides = Partial<RepoShape>;
 // Canned successes; the casts keep this stub in step with the service's shape.
 const defaultRepoImpl = {
   add: () => Effect.succeed("test-repo" as string),
-  remove: () => Effect.succeed("test-repo" as string),
+  remove: () => Effect.succeed({ alias: "test-repo", orphan: false }),
+  size: () => Effect.succeed(0),
   list: () => Effect.succeed([] as ReadonlyArray<RepoEntry>),
   sync: () => Effect.succeed<SyncAllResult>({ total: 0, failures: [] }),
   resolveAutoPin: () => Effect.succeed(undefined as unknown as Option.Option<RepoPin>),
