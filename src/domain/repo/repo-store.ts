@@ -1,8 +1,19 @@
 // Storage boundary for reference repo folders: file-system reads only.
 
 import * as Effect from "effect/Effect";
-import { lstatSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+
+/** Whether anything (file, folder or link) is at `path`. */
+export const pathExists = (path: string): Effect.Effect<boolean> =>
+	Effect.sync(() => existsSync(path));
+
+/** The names directly inside `dirPath`; empty when it can't be read. */
+export const listFolder = (dirPath: string): Effect.Effect<ReadonlyArray<string>> =>
+	Effect.tryPromise(() => readdir(dirPath)).pipe(
+		Effect.orElseSucceed((): ReadonlyArray<string> => []),
+	);
 
 /** The total bytes of every file under `dirPath`; 0 when it can't be read. */
 export const dirSize = (dirPath: string): Effect.Effect<number> =>

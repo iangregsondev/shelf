@@ -2,15 +2,17 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Context from "effect/Context";
-import { mkdir, rm as removePath } from "node:fs/promises";
+import { mkdir, rename as renamePath, rm as removePath } from "node:fs/promises";
 import { join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
 import { ConfigService } from "../config/config-service";
 import { errorCode } from "../config/config-utils";
 import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
+import { RegistryService } from "../registry/registry-service";
 import { SyncService, type SyncAllResult } from "../sync/sync-service";
 import {
+	AliasRenameError,
 	AutoPinResolutionError,
 	PinResolutionError,
 	RepoAlreadyExistsError,
@@ -19,6 +21,17 @@ import {
 } from "./repo-errors";
 import { checkAlias, deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
+import { dirSize, listFolder, pathExists } from "./repo-store";
+
+/** What is on disk for a reference repo. */
+export interface RepoFolder {
+	readonly path: string;
+	readonly exists: boolean;
+	/** Total bytes of every file in the folder; 0 when it is missing. */
+	readonly sizeBytes: number;
+	/** Names directly inside the folder; empty when it is missing. */
+	readonly contents: ReadonlyArray<string>;
+}
 
 /** What `RepoService.add` clones; every field but `url` defaults to none. */
 export interface AddRepoOptions {
@@ -35,6 +48,7 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 		const config = yield* ConfigService;
 		const git = yield* GitService;
 		const sync = yield* SyncService;
+		const registry = yield* RegistryService;
 
 		/**
 		 * Turns a pin the user typed into a pin. Explicit forms are taken as
@@ -184,6 +198,71 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
 						}),
 				);
 				return repo.alias;
+			}),
+
+			/**
+			 * Renames a reference repo: its folder, its config entry and its manual
+			 * registry entry. If the config can't follow, the folder is moved back,
+			 * so the two never disagree.
+			 */
+			rename: Effect.fn("RepoService.rename")(function* (from: string, to: string) {
+				yield* checkAlias(to);
+				const cfg = yield* config.load();
+				if (!cfg.repos.some((r: RepoEntry) => r.alias === from)) {
+					return yield* new RepoNotFoundError({ alias: from });
+				}
+				if (cfg.repos.some((r: RepoEntry) => r.alias === to)) {
+					return yield* new RepoAlreadyExistsError({ alias: to });
+				}
+				const oldPath = config.repoPath(from);
+				const newPath = config.repoPath(to);
+				// rename() silently replaces an empty folder, so refuse any folder already there.
+				if (yield* pathExists(newPath)) {
+					return yield* new AliasRenameError({
+						from,
+						to,
+						message: `a folder already exists at ${newPath}`,
+					});
+				}
+				yield* Effect.tryPromise({
+					try: () => renamePath(oldPath, newPath),
+					catch: (error) =>
+						new AliasRenameError({
+							from,
+							to,
+							message: error instanceof Error ? error.message : String(error),
+						}),
+				});
+				yield* config
+					.updateRepo(from, (repo, current) =>
+						current.repos.some((r: RepoEntry) => r.alias === to)
+							? Effect.fail(new RepoAlreadyExistsError({ alias: to }))
+							: Effect.succeed(new RepoEntry({ ...repo, alias: to })),
+					)
+					.pipe(
+						Effect.flatMap((saved) =>
+							Option.isNone(saved)
+								? Effect.fail(new RepoNotFoundError({ alias: from }))
+								: Effect.void,
+						),
+						Effect.onError(() =>
+							Effect.tryPromise(() => renamePath(newPath, oldPath)).pipe(Effect.ignore),
+						),
+					);
+				yield* registry.renameManual(from, to);
+			}),
+
+			/** What is on disk for the reference repo `alias`. */
+			folder: Effect.fn("RepoService.folder")(function* (alias: string) {
+				const path = config.repoPath(alias);
+				const exists = yield* pathExists(path);
+				const result: RepoFolder = {
+					path,
+					exists,
+					sizeBytes: exists ? yield* dirSize(path) : 0,
+					contents: exists ? yield* listFolder(path) : [],
+				};
+				return result;
 			}),
 
 			list: Effect.fn("RepoService.list")(function* () {

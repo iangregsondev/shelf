@@ -10,6 +10,7 @@ import { RepoService } from "../../../src/domain/repo/repo-service";
 import { createMockConfigLayer } from "../config/helpers";
 import { createMockGitLayer } from "../git/helpers";
 import { createMockSyncLayer } from "../sync/helpers";
+import { createMockRegistryLayer } from "../registry/helpers";
 
 // `add` claims the repo folder on disk before cloning, so point repoPath at a
 // fresh temp folder per test.
@@ -34,6 +35,7 @@ const buildRepoLayer = (configOverrides = {}, gitOverrides = {}, syncOverrides =
 		Layer.provide(configLayer),
 		Layer.provide(gitLayer),
 		Layer.provide(syncLayer),
+		Layer.provide(createMockRegistryLayer()),
 	);
 };
 
