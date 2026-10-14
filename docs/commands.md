@@ -42,7 +42,9 @@ Repos on the shelf are caches: sync force-checks out the pinned ref and discards
 
 `shelf remove` first moves the repo folder aside, then drops the config entry, then renames the moved folder to trash (`repos/.shelf-trash-<alias>-<id>/`) and deletes it. If the move fails, nothing changes; if the config can't be saved, the folder is moved back. If the delete fails, the repo is still removed from the shelf: shelf warns and leaves the trash folder, and the next `shelf remove` or `shelf prune` (without `--dry-run`) deletes it.
 
-`shelf add` clones into `repos/.shelf-add-<alias>-<id>/` and moves the clone into place once it is done, so a half-made clone never shows up as a repo.
+`shelf add` clones into `repos/.shelf-add-<alias>-<pid>-<id>/` and moves the clone into place once it is done, so a half-made clone never shows up as a repo.
+
+If an add or a remove is killed partway, its hidden folder names the process (`<pid>`) that made it. Once that process is gone, the next `shelf remove` or `shelf prune` (without `--dry-run`) moves it back or deletes it: a killed remove's folder moves back when the repo is still in the config, and anything else is deleted.
 
 ## Detection
 

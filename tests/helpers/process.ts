@@ -1,6 +1,6 @@
 // Runs a command to completion and collects its output, on node:child_process.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { constants } from "node:os";
 
 export interface RunResult {
@@ -53,3 +53,9 @@ export const run = (argv: ReadonlyArray<string>, options: RunOptions = {}): Prom
 
 /** True when the tests run as root. Root ignores file permissions, so tests that chmod a path to make it fail skip then. */
 export const runningAsRoot = process.getuid?.() === 0;
+
+/** The PID of a process that has already exited. */
+export const deadPid = (): number => spawnSync(process.execPath, ["-e", ""]).pid;
+
+/** A fixed id for temp folder names (`tempName`) in tests. */
+export const TEMP_ID = "0b7c5d3e-1f2a-4b6c-8d9e-0a1b2c3d4e5f";

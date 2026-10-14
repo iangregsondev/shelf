@@ -128,3 +128,41 @@ export const declaredVersion = (
   const dep = declared("dependencies") ?? declared("devDependencies");
   return typeof dep === "string" ? dep : undefined;
 };
+
+/**
+ * What a temp folder beside the repo folders is for: an add's clone, a
+ * case-only rename, a remove that is not yet saved, or trash (a removed
+ * repo's folder, waiting to be deleted).
+ */
+export const TEMP_KINDS = ["add", "rename", "removing", "trash"] as const;
+export type TempKind = (typeof TEMP_KINDS)[number];
+
+/** A temp folder name, read back: its kind, the alias it is for and the process that made it. */
+export interface TempName {
+  readonly kind: TempKind;
+  readonly alias: string;
+  readonly pid: number;
+}
+
+/** The name every temp folder of `kind` starts with. */
+export const tempPrefix = (kind: TempKind): string => `.shelf-${kind}-`;
+
+const TEMP_NAME = new RegExp(
+  `^\\.shelf-(${TEMP_KINDS.join("|")})-(.+)-(\\d+)-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$`,
+);
+
+/**
+ * The name of a temp folder of `kind` for `alias`, made by process `pid`;
+ * `id` keeps it unique. Aliases can't start with ".", so no alias ever takes
+ * it, and the PID tells a dead temp folder from one still in use.
+ */
+export const tempName = (kind: TempKind, alias: string, pid: number, id: string): string =>
+  `${tempPrefix(kind)}${alias}-${pid}-${id}`;
+
+/** Reads a `tempName` back; undefined for any other name. */
+export const parseTempName = (name: string): TempName | undefined => {
+  const [, kindText, alias, pid] = TEMP_NAME.exec(name) ?? [];
+  const kind = TEMP_KINDS.find((k) => k === kindText);
+  if (kind === undefined || alias === undefined || pid === undefined) return undefined;
+  return { kind, alias, pid: Number(pid) };
+};

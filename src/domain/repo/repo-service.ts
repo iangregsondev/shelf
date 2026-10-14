@@ -8,6 +8,7 @@ import { basename, dirname, join } from "node:path";
 import { RepoEntry, RepoPin, ShelfConfig } from "../config/config-schema";
 import { ConfigService } from "../config/config-service";
 import { checkAlias, osErrorMessage } from "../config/config-utils";
+import { isProcessAlive } from "../config/state-file-store";
 import type { GitOperationError } from "../git/git-errors";
 import { GitService } from "../git/git-service";
 import { RegistryService } from "../registry/registry-service";
@@ -21,7 +22,16 @@ import {
   RepoNotFoundError,
   RepoRemoveError,
 } from "./repo-errors";
-import { declaredVersion, deriveAlias, parsePin, pinFromRemoteRefs } from "./repo-utils";
+import {
+  declaredVersion,
+  deriveAlias,
+  parsePin,
+  parseTempName,
+  pinFromRemoteRefs,
+  tempName,
+  tempPrefix,
+  type TempKind,
+} from "./repo-utils";
 import { stripSemverRange, parseRemoteTags, findMatchingTag } from "./pin-utils";
 import { dirSize, listFolder, pathExists, sameFolder } from "./repo-store";
 
@@ -41,21 +51,11 @@ export interface RemovedRepo {
 }
 
 /**
- * What a temp folder beside the repo folders is for: an add's clone, a
- * case-only rename, a remove that is not yet saved, or trash (a removed
- * repo's folder, waiting to be deleted).
- */
-type TempKind = "add" | "rename" | "removing" | "trash";
-
-/** The name every temp folder of `kind` starts with. */
-const tempPrefix = (kind: TempKind): string => `.shelf-${kind}-`;
-
-/**
- * A temp name beside the repo folder `path`, for `kind` of work on it. Aliases
- * can't start with ".", so no alias ever takes it, and `remove` never sees it.
+ * A temp folder beside the repo folder `path`, for `kind` of work on it by
+ * this process (see `tempName`).
  */
 const tempSibling = (path: string, kind: TempKind): string =>
-  join(dirname(path), `${tempPrefix(kind)}${basename(path)}-${randomUUID()}`);
+  join(dirname(path), tempName(kind, basename(path), process.pid, randomUUID()));
 
 /** What is on disk for a reference repo. */
 export interface RepoFolder {
@@ -117,13 +117,69 @@ export class RepoService extends Context.Service<RepoService>()("shelf/domain/re
         .pipe(Effect.map((full) => new RepoPin({ type: "commit", value: full })));
 
     /**
-     * Deletes every trash folder under the repos folder. A failed delete is
+     * Settles dead temp folders: those of adds and removes whose process is
+     * gone. A dead remove's folder moves back when its config entry is still
+     * saved and the repo folder is missing (it died before saving); every
+     * other one becomes trash. A folder that can't be moved comes back for
+     * a warning; the next remove or prune tries again. A PID from another
+     * PID namespace (a repos folder shared with a container) reads as gone.
+     */
+    const settleDeadTempFolders = Effect.gen(function* () {
+      const dead = (yield* listFolder(config.reposDir)).flatMap((name) => {
+        const temp = parseTempName(name);
+        return temp !== undefined &&
+          (temp.kind === "add" || temp.kind === "removing") &&
+          !isProcessAlive(temp.pid)
+          ? [{ ...temp, path: join(config.reposDir, name) }]
+          : [];
+      });
+      const left: TrashLeft[] = [];
+      if (dead.length === 0) {
+        return left;
+      }
+      // Under the config lock, so no add or remove changes entries or repo
+      // folders while a dead remove's folder is checked and moved.
+      yield* config.update((current) =>
+        Effect.gen(function* () {
+          for (const temp of dead) {
+            // An alias read from a folder name may be unsafe; such a folder is only trash.
+            const repoDir = Option.getOrUndefined(
+              yield* config.repoPath(temp.alias).pipe(Effect.option),
+            );
+            const moveBack =
+              temp.kind === "removing" &&
+              repoDir !== undefined &&
+              current.repos.some((r: RepoEntry) => r.alias === temp.alias) &&
+              !(yield* pathExists(repoDir));
+            // Named from reposDir, not tempSibling(repoDir), which an unsafe alias would lack.
+            const to = moveBack
+              ? repoDir
+              : join(config.reposDir, tempName("trash", temp.alias, process.pid, randomUUID()));
+            yield* fs.rename(temp.path, to).pipe(
+              Effect.catch((error) =>
+                Effect.sync(() => {
+                  left.push({ path: temp.path, message: osErrorMessage(error) });
+                }),
+              ),
+            );
+          }
+          // Unchanged, so nothing is saved.
+          return current;
+        }),
+      );
+      return left;
+      // A config that can't be read or locked now is settled on the next try.
+    }).pipe(Effect.orElseSucceed((): ReadonlyArray<TrashLeft> => []));
+
+    /**
+     * Deletes every trash folder under the repos folder, after turning dead
+     * temp folders into trash (`settleDeadTempFolders`). A failed delete is
      * not an error: the folder is already off the shelf, and the next remove
-     * or prune tries again.
+     * or prune tries again. Gives every folder it could not deal with.
      */
     const clearTrash = Effect.fn("RepoService.clearTrash")(function* () {
+      const left: TrashLeft[] = [...(yield* settleDeadTempFolders)];
       const names = yield* listFolder(config.reposDir);
-      const left: TrashLeft[] = [];
       for (const name of names.filter((n) => n.startsWith(tempPrefix("trash")))) {
         const path = join(config.reposDir, name);
         yield* fs.remove(path, { recursive: true, force: true }).pipe(

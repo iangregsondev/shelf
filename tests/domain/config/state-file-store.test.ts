@@ -1,7 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import { spawnSync } from "node:child_process";
 import {
   chmod,
   mkdir,
@@ -22,7 +21,7 @@ import {
   withStateFileLock,
   writeFileAtomic,
 } from "../../../src/domain/config/state-file-store";
-import { runningAsRoot } from "../../helpers/process";
+import { deadPid, runningAsRoot } from "../../helpers/process";
 
 // Hooks into the store's file-system calls, to stage races between processes
 // at exact points. Every hook is cleared after each test.
@@ -79,11 +78,6 @@ class LockError {
 const onError = (message: string) => new LockError(message);
 
 /** The PID of a process that has already exited. */
-const deadPid = (): number => {
-  const result = spawnSync(process.execPath, ["-e", ""]);
-  return result.pid;
-};
-
 const exists = (path: string): Promise<boolean> =>
   readFile(path).then(
     () => true,

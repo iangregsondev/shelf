@@ -10,7 +10,8 @@ import { join } from "node:path";
 import { createShelfSandbox, type ShelfSandbox } from "../helpers/shelf-cli";
 import { createRemote, type Remote } from "../helpers/git-remote";
 import { readJson, readText, writeText } from "../helpers/files";
-import { runningAsRoot } from "../helpers/process";
+import { deadPid, runningAsRoot, TEMP_ID } from "../helpers/process";
+import { tempName } from "../../src/domain/repo/repo-utils";
 
 let shelf: ShelfSandbox;
 let tempDir: string;
@@ -147,4 +148,18 @@ describe("shelf prune flags", () => {
       }
     },
   );
+
+  test("with no flags deletes the folder of an add that died, and keeps a running one's", async () => {
+    const repos = join(shelf.home, "repos");
+    const running = tempName("add", "running", process.pid, TEMP_ID);
+    await mkdir(join(repos, tempName("add", "killed", deadPid(), TEMP_ID), ".git"), {
+      recursive: true,
+    });
+    await mkdir(join(repos, running));
+
+    const result = await shelf.run(["prune"]);
+
+    expect(result.exitCode).toBe(0);
+    expect((await readdir(repos)).filter((name) => name.startsWith("."))).toEqual([running]);
+  });
 });
