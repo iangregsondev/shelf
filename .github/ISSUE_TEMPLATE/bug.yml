@@ -1,0 +1,56 @@
+name: Bug report
+description: A shelf command misbehaves, or something in the repo is broken.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues first.
+
+        **Do not report security vulnerabilities here** — use
+        [private reporting](https://github.com/iangregsondev/shelf/security/advisories/new)
+        instead. See [SECURITY.md](../blob/main/SECURITY.md).
+
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: The exact shelf command you ran.
+      placeholder: shelf sync
+    validations:
+      required: false
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The output, exit code, or state of the shelf home.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `shelf --version`.
+      placeholder: shelf v0.1.3
+    validations:
+      required: false
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node.js version, and how you installed shelf.
+      placeholder: macOS 15, Node 24.18.0, npm install -g
+    validations:
+      required: false
