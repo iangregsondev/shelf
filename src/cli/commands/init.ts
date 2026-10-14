@@ -4,6 +4,7 @@ import * as Option from "effect/Option";
 import { Command, Flag } from "effect/cli";
 import { join } from "node:path";
 import { skillTemplate } from "../templates/skill";
+import { ConfigService } from "../../domain/config/config-service";
 import { DetectService } from "../../domain/detect/detect-service";
 import type { DetectedRepo } from "../../domain/detect/detect-schema";
 import { RepoService } from "../../domain/repo/repo-service";
@@ -92,6 +93,7 @@ export const initCommand = Command.make("init", { agent, noDetect }, (config) =>
 			}
 		}
 
-		yield* Console.log("\nShelf is ready. Your agent can read repos at ~/.agents/shelf/repos/");
+		const configService = yield* ConfigService;
+		yield* Console.log(`\nShelf is ready. Your agent can read repos at ${configService.reposDir}/`);
 	}),
 ).pipe(Command.withDescription("Scaffold a shelf skill file and detect project repos"));
