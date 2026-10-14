@@ -8,32 +8,35 @@ import { RegistryService } from "../../domain/registry/registry-service";
 import { ResolveService } from "../../domain/resolve/resolve-service";
 import { DetectService } from "../../domain/detect/detect-service";
 import { DaemonService } from "../../domain/daemon/daemon-service";
+import { SkillService } from "../../domain/skill/skill-service";
 
 const ConfigLive = ConfigService.layer;
 const GitLive = GitService.layer;
 const SyncLive = SyncService.layer.pipe(Layer.provide(ConfigLive), Layer.provide(GitLive));
 const ShelffileLive = ShelffileService.layer;
 const RegistryLive = RegistryService.layer.pipe(
-	Layer.provide(ConfigLive),
-	Layer.provide(ShelffileLive),
+  Layer.provide(ConfigLive),
+  Layer.provide(ShelffileLive),
 );
 const RepoLive = RepoService.layer.pipe(
-	Layer.provide(ConfigLive),
-	Layer.provide(GitLive),
-	Layer.provide(SyncLive),
-	Layer.provide(RegistryLive),
+  Layer.provide(ConfigLive),
+  Layer.provide(GitLive),
+  Layer.provide(SyncLive),
+  Layer.provide(RegistryLive),
 );
 const ResolveLive = ResolveService.layer;
 const DetectLive = DetectService.layer.pipe(Layer.provide(ConfigLive));
 const DaemonLive = DaemonService.layer.pipe(Layer.provide(ConfigLive));
+const SkillLive = SkillService.layer;
 export const AppLayer = Layer.mergeAll(
-	ConfigLive,
-	GitLive,
-	SyncLive,
-	RepoLive,
-	ShelffileLive,
-	RegistryLive,
-	ResolveLive,
-	DetectLive,
-	DaemonLive,
+  ConfigLive,
+  GitLive,
+  SyncLive,
+  RepoLive,
+  ShelffileLive,
+  RegistryLive,
+  ResolveLive,
+  DetectLive,
+  DaemonLive,
+  SkillLive,
 );

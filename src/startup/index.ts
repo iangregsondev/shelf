@@ -1,8 +1,8 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { runMain } from "@effect/platform-bun/BunRuntime";
-import { layer as BunServicesLayer } from "@effect/platform-bun/BunServices";
+import { runMain } from "@effect/platform-node/NodeRuntime";
+import { layer as NodeServicesLayer } from "@effect/platform-node/NodeServices";
 import { Command } from "effect/cli";
 import { addCommand } from "../cli/commands/add";
 import { removeCommand } from "../cli/commands/remove";
@@ -24,41 +24,41 @@ import { formatUserError } from "../cli/error-handler";
 import { SHELF_VERSION } from "../version";
 
 const shelf = Command.make("shelf").pipe(
-	Command.withSubcommands([
-		addCommand,
-		removeCommand,
-		listCommand,
-		updateCommand,
-		configCommand,
-		initCommand,
-		installCommand,
-		shareCommand,
-		pruneCommand,
-		statusCommand,
-		infoCommand,
-		pinCommand,
-		aliasCommand,
-		detectCommand,
-		daemonCommand,
-	]),
-	Command.withDescription("A global cache of code reference repositories for AI agents"),
+  Command.withSubcommands([
+    addCommand,
+    removeCommand,
+    listCommand,
+    updateCommand,
+    configCommand,
+    initCommand,
+    installCommand,
+    shareCommand,
+    pruneCommand,
+    statusCommand,
+    infoCommand,
+    pinCommand,
+    aliasCommand,
+    detectCommand,
+    daemonCommand,
+  ]),
+  Command.withDescription("A global cache of code reference repositories for AI agents"),
 );
 
 const program = Command.run(shelf, { version: SHELF_VERSION });
 
 program.pipe(
-	Effect.provide(Layer.mergeAll(AppLayer, BunServicesLayer)),
-	Effect.catch((error: unknown) => {
-		const message = formatUserError(error);
-		if (message !== null) {
-			return Effect.sync(() => {
-				console.error(message); // eslint-disable-line no-console
-				// runMain only calls process.exit for a non-zero teardown code, so
-				// setting exitCode makes a handled error exit 1 without a stack trace.
-				process.exitCode = 1;
-			});
-		}
-		return Effect.fail(error);
-	}),
-	runMain,
+  Effect.provide(AppLayer.pipe(Layer.provideMerge(NodeServicesLayer))),
+  Effect.catch((error: unknown) => {
+    const message = formatUserError(error);
+    if (message !== null) {
+      return Effect.sync(() => {
+        console.error(message);
+        // runMain only calls process.exit for a non-zero teardown code, so
+        // setting exitCode makes a handled error exit 1 without a stack trace.
+        process.exitCode = 1;
+      });
+    }
+    return Effect.fail(error);
+  }),
+  runMain,
 );

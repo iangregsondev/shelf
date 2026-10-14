@@ -5,21 +5,21 @@ import type { ResolveError } from "../../../src/domain/resolve/resolve-errors";
 import { ResolveService } from "../../../src/domain/resolve/resolve-service";
 
 export type ResolveOverrides = {
-	readonly resolve?: (input: string) => Effect.Effect<ResolvedRepo, ResolveError>;
+  readonly resolve?: (input: string) => Effect.Effect<ResolvedRepo, ResolveError>;
 };
 
 const defaultResolveImpl = {
-	resolve: () =>
-		Effect.succeed({
-			url: "https://github.com/test/repo.git",
-			suggestedAlias: "repo",
-			source: "direct",
-		} as ResolvedRepo),
+  resolve: () =>
+    Effect.succeed({
+      url: "https://github.com/test/repo.git",
+      suggestedAlias: "repo",
+      source: "direct",
+    } as ResolvedRepo),
 };
 
 export const createMockResolveLayer = (
-	overrides: ResolveOverrides = {},
+  overrides: ResolveOverrides = {},
 ): Layer.Layer<ResolveService> => {
-	const impl = { ...defaultResolveImpl, ...overrides };
-	return Layer.succeed(ResolveService, ResolveService.of(impl));
+  const impl = { ...defaultResolveImpl, ...overrides };
+  return Layer.succeed(ResolveService, ResolveService.of(impl));
 };

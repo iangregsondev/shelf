@@ -8,8 +8,10 @@
 ## Install
 
 ```bash
-bun install -g @iangregsondev/shelf
+npm install -g @iangregsondev/shelf
 ```
+
+Shelf needs Node.js 24 or later. pnpm (`pnpm add -g`) and yarn work too.
 
 ## Quick Start
 
@@ -64,9 +66,14 @@ Shelf manages the lifecycle — clone, pin, sync, remove. Your agent uses its ow
 
 ## Development
 
+Shelf uses [Vite+](https://viteplus.dev) (`vp`) for its toolchain: pnpm, Node.js 24, vitest, oxlint, oxfmt and tsdown.
+
 ```bash
-bun run test             # run tests (offline, in temp shelf homes)
-bunx --bun tsc --noEmit  # typecheck
+vp install               # install dependencies
+vp check                 # format check, type-aware lint and typecheck
+vp test                  # run tests (offline, in temp shelf homes)
+vp pack                  # build the CLI into dist
+node dist/index.mjs      # run the built CLI
 ```
 
 ## Credits

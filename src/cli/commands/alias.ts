@@ -7,9 +7,9 @@ const oldAlias = Argument.String("old");
 const newAlias = Argument.String("new");
 
 export const aliasCommand = Command.make("alias", { oldAlias, newAlias }, (config) =>
-	Effect.gen(function* () {
-		const repo = yield* RepoService;
-		yield* repo.rename(config.oldAlias, config.newAlias);
-		yield* Console.log(`Renamed "${config.oldAlias}" → "${config.newAlias}"`);
-	}),
+  Effect.gen(function* () {
+    const repo = yield* RepoService;
+    yield* repo.rename(config.oldAlias, config.newAlias);
+    yield* Console.log(`Renamed "${config.oldAlias}" → "${config.newAlias}"`);
+  }),
 ).pipe(Command.withDescription("Rename a repo alias"));

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "vite-plus/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,399 +11,525 @@ import { createMockConfigLayer } from "../config/helpers";
 import { createMockGitLayer } from "../git/helpers";
 import { createMockSyncLayer } from "../sync/helpers";
 import { createMockRegistryLayer } from "../registry/helpers";
+import { writeText } from "../../helpers/files";
+import { PlatformLayer } from "../../helpers/platform";
+import { existsSync } from "node:fs";
+import { GitOperationError } from "../../../src/domain/git/git-errors";
+import { ConfigWriteError } from "../../../src/domain/config/config-errors";
 
 // `add` claims the repo folder on disk before cloning, so point repoPath at a
 // fresh temp folder per test.
 let reposDir: string;
 
 beforeEach(async () => {
-	reposDir = await mkdtemp(join(tmpdir(), "shelf-repo-service-"));
+  reposDir = await mkdtemp(join(tmpdir(), "shelf-repo-service-"));
 });
 
 afterEach(async () => {
-	await rm(reposDir, { recursive: true, force: true });
+  await rm(reposDir, { recursive: true, force: true });
 });
 
 const buildRepoLayer = (configOverrides = {}, gitOverrides = {}, syncOverrides = {}) => {
-	const configLayer = createMockConfigLayer({
-		repoPath: (alias: string) => join(reposDir, alias),
-		...configOverrides,
-	});
-	const gitLayer = createMockGitLayer(gitOverrides);
-	const syncLayer = createMockSyncLayer(syncOverrides);
-	return RepoService.layer.pipe(
-		Layer.provide(configLayer),
-		Layer.provide(gitLayer),
-		Layer.provide(syncLayer),
-		Layer.provide(createMockRegistryLayer()),
-	);
+  const configLayer = createMockConfigLayer({
+    repoPath: (alias: string) => join(reposDir, alias),
+    ...configOverrides,
+  });
+  const gitLayer = createMockGitLayer(gitOverrides);
+  const syncLayer = createMockSyncLayer(syncOverrides);
+  return RepoService.layer.pipe(
+    Layer.provide(configLayer),
+    Layer.provide(gitLayer),
+    Layer.provide(syncLayer),
+    Layer.provide(createMockRegistryLayer()),
+    Layer.provide(PlatformLayer),
+  );
 };
 
 describe("RepoService", () => {
-	describe("add", () => {
-		test("adds a repo and derives alias from URL", async () => {
-			let savedConfig: typeof ShelfConfig.Type | undefined;
-			const layer = buildRepoLayer({
-				save: (config: typeof ShelfConfig.Type) => {
-					savedConfig = config;
-					return Effect.void;
-				},
-			});
-			const result = await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(result).toBe("effect");
-			expect(savedConfig?.repos.length).toBe(1);
-		});
+  describe("add", () => {
+    test("adds a repo and derives alias from URL", async () => {
+      let savedConfig: typeof ShelfConfig.Type | undefined;
+      const layer = buildRepoLayer({
+        save: (config: typeof ShelfConfig.Type) => {
+          savedConfig = config;
+          return Effect.void;
+        },
+      });
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(result).toBe("effect");
+      expect(savedConfig?.repos.length).toBe(1);
+    });
 
-		test("uses provided alias", async () => {
-			const layer = buildRepoLayer();
-			const result = await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.add({
-						url: "https://github.com/Effect-TS/effect.git",
-						alias: Option.some("my-effect"),
-					});
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(result).toBe("my-effect");
-		});
+    test("uses provided alias", async () => {
+      const layer = buildRepoLayer();
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.add({
+            url: "https://github.com/Effect-TS/effect.git",
+            alias: Option.some("my-effect"),
+          });
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(result).toBe("my-effect");
+    });
 
-		test("rejects duplicate alias", async () => {
-			const existingRepo = new RepoEntry({
-				url: "https://github.com/test/repo.git",
-				alias: "effect",
-				addedAt: "2026-01-01",
-				pin: Option.none(),
-				depth: Option.none(),
-				sparse: Option.none(),
-				lastSyncedAt: Option.none(),
-			});
-			const layer = buildRepoLayer({
-				load: () =>
-					Effect.succeed(
-						new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos: [existingRepo] }),
-					),
-			});
-			const exit = await Effect.runPromiseExit(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(exit._tag).toBe("Failure");
-		});
+    test("rejects duplicate alias", async () => {
+      const existingRepo = new RepoEntry({
+        url: "https://github.com/test/repo.git",
+        alias: "effect",
+        addedAt: "2026-01-01",
+        pin: Option.none(),
+        depth: Option.none(),
+        sparse: Option.none(),
+        lastSyncedAt: Option.none(),
+      });
+      const layer = buildRepoLayer({
+        load: () =>
+          Effect.succeed(
+            new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos: [existingRepo] }),
+          ),
+      });
+      const exit = await Effect.runPromiseExit(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(exit._tag).toBe("Failure");
+    });
 
-		test("applies pin on clone", async () => {
-			let clonedPin: Option.Option<RepoPin> = Option.none();
-			const layer = buildRepoLayer(
-				{},
-				{
-					clone: (_url: string, _dir: string, pin: Option.Option<RepoPin>) => {
-						clonedPin = pin;
-						return Effect.void;
-					},
-				},
-			);
-			await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					yield* repo.add({
-						url: "https://github.com/test/repo.git",
-						alias: Option.some("test"),
-						pin: Option.some(new RepoPin({ type: "branch", value: "develop" })),
-					});
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(Option.isSome(clonedPin)).toBe(true);
-			if (Option.isSome(clonedPin)) {
-				expect(clonedPin.value.value).toBe("develop");
-			}
-		});
+    test("rejects an alias whose folder is already on disk, and leaves the folder alone", async () => {
+      await writeText(join(reposDir, "effect", "keep.txt"), "mine");
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
+        }).pipe(Effect.flip, Effect.provide(buildRepoLayer())),
+      );
+      expect(error._tag).toBe("RepoAlreadyExistsError");
+      expect(existsSync(join(reposDir, "effect", "keep.txt"))).toBe(true);
+    });
 
-		test("forwards depth and sparse to git clone", async () => {
-			let clonedDepth: Option.Option<number> = Option.none();
-			let clonedSparse: Option.Option<ReadonlyArray<string>> = Option.none();
-			const layer = buildRepoLayer(
-				{},
-				{
-					clone: (
-						_url: string,
-						_dir: string,
-						_pin: Option.Option<RepoPin>,
-						d: Option.Option<number>,
-						s: Option.Option<ReadonlyArray<string>>,
-					) => {
-						clonedDepth = d;
-						clonedSparse = s;
-						return Effect.void;
-					},
-				},
-			);
-			await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					yield* repo.add({
-						url: "https://github.com/test/repo.git",
-						alias: Option.some("test"),
-						depth: Option.some(1),
-						sparse: Option.some(["src", "packages/core"]),
-					});
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(Option.isSome(clonedDepth)).toBe(true);
-			if (Option.isSome(clonedDepth)) {
-				expect(clonedDepth.value).toBe(1);
-			}
-			expect(Option.isSome(clonedSparse)).toBe(true);
-			if (Option.isSome(clonedSparse)) {
-				expect(clonedSparse.value).toEqual(["src", "packages/core"]);
-			}
-		});
+    test("fails with RepoFolderError naming the OS error when the folder can't be created", async () => {
+      const targetDir = join(reposDir, "missing-parent", "effect");
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
+        }).pipe(Effect.flip, Effect.provide(buildRepoLayer({ repoPath: () => targetDir }))),
+      );
+      expect(error).toMatchObject({
+        _tag: "RepoFolderError",
+        path: targetDir,
+        message: `ENOENT: no such file or directory, mkdir '${targetDir}'`,
+      });
+    });
 
-		test("handles various URL formats", async () => {
-			const layer = buildRepoLayer();
-			const gitSshResult = await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.add({ url: "git@github.com:user/my-lib.git" });
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(gitSshResult).toBe("my-lib");
-		});
-	});
+    test("removes the folder it claimed when the clone fails", async () => {
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.add({ url: "https://github.com/Effect-TS/effect.git" });
+        }).pipe(
+          Effect.flip,
+          Effect.provide(
+            buildRepoLayer(
+              {},
+              {
+                clone: () =>
+                  Effect.fail(new GitOperationError({ command: "git clone", message: "boom" })),
+              },
+            ),
+          ),
+        ),
+      );
+      expect(error._tag).toBe("GitOperationError");
+      expect(existsSync(join(reposDir, "effect"))).toBe(false);
+    });
+  });
 
-	describe("remove", () => {
-		test("removes existing repo", async () => {
-			const existingRepo = new RepoEntry({
-				url: "https://github.com/test/repo.git",
-				alias: "test-repo",
-				addedAt: "2026-01-01",
-				pin: Option.none(),
-				depth: Option.none(),
-				sparse: Option.none(),
-				lastSyncedAt: Option.none(),
-			});
-			let savedConfig: typeof ShelfConfig.Type | undefined;
-			const layer = buildRepoLayer({
-				load: () =>
-					Effect.succeed(
-						new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos: [existingRepo] }),
-					),
-				save: (config: typeof ShelfConfig.Type) => {
-					savedConfig = config;
-					return Effect.void;
-				},
-			});
-			const result = await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.remove("test-repo");
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(result).toBe("test-repo");
-			expect(savedConfig?.repos.length).toBe(0);
-		});
+  describe("rename", () => {
+    const configWith = (alias: string) => ({
+      load: () =>
+        Effect.succeed(
+          new ShelfConfig({
+            version: 1,
+            syncIntervalMinutes: 60,
+            repos: [
+              new RepoEntry({
+                url: "https://github.com/test/repo.git",
+                alias,
+                addedAt: "2026-01-01",
+                pin: Option.none(),
+                depth: Option.none(),
+                sparse: Option.none(),
+                lastSyncedAt: Option.none(),
+              }),
+            ],
+          }),
+        ),
+    });
 
-		test("fails for unknown alias", async () => {
-			const layer = buildRepoLayer();
-			const exit = await Effect.runPromiseExit(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.remove("nonexistent");
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(exit._tag).toBe("Failure");
-		});
-	});
+    test("moves the folder", async () => {
+      await writeText(join(reposDir, "lib", "lib.ts"), "code");
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          yield* repo.rename("lib", "renamed");
+        }).pipe(Effect.provide(buildRepoLayer(configWith("lib")))),
+      );
+      expect(existsSync(join(reposDir, "renamed", "lib.ts"))).toBe(true);
+      expect(existsSync(join(reposDir, "lib"))).toBe(false);
+    });
 
-	describe("list", () => {
-		test("returns empty list", async () => {
-			const layer = buildRepoLayer();
-			const result = await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.list();
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(result).toEqual([]);
-		});
+    test("fails with AliasRenameError naming the OS error when the folder can't move", async () => {
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          yield* repo.rename("lib", "renamed");
+        }).pipe(Effect.flip, Effect.provide(buildRepoLayer(configWith("lib")))),
+      );
+      expect(error).toMatchObject({
+        _tag: "AliasRenameError",
+        message: `ENOENT: no such file or directory, rename '${join(reposDir, "lib")}' -> '${join(reposDir, "renamed")}'`,
+      });
+    });
 
-		test("returns repos with status info", async () => {
-			const existingRepo = new RepoEntry({
-				url: "https://github.com/test/repo.git",
-				alias: "test-repo",
-				addedAt: "2026-01-01",
-				pin: Option.some(new RepoPin({ type: "branch", value: "main" })),
-				depth: Option.none(),
-				sparse: Option.none(),
-				lastSyncedAt: Option.some("2026-01-01T12:00:00Z"),
-			});
-			const layer = buildRepoLayer({
-				load: () =>
-					Effect.succeed(
-						new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos: [existingRepo] }),
-					),
-			});
-			const result = await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.list();
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(result.length).toBe(1);
-			expect(result[0]!.alias).toBe("test-repo");
-		});
-	});
+    test("moves the folder back when the config can't follow", async () => {
+      await writeText(join(reposDir, "lib", "lib.ts"), "code");
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          yield* repo.rename("lib", "renamed");
+        }).pipe(
+          Effect.flip,
+          Effect.provide(
+            buildRepoLayer({
+              ...configWith("lib"),
+              save: () => Effect.fail(new ConfigWriteError({ message: "disk full" })),
+            }),
+          ),
+        ),
+      );
+      expect(error._tag).toBe("ConfigWriteError");
+      expect(existsSync(join(reposDir, "lib", "lib.ts"))).toBe(true);
+      expect(existsSync(join(reposDir, "renamed"))).toBe(false);
+    });
+  });
 
-	describe("sync", () => {
-		test("syncs single repo by alias", async () => {
-			let syncedRepo: string | undefined;
-			const existingRepo = new RepoEntry({
-				url: "https://github.com/test/repo.git",
-				alias: "test-repo",
-				addedAt: "2026-01-01",
-				pin: Option.none(),
-				depth: Option.none(),
-				sparse: Option.none(),
-				lastSyncedAt: Option.none(),
-			});
-			const layer = buildRepoLayer(
-				{
-					load: () =>
-						Effect.succeed(
-							new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos: [existingRepo] }),
-						),
-				},
-				{},
-				{
-					syncRepo: (repo: RepoEntry) => {
-						syncedRepo = repo.alias;
-						return Effect.void;
-					},
-				},
-			);
-			await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					yield* repo.sync(Option.some("test-repo"));
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(syncedRepo).toBe("test-repo");
-		});
+  describe("add pins", () => {
+    test("applies pin on clone", async () => {
+      let clonedPin: Option.Option<RepoPin> = Option.none();
+      const layer = buildRepoLayer(
+        {},
+        {
+          clone: (_url: string, _dir: string, pin: Option.Option<RepoPin>) => {
+            clonedPin = pin;
+            return Effect.void;
+          },
+        },
+      );
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          yield* repo.add({
+            url: "https://github.com/test/repo.git",
+            alias: Option.some("test"),
+            pin: Option.some(new RepoPin({ type: "branch", value: "develop" })),
+          });
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(Option.isSome(clonedPin)).toBe(true);
+      if (Option.isSome(clonedPin)) {
+        expect(clonedPin.value.value).toBe("develop");
+      }
+    });
 
-		test("syncs all when no alias", async () => {
-			let syncAllCalled = false;
-			const layer = buildRepoLayer(
-				{},
-				{},
-				{
-					syncAll: () => {
-						syncAllCalled = true;
-						return Effect.succeed({ total: 0, failures: [] });
-					},
-				},
-			);
-			await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					yield* repo.sync(Option.none());
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(syncAllCalled).toBe(true);
-		});
-	});
+    test("forwards depth and sparse to git clone", async () => {
+      let clonedDepth: Option.Option<number> = Option.none();
+      let clonedSparse: Option.Option<ReadonlyArray<string>> = Option.none();
+      const layer = buildRepoLayer(
+        {},
+        {
+          clone: (
+            _url: string,
+            _dir: string,
+            _pin: Option.Option<RepoPin>,
+            d: Option.Option<number>,
+            s: Option.Option<ReadonlyArray<string>>,
+          ) => {
+            clonedDepth = d;
+            clonedSparse = s;
+            return Effect.void;
+          },
+        },
+      );
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          yield* repo.add({
+            url: "https://github.com/test/repo.git",
+            alias: Option.some("test"),
+            depth: Option.some(1),
+            sparse: Option.some(["src", "packages/core"]),
+          });
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(Option.isSome(clonedDepth)).toBe(true);
+      if (Option.isSome(clonedDepth)) {
+        expect(clonedDepth.value).toBe(1);
+      }
+      expect(Option.isSome(clonedSparse)).toBe(true);
+      if (Option.isSome(clonedSparse)) {
+        expect(clonedSparse.value).toEqual(["src", "packages/core"]);
+      }
+    });
 
-	describe("resolveAutoPin", () => {
-		// resolveAutoPin reads package.json from the working directory, so each
-		// test runs inside a temp dir holding its own fixture manifest. The
-		// fixture versions are deliberately unlike shelf's own dependencies.
-		let fixtureDir: string;
-		let originalCwd: string;
+    test("handles various URL formats", async () => {
+      const layer = buildRepoLayer();
+      const gitSshResult = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.add({ url: "git@github.com:user/my-lib.git" });
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(gitSshResult).toBe("my-lib");
+    });
+  });
 
-		beforeEach(async () => {
-			originalCwd = process.cwd();
-			fixtureDir = await mkdtemp(join(tmpdir(), "shelf-autopin-"));
-			await Bun.write(
-				join(fixtureDir, "package.json"),
-				JSON.stringify({
-					dependencies: { effect: "^3.10.2" },
-					devDependencies: { typescript: "~5.4.0" },
-				}),
-			);
-			process.chdir(fixtureDir);
-		});
+  describe("remove", () => {
+    test("removes existing repo", async () => {
+      const existingRepo = new RepoEntry({
+        url: "https://github.com/test/repo.git",
+        alias: "test-repo",
+        addedAt: "2026-01-01",
+        pin: Option.none(),
+        depth: Option.none(),
+        sparse: Option.none(),
+        lastSyncedAt: Option.none(),
+      });
+      let savedConfig: typeof ShelfConfig.Type | undefined;
+      const layer = buildRepoLayer({
+        load: () =>
+          Effect.succeed(
+            new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos: [existingRepo] }),
+          ),
+        save: (config: typeof ShelfConfig.Type) => {
+          savedConfig = config;
+          return Effect.void;
+        },
+      });
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.remove("test-repo");
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(result).toBe("test-repo");
+      expect(savedConfig?.repos.length).toBe(0);
+    });
 
-		afterEach(async () => {
-			process.chdir(originalCwd);
-			await rm(fixtureDir, { recursive: true, force: true });
-		});
+    test("fails for unknown alias", async () => {
+      const layer = buildRepoLayer();
+      const exit = await Effect.runPromiseExit(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.remove("nonexistent");
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(exit._tag).toBe("Failure");
+    });
+  });
 
-		test("resolves matching tag from the project's package.json", async () => {
-			const lsRemoteOutput = [
-				"abc123\trefs/tags/v3.10.2",
-				"def456\trefs/tags/v3.10.2^{}",
-				"789abc\trefs/tags/v4.0.4",
-			].join("\n");
-			const layer = buildRepoLayer(
-				{},
-				{
-					lsRemoteTags: () => Effect.succeed(lsRemoteOutput),
-				},
-			);
-			const result = await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.resolveAutoPin("https://github.com/Effect-TS/effect.git", "effect");
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(Option.isSome(result)).toBe(true);
-			if (Option.isSome(result)) {
-				expect(result.value.type).toBe("tag");
-				expect(result.value.value).toBe("v3.10.2");
-			}
-		});
+  describe("list", () => {
+    test("returns empty list", async () => {
+      const layer = buildRepoLayer();
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.list();
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(result).toEqual([]);
+    });
 
-		test("resolves from devDependencies", async () => {
-			const layer = buildRepoLayer(
-				{},
-				{
-					lsRemoteTags: () => Effect.succeed("abc123\trefs/tags/v5.4.0"),
-				},
-			);
-			const result = await Effect.runPromise(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.resolveAutoPin(
-						"https://github.com/microsoft/typescript.git",
-						"typescript",
-					);
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(Option.getOrUndefined(result)?.value).toBe("v5.4.0");
-		});
+    test("returns repos with status info", async () => {
+      const existingRepo = new RepoEntry({
+        url: "https://github.com/test/repo.git",
+        alias: "test-repo",
+        addedAt: "2026-01-01",
+        pin: Option.some(new RepoPin({ type: "branch", value: "main" })),
+        depth: Option.none(),
+        sparse: Option.none(),
+        lastSyncedAt: Option.some("2026-01-01T12:00:00Z"),
+      });
+      const layer = buildRepoLayer({
+        load: () =>
+          Effect.succeed(
+            new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos: [existingRepo] }),
+          ),
+      });
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.list();
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(result.length).toBe(1);
+      expect(result[0]!.alias).toBe("test-repo");
+    });
+  });
 
-		test("fails when package not in dependencies", async () => {
-			const layer = buildRepoLayer(
-				{},
-				{
-					lsRemoteTags: () => Effect.succeed(""),
-				},
-			);
-			const exit = await Effect.runPromiseExit(
-				Effect.gen(function* () {
-					const repo = yield* RepoService;
-					return yield* repo.resolveAutoPin(
-						"https://github.com/test/nonexistent-pkg.git",
-						"nonexistent-pkg",
-					);
-				}).pipe(Effect.provide(layer)),
-			);
-			expect(exit._tag).toBe("Failure");
-		});
-	});
+  describe("sync", () => {
+    test("syncs single repo by alias", async () => {
+      let syncedRepo: string | undefined;
+      const existingRepo = new RepoEntry({
+        url: "https://github.com/test/repo.git",
+        alias: "test-repo",
+        addedAt: "2026-01-01",
+        pin: Option.none(),
+        depth: Option.none(),
+        sparse: Option.none(),
+        lastSyncedAt: Option.none(),
+      });
+      const layer = buildRepoLayer(
+        {
+          load: () =>
+            Effect.succeed(
+              new ShelfConfig({ version: 1, syncIntervalMinutes: 60, repos: [existingRepo] }),
+            ),
+        },
+        {},
+        {
+          syncRepo: (repo: RepoEntry) => {
+            syncedRepo = repo.alias;
+            return Effect.void;
+          },
+        },
+      );
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          yield* repo.sync(Option.some("test-repo"));
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(syncedRepo).toBe("test-repo");
+    });
+
+    test("syncs all when no alias", async () => {
+      let syncAllCalled = false;
+      const layer = buildRepoLayer(
+        {},
+        {},
+        {
+          syncAll: () => {
+            syncAllCalled = true;
+            return Effect.succeed({ total: 0, failures: [] });
+          },
+        },
+      );
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          yield* repo.sync(Option.none());
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(syncAllCalled).toBe(true);
+    });
+  });
+
+  describe("resolveAutoPin", () => {
+    // resolveAutoPin reads package.json from the working directory, so each
+    // test runs inside a temp dir holding its own fixture manifest. The
+    // fixture versions are deliberately unlike shelf's own dependencies.
+    let fixtureDir: string;
+    let originalCwd: string;
+
+    beforeEach(async () => {
+      originalCwd = process.cwd();
+      fixtureDir = await mkdtemp(join(tmpdir(), "shelf-autopin-"));
+      await writeText(
+        join(fixtureDir, "package.json"),
+        JSON.stringify({
+          dependencies: { effect: "^3.10.2" },
+          devDependencies: { typescript: "~5.4.0" },
+        }),
+      );
+      process.chdir(fixtureDir);
+    });
+
+    afterEach(async () => {
+      process.chdir(originalCwd);
+      await rm(fixtureDir, { recursive: true, force: true });
+    });
+
+    test("resolves matching tag from the project's package.json", async () => {
+      const lsRemoteOutput = [
+        "abc123\trefs/tags/v3.10.2",
+        "def456\trefs/tags/v3.10.2^{}",
+        "789abc\trefs/tags/v4.0.4",
+      ].join("\n");
+      const layer = buildRepoLayer(
+        {},
+        {
+          lsRemoteTags: () => Effect.succeed(lsRemoteOutput),
+        },
+      );
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.resolveAutoPin("https://github.com/Effect-TS/effect.git", "effect");
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(Option.isSome(result)).toBe(true);
+      if (Option.isSome(result)) {
+        expect(result.value.type).toBe("tag");
+        expect(result.value.value).toBe("v3.10.2");
+      }
+    });
+
+    test("resolves from devDependencies", async () => {
+      const layer = buildRepoLayer(
+        {},
+        {
+          lsRemoteTags: () => Effect.succeed("abc123\trefs/tags/v5.4.0"),
+        },
+      );
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.resolveAutoPin(
+            "https://github.com/microsoft/typescript.git",
+            "typescript",
+          );
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(Option.getOrUndefined(result)?.value).toBe("v5.4.0");
+    });
+
+    test("fails when package not in dependencies", async () => {
+      const layer = buildRepoLayer(
+        {},
+        {
+          lsRemoteTags: () => Effect.succeed(""),
+        },
+      );
+      const exit = await Effect.runPromiseExit(
+        Effect.gen(function* () {
+          const repo = yield* RepoService;
+          return yield* repo.resolveAutoPin(
+            "https://github.com/test/nonexistent-pkg.git",
+            "nonexistent-pkg",
+          );
+        }).pipe(Effect.provide(layer)),
+      );
+      expect(exit._tag).toBe("Failure");
+    });
+  });
 });

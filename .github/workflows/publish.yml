@@ -13,10 +13,12 @@ jobs:
         with:
           fetch-depth: 2
 
+      # Publishes only when the dispatched commit changed package.json's version.
+      # workflow_dispatch has no github.event.before, so compare with the parent commit.
       - name: Check version change
         id: version
         run: |
-          OLD_VERSION=$(git show ${{ github.event.before }}:package.json | jq -r '.version' 2>/dev/null || echo "")
+          OLD_VERSION=$(git show HEAD~1:package.json | jq -r '.version' 2>/dev/null || echo "")
           NEW_VERSION=$(jq -r '.version' package.json)
           echo "old=$OLD_VERSION" >> "$GITHUB_OUTPUT"
           echo "new=$NEW_VERSION" >> "$GITHUB_OUTPUT"
@@ -26,25 +28,38 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: oven-sh/setup-bun@v2
+      # Node comes from package.json devEngines.runtime, vite-plus from the pnpm catalog.
+      - uses: voidzero-dev/setup-vp@v1.21.2
+        if: steps.version.outputs.changed == 'true'
+        with:
+          run-install: false
+
+      - run: vp install --frozen-lockfile
         if: steps.version.outputs.changed == 'true'
 
-      - run: bun install --frozen-lockfile
+      - run: vp check
         if: steps.version.outputs.changed == 'true'
 
-      - run: bunx --bun tsc --noEmit
+      - run: vp test
         if: steps.version.outputs.changed == 'true'
 
-      - run: bun run test
+      # Build before publishing: the package ships dist only.
+      - run: vp pack
         if: steps.version.outputs.changed == 'true'
 
+      # devEngines pins pnpm, so `npm publish` refuses to run (EBADDEVENGINES);
+      # `vp pm publish` forwards to pnpm publish. The auth .npmrc sits in the
+      # runner's temp folder, outside the checkout, so the tree stays clean and
+      # pnpm's git checks (clean tree, publish branch) still run. It holds a
+      # reference to NPM_TOKEN, not its value; NPM_CONFIG_USERCONFIG points pnpm at it.
       - name: Publish to npm
         if: steps.version.outputs.changed == 'true'
         run: |
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-          npm publish --access public
+          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' > "$NPM_CONFIG_USERCONFIG"
+          vp pm publish --access public
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/.npmrc
 
       - name: Create GitHub release
         if: steps.version.outputs.changed == 'true'

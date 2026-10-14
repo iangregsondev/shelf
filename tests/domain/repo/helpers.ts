@@ -11,14 +11,14 @@ export type RepoOverrides = Partial<RepoShape>;
 
 // Canned successes; the casts keep this stub in step with the service's shape.
 const defaultRepoImpl = {
-	add: () => Effect.succeed("test-repo" as string),
-	remove: () => Effect.succeed("test-repo" as string),
-	list: () => Effect.succeed([] as ReadonlyArray<RepoEntry>),
-	sync: () => Effect.succeed<SyncAllResult>({ total: 0, failures: [] }),
-	resolveAutoPin: () => Effect.succeed(undefined as unknown as Option.Option<RepoPin>),
-	resolvePin: () => Effect.succeed(undefined as unknown as RepoPin),
-	pin: () => Effect.succeed(undefined as unknown as RepoPin),
+  add: () => Effect.succeed("test-repo" as string),
+  remove: () => Effect.succeed("test-repo" as string),
+  list: () => Effect.succeed([] as ReadonlyArray<RepoEntry>),
+  sync: () => Effect.succeed<SyncAllResult>({ total: 0, failures: [] }),
+  resolveAutoPin: () => Effect.succeed(undefined as unknown as Option.Option<RepoPin>),
+  resolvePin: () => Effect.succeed(undefined as unknown as RepoPin),
+  pin: () => Effect.succeed(undefined as unknown as RepoPin),
 } as unknown as RepoShape;
 
 export const createMockRepoLayer = (overrides: RepoOverrides = {}): Layer.Layer<RepoService> =>
-	Layer.succeed(RepoService, RepoService.of({ ...defaultRepoImpl, ...overrides }));
+  Layer.succeed(RepoService, RepoService.of({ ...defaultRepoImpl, ...overrides }));

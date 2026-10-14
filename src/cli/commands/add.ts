@@ -13,60 +13,60 @@ import type { RepoPin } from "../../domain/config/config-schema";
 // auto-pin matches tags for it. A URL or owner/repo names no package, so fall
 // back to the repo's name.
 const autoPinPackageName = (input: string, resolved: ResolvedRepo): string =>
-	resolved.source === "registry" || resolved.source === "github-api"
-		? input
-		: deriveAlias(resolved.url);
+  resolved.source === "registry" || resolved.source === "github-api"
+    ? input
+    : deriveAlias(resolved.url);
 
 const repo = Argument.String("repo");
 const alias = Flag.String("alias").pipe(Flag.optional, Flag.withDescription("Alias for the repo"));
 const pin = Flag.String("pin").pipe(
-	Flag.optional,
-	Flag.withDescription(
-		"Pin to branch:<name>, tag:<name>, commit:<hash>, a bare tag or branch name, or 'auto' to resolve from package.json",
-	),
+  Flag.optional,
+  Flag.withDescription(
+    "Pin to branch:<name>, tag:<name>, commit:<hash>, a bare tag or branch name, or 'auto' to resolve from package.json",
+  ),
 );
 const depth = Flag.Int("depth").pipe(
-	Flag.optional,
-	Flag.withDescription("Clone depth for shallow clones (e.g., 1 for latest only)"),
+  Flag.optional,
+  Flag.withDescription("Clone depth for shallow clones (e.g., 1 for latest only)"),
 );
 const sparse = Flag.String("sparse").pipe(
-	Flag.optional,
-	Flag.withDescription("Comma-separated sparse checkout paths (e.g., 'src,packages/core')"),
+  Flag.optional,
+  Flag.withDescription("Comma-separated sparse checkout paths (e.g., 'src,packages/core')"),
 );
 
 export const addCommand = Command.make("add", { repo, alias, pin, depth, sparse }, (config) =>
-	Effect.gen(function* () {
-		const repoService = yield* RepoService;
-		const registry = yield* RegistryService;
-		const resolve = yield* ResolveService;
-		const resolved = yield* resolve.resolve(config.repo);
-		if (resolved.source !== "direct") {
-			yield* Console.log(`Resolved "${config.repo}" → ${resolved.url}`);
-		}
-		const url = resolved.url;
-		const effectiveAlias = Option.isSome(config.alias)
-			? config.alias
-			: Option.some(resolved.suggestedAlias);
-		let resolvedPin: Option.Option<RepoPin> = Option.none();
-		if (Option.isSome(config.pin) && config.pin.value === "auto") {
-			resolvedPin = yield* repoService.resolveAutoPin(
-				url,
-				autoPinPackageName(config.repo, resolved),
-			);
-		} else if (Option.isSome(config.pin)) {
-			resolvedPin = Option.some(yield* repoService.resolvePin(url, config.pin.value));
-		}
-		const resolvedSparse = config.sparse.pipe(
-			Option.map((raw) => raw.split(",").map((s) => s.trim())),
-		);
-		const result = yield* repoService.add({
-			url,
-			alias: effectiveAlias,
-			pin: resolvedPin,
-			depth: config.depth,
-			sparse: resolvedSparse,
-		});
-		yield* registry.addManual(result);
-		yield* Console.log(`Added repo "${result}"`);
-	}),
+  Effect.gen(function* () {
+    const repoService = yield* RepoService;
+    const registry = yield* RegistryService;
+    const resolve = yield* ResolveService;
+    const resolved = yield* resolve.resolve(config.repo);
+    if (resolved.source !== "direct") {
+      yield* Console.log(`Resolved "${config.repo}" → ${resolved.url}`);
+    }
+    const url = resolved.url;
+    const effectiveAlias = Option.isSome(config.alias)
+      ? config.alias
+      : Option.some(resolved.suggestedAlias);
+    let resolvedPin: Option.Option<RepoPin> = Option.none();
+    if (Option.isSome(config.pin) && config.pin.value === "auto") {
+      resolvedPin = yield* repoService.resolveAutoPin(
+        url,
+        autoPinPackageName(config.repo, resolved),
+      );
+    } else if (Option.isSome(config.pin)) {
+      resolvedPin = Option.some(yield* repoService.resolvePin(url, config.pin.value));
+    }
+    const resolvedSparse = config.sparse.pipe(
+      Option.map((raw) => raw.split(",").map((s) => s.trim())),
+    );
+    const result = yield* repoService.add({
+      url,
+      alias: effectiveAlias,
+      pin: resolvedPin,
+      depth: config.depth,
+      sparse: resolvedSparse,
+    });
+    yield* registry.addManual(result);
+    yield* Console.log(`Added repo "${result}"`);
+  }),
 ).pipe(Command.withDescription("Add a code reference repository to shelf"));

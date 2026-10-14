@@ -7,11 +7,11 @@ import { RegistryService } from "../../domain/registry/registry-service";
 const aliasOrUrl = Argument.String("alias-or-url");
 
 export const removeCommand = Command.make("remove", { aliasOrUrl }, (config) =>
-	Effect.gen(function* () {
-		const repo = yield* RepoService;
-		const registry = yield* RegistryService;
-		const removed = yield* repo.remove(config.aliasOrUrl);
-		yield* registry.removeManual(removed);
-		yield* Console.log(`Removed repo "${removed}"`);
-	}),
+  Effect.gen(function* () {
+    const repo = yield* RepoService;
+    const registry = yield* RegistryService;
+    const removed = yield* repo.remove(config.aliasOrUrl);
+    yield* registry.removeManual(removed);
+    yield* Console.log(`Removed repo "${removed}"`);
+  }),
 ).pipe(Command.withDescription("Remove a repository from shelf"));
