@@ -5,6 +5,7 @@ const errorMessages: Record<string, (error: Record<string, unknown>) => string> 
 	GitOperationError: (e) => `Git error: ${String(e["message"])}`,
 	AutoPinResolutionError: (e) => `Auto-pin failed: ${String(e["message"])}`,
 	ConfigParseError: (e) => `Config error: ${String(e["message"])}`,
+	InvalidConfigValueError: (e) => String(e["message"]),
 	ConfigNotFoundError: (e) => `Config not found: ${String(e["path"])}`,
 	ShelffileNotFoundError: (e) =>
 		`No shelffile found at ${String(e["path"])}. Create one or use \`shelf share\` to generate one.`,

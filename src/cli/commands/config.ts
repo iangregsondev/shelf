@@ -4,6 +4,8 @@ import * as Option from "effect/Option";
 import { Argument, Command } from "effect/cli";
 import { ConfigService } from "../../domain/config/config-service";
 import { ShelfConfig } from "../../domain/config/config-schema";
+import { InvalidConfigValueError } from "../../domain/config/config-errors";
+import { parseSyncInterval } from "../../domain/config/config-utils";
 
 const key = Argument.String("key").pipe(Argument.optional);
 const value = Argument.String("value").pipe(Argument.optional);
@@ -32,10 +34,13 @@ export const configCommand = Command.make("config", { key, value }, (args) =>
 		}
 
 		if (k === "syncIntervalMinutes") {
-			const num = Number.parseInt(args.value.value, 10);
-			if (Number.isNaN(num)) {
-				yield* Console.log("syncIntervalMinutes must be a number");
-				return;
+			const num = parseSyncInterval(args.value.value);
+			if (num === undefined) {
+				return yield* Effect.fail(
+					new InvalidConfigValueError({
+						message: `syncIntervalMinutes must be a whole number of 1 or more, got "${args.value.value}"`,
+					}),
+				);
 			}
 			yield* configService.update(
 				(current) => new ShelfConfig({ ...current, syncIntervalMinutes: num }),
