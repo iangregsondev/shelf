@@ -1,29 +1,13 @@
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Option from "effect/Option";
-import { FileSystem } from "effect/FileSystem";
 import { Command, Flag } from "effect/cli";
-import { join } from "node:path";
-import { skillTemplate } from "../templates/skill";
 import { ConfigService } from "../../domain/config/config-service";
 import { DetectService } from "../../domain/detect/detect-service";
 import type { DetectedRepo } from "../../domain/detect/detect-schema";
 import { RepoService } from "../../domain/repo/repo-service";
 import { RegistryService } from "../../domain/registry/registry-service";
-
-const agentPaths: Record<string, string> = {
-  claude: ".claude/skills/shelf",
-  opencode: ".opencode/skills/shelf",
-  gemini: ".gemini/skills/shelf",
-};
-
-const defaultSkillDir = ".agents/skills/shelf";
-
-export const resolveSkillDir = (agent: Option.Option<string>): string =>
-  Option.match(agent, {
-    onNone: () => defaultSkillDir,
-    onSome: (a) => agentPaths[a] ?? defaultSkillDir,
-  });
+import { SkillService } from "../../domain/skill/skill-service";
 
 const agent = Flag.String("agent").pipe(
   Flag.optional,
@@ -39,13 +23,10 @@ export const initCommand = Command.make("init", { agent, noDetect }, (config) =>
     const cwd = process.cwd();
 
     // Step 1: Write skill file (always)
-    const skillDir = join(cwd, resolveSkillDir(config.agent));
-    const skillPath = join(skillDir, "SKILL.md");
-    const fs = yield* FileSystem;
-    yield* fs.makeDirectory(skillDir, { recursive: true }).pipe(
-      Effect.andThen(fs.writeFileString(skillPath, skillTemplate)),
-      Effect.mapError((error) => new Error(`Failed to write skill file: ${String(error)}`)),
-    );
+    const skill = yield* SkillService;
+    const skillPath = yield* skill
+      .install(cwd, config.agent)
+      .pipe(Effect.mapError((error) => new Error(`Failed to write skill file: ${String(error)}`)));
     yield* Console.log(`Created ${skillPath}`);
 
     // Step 2: Detect and add repos (unless --no-detect)

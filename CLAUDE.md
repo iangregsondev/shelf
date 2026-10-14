@@ -35,7 +35,7 @@ src/startup/daemon.ts                       — daemon process entrypoint (built
 src/startup/layers/app.ts                   — layer composition
 ```
 
-Domains: `config`, `daemon`, `detect`, `git`, `registry`, `repo`, `resolve`, `shelffile`, `sync`.
+Domains: `config`, `daemon`, `detect`, `git`, `registry`, `repo`, `resolve`, `shelffile`, `skill`, `sync`.
 
 Dependency direction: `command → service → storage boundary`. Reverse imports forbidden.
 

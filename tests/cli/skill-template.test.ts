@@ -1,6 +1,6 @@
 import { describe, test, expect } from "vite-plus/test";
 import { join } from "node:path";
-import { skillTemplate } from "../../src/cli/templates/skill";
+import { skillTemplate } from "../../src/domain/skill/skill-template";
 import { parse } from "yaml";
 import { readText } from "../helpers/files";
 

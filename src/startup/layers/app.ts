@@ -8,6 +8,7 @@ import { RegistryService } from "../../domain/registry/registry-service";
 import { ResolveService } from "../../domain/resolve/resolve-service";
 import { DetectService } from "../../domain/detect/detect-service";
 import { DaemonService } from "../../domain/daemon/daemon-service";
+import { SkillService } from "../../domain/skill/skill-service";
 
 const ConfigLive = ConfigService.layer;
 const GitLive = GitService.layer;
@@ -26,6 +27,7 @@ const RepoLive = RepoService.layer.pipe(
 const ResolveLive = ResolveService.layer;
 const DetectLive = DetectService.layer.pipe(Layer.provide(ConfigLive));
 const DaemonLive = DaemonService.layer.pipe(Layer.provide(ConfigLive));
+const SkillLive = SkillService.layer;
 export const AppLayer = Layer.mergeAll(
   ConfigLive,
   GitLive,
@@ -36,4 +38,5 @@ export const AppLayer = Layer.mergeAll(
   ResolveLive,
   DetectLive,
   DaemonLive,
+  SkillLive,
 );
