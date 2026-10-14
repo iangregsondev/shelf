@@ -1,12 +1,12 @@
 {
-	"name": "@rikalabs/shelf",
+	"name": "@iangregsondev/shelf",
 	"version": "0.1.3",
 	"type": "module",
 	"description": "A global cache of code reference repositories for AI agents",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/Rika-Labs/shelf.git"
+		"url": "https://github.com/iangregsondev/shelf.git"
 	},
 	"bin": {
 		"shelf": "./src/startup/index.ts"
