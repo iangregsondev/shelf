@@ -166,3 +166,38 @@ export const parseTempName = (name: string): TempName | undefined => {
   if (kind === undefined || alias === undefined || pid === undefined) return undefined;
   return { kind, alias, pid: Number(pid) };
 };
+
+/** Whether `a` and `b` differ at most in case, as a case-only rename's two names do. */
+export const sameIgnoringCase = (a: string, b: string): boolean =>
+  a.toLowerCase() === b.toLowerCase();
+
+/** What to do with a dead temp folder (see `settleDeadTemp`). */
+export type DeadTempSettlement =
+  | { readonly _tag: "MoveBack"; readonly alias: string }
+  | { readonly _tag: "Trash" }
+  | { readonly _tag: "Keep" };
+
+/**
+ * Where the dead temp folder `temp` goes, given the aliases of config entries
+ * whose repo folder is missing. A remove's folder moves back to its own
+ * alias; a case-only rename's to its own spelling first, else to the one
+ * other spelling missing its folder (the config may hold the old name or the
+ * new one). With two other spellings missing their folders, as two repos
+ * that differ only in case can on a case-sensitive file system, it is kept
+ * for a person to sort out: trash would delete a repo's only copy. An add's
+ * folder is always trash: its entry is saved only once it is in place.
+ */
+export const settleDeadTemp = (
+  temp: TempName,
+  missingFolders: ReadonlyArray<string>,
+): DeadTempSettlement => {
+  if (temp.kind !== "add" && missingFolders.includes(temp.alias)) {
+    return { _tag: "MoveBack", alias: temp.alias };
+  }
+  if (temp.kind === "rename") {
+    const others = missingFolders.filter((alias) => sameIgnoringCase(alias, temp.alias));
+    if (others.length > 1) return { _tag: "Keep" };
+    if (others[0] !== undefined) return { _tag: "MoveBack", alias: others[0] };
+  }
+  return { _tag: "Trash" };
+};

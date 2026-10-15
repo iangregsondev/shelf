@@ -9,6 +9,8 @@ import {
   describePin,
   parsePin,
   parseTempName,
+  sameIgnoringCase,
+  settleDeadTemp,
   pinFromRemoteRefs,
   tempName,
 } from "../../../src/domain/repo/repo-utils";
@@ -269,5 +271,52 @@ describe("temp folder names", () => {
     ["a name with no alias", `.shelf-add--4321-${id}`],
   ])("are not read from %s", (_label, name) => {
     expect(parseTempName(name)).toBeUndefined();
+  });
+});
+
+describe("sameIgnoringCase", () => {
+  test.each([
+    ["react", "React", true],
+    ["/x/repos/react", "/x/repos/REACT", true],
+    ["react", "vue", false],
+  ])("%s and %s: %s", (a, b, same) => {
+    expect(sameIgnoringCase(a, b)).toBe(same);
+  });
+});
+
+describe("settleDeadTemp", () => {
+  const temp = (kind: "add" | "rename" | "removing", alias: string) => ({ kind, alias, pid: 1 });
+
+  test("an add's folder is always trash: its entry is saved only once it is in place", () => {
+    expect(settleDeadTemp(temp("add", "lib"), ["lib"])).toEqual({ _tag: "Trash" });
+  });
+
+  test.each([
+    [
+      "moves back when its alias is missing its folder",
+      ["lib"],
+      { _tag: "MoveBack", alias: "lib" },
+    ],
+    ["is trash when its alias has its folder", [], { _tag: "Trash" }],
+    ["never takes another spelling", ["LIB"], { _tag: "Trash" }],
+  ])("a remove's folder %s", (_label, missing, settled) => {
+    expect(settleDeadTemp(temp("removing", "lib"), missing)).toEqual(settled);
+  });
+
+  test.each([
+    ["takes the same spelling first", ["React", "REACT"], { _tag: "MoveBack", alias: "React" }],
+    [
+      "takes the one other spelling missing its folder",
+      ["react"],
+      { _tag: "MoveBack", alias: "react" },
+    ],
+    [
+      "is kept when two other spellings are missing their folders",
+      ["react", "REACT"],
+      { _tag: "Keep" },
+    ],
+    ["is trash when no spelling is missing its folder", ["vue"], { _tag: "Trash" }],
+  ])("a case-only rename's folder %s", (_label, missing, settled) => {
+    expect(settleDeadTemp(temp("rename", "React"), missing)).toEqual(settled);
   });
 });

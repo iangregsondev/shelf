@@ -1346,6 +1346,48 @@ describe("RepoService.clearTrash", () => {
     expect(await readdir(reposDir)).toEqual([dead]);
   });
 
+  // `shelf alias react React` saves the config only once the folder is in
+  // place, so a killed one leaves the config holding "react". Its temp
+  // folder is named after the name it was moving to.
+  test.each([
+    ["moving to the new name", "React"],
+    ["moving back after a failed config write", "react"],
+  ])(
+    "moves the folder of a case-only rename killed %s back to the stored alias",
+    async (_label, named) => {
+      await writeText(join(reposDir, tempName("rename", named, deadPid(), ID), "lib.ts"), "code");
+      const layer = buildRepoLayer({ load: () => Effect.succeed(configOf(entry("react"))) });
+      expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+      expect(await readdir(reposDir)).toEqual(["react"]);
+      expect(await readText(join(reposDir, "react", "lib.ts"))).toBe("code");
+    },
+  );
+
+  test("keeps a dead rename's folder when two repos differing only in case both miss their folders", async () => {
+    const dead = tempName("rename", "React", deadPid(), ID);
+    await writeText(join(reposDir, dead, "lib.ts"), "code");
+    const layer = buildRepoLayer({
+      load: () => Effect.succeed(configOf(entry("react"), entry("REACT"))),
+    });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual([dead]);
+  });
+
+  test("deletes a dead rename's folder when no entry wants it", async () => {
+    await writeText(join(reposDir, tempName("rename", "React", deadPid(), ID), "lib.ts"), "code");
+    const layer = buildRepoLayer({ load: () => Effect.succeed(configOf(entry("vue"))) });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual([]);
+  });
+
+  test("keeps the folder of a rename whose process is alive", async () => {
+    const live = tempName("rename", "React", process.pid, ID);
+    await writeText(join(reposDir, live, "lib.ts"), "code");
+    const layer = buildRepoLayer({ load: () => Effect.succeed(configOf(entry("react"))) });
+    expect(await runRepo((repo) => repo.clearTrash(), layer)).toEqual([]);
+    expect(await readdir(reposDir)).toEqual([live]);
+  });
+
   test("keeps the folder of a remove whose process is alive", async () => {
     const live = tempName("removing", "lib", process.pid, ID);
     await writeText(join(reposDir, live, "lib.ts"), "code");
